@@ -219,6 +219,14 @@ body {
   font-size: 16px;
 }
 
+/* H5：放大品牌链接的点击目标（<40px 高的点按目标偏小） */
+@media (max-width: 767px) {
+  .lp-brand {
+    padding: 8px 10px;
+    margin: -8px -10px;
+  }
+}
+
 .lp-main {
   width: 100%;
   max-width: 1120px;

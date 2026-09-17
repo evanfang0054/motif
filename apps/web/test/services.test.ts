@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { hashPassword, verifyPassword } from '@/server/auth'
 import {
   enqueueGeneration,
+  friendlyGenerateError,
   login,
   redeem,
   register,
@@ -203,5 +204,22 @@ describe('CDK 兑换', () => {
     expect(redeem(store, u, 'HELLO-10').credits).toBe(11)
     expect(() => redeem(store, u, 'HELLO-10')).toThrow(/无效|已使用/)
     expect(() => redeem(store, u, '')).toThrow(/CDK/)
+  })
+})
+
+describe('friendlyGenerateError（失败文案）', () => {
+  it('网关错误剥离原始 JSON 并附退款信息', () => {
+    const raw = '生图接口失败（502）：{"error":{"message":"Upstream access forbidden"}}'
+    const msg = friendlyGenerateError(raw, 1)
+    expect(msg).toContain('网关 502')
+    expect(msg).toContain('已退还 1 张额度')
+    expect(msg).not.toContain('{"error"')
+  })
+  it('超时类错误给重试引导', () => {
+    expect(friendlyGenerateError('Request timeout after 120s', 2)).toContain('超时')
+    expect(friendlyGenerateError('Request timeout after 120s', 2)).toContain('重试')
+  })
+  it('无退款时不提退款', () => {
+    expect(friendlyGenerateError('生图接口失败（500）：oops', 0)).not.toContain('退还')
   })
 })

@@ -37,6 +37,7 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
         余额 <b>{user.credits}</b> 张
       </div>
       <div className="flex items-center gap-2">
+        <span className="ws-badge md:hidden" title="剩余额度">{user.credits} 张</span>
         <span className="ws-badge hidden md:flex lg:hidden">余额 {user.credits} 张</span>
         <div className="hidden items-center gap-2 md:flex">
           <ThemeToggle />
@@ -49,7 +50,6 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
           <button className="ws-btn" aria-label="更多操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>⋯</button>
           {menuOpen && (
             <div className="ws-nav-menu" onClick={() => setMenuOpen(false)}>
-              <span className="ws-badge">余额 {user.credits} 张</span>
               <ThemeToggle />
               <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
               <button className="ws-btn" onClick={onOpenProfile}>{user.name}</button>
