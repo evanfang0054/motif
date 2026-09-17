@@ -131,7 +131,7 @@ describe('worker 启动', () => {
     process.env.MOTIF_DATA_DIR = dir // 隔离：getRuntime 建库落在临时目录
     // getRuntime 构造 provider 时强校验生图 env（缺失即抛，vitest 不加载 .env），注入桩值
     process.env.IMAGE_API_BASE_URL = 'http://127.0.0.1:9'
-    process.env.IMAGE_API_KEY = 'stub-key'
+    process.env.IMAGE_API_KEY = 'stub'
     delete g.__motifRuntime
     delete g.__motifWorker
     try {
