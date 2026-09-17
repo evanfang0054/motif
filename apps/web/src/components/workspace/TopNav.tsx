@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { BrandMark } from '@/components/BrandMark'
+import { ThemeToggle } from '@/components/workspace/ThemeToggle'
 import type { User } from '@motif/core'
 import { TOPIC_STATUS_LABEL } from '@motif/core'
 
@@ -35,6 +36,7 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
       </div>
       <div className="flex items-center gap-2">
         <span className="ws-badge lg:hidden">余额 {user.credits} 张</span>
+        <ThemeToggle />
         <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
         <button className="ws-btn" onClick={onOpenProfile} title="个人资料">{user.name}</button>
         <button className="ws-btn" onClick={onLogout} title={user.email}>退出</button>
