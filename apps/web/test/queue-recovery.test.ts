@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { enqueueGeneration, executeMessage, type WorkerDeps } from '@/server/services'
+import { startWorker, stopWorker } from '@/server/worker'
 import { MotifStore } from '@motif/db'
 import type { GeneratedImage, ImageProvider } from '@motif/image-provider'
 
@@ -118,5 +119,35 @@ describe('断点续跑（崩溃恢复）', () => {
     expect(store.getMessage(messageId)!.status).toBe('failed')
     expect(store.countGeneratedInMessage(messageId)).toBe(1) // 失败不写图
     expect(store.getUserById(user.id)!.credits).toBe(7) // 6 + 退 1
+  })
+})
+
+describe('worker 启动', () => {
+  it('startWorker 幂等：重复调用不重复启动，stopWorker 可清理', () => {
+    const g = globalThis as unknown as {
+      __motifRuntime?: unknown
+      __motifWorker?: { timer: ReturnType<typeof setInterval> | null }
+    }
+    process.env.MOTIF_DATA_DIR = dir // 隔离：getRuntime 建库落在临时目录
+    // getRuntime 构造 provider 时强校验生图 env（缺失即抛，vitest 不加载 .env），注入桩值
+    process.env.IMAGE_API_BASE_URL = 'http://127.0.0.1:9'
+    process.env.IMAGE_API_KEY = 'stub-key'
+    delete g.__motifRuntime
+    delete g.__motifWorker
+    try {
+      startWorker()
+      const first = g.__motifWorker
+      expect(first).toBeTruthy()
+      startWorker()
+      expect(g.__motifWorker).toBe(first) // globalThis 守卫：同一实例
+      expect(first!.timer).toBeTruthy() // 定时器已挂载
+    } finally {
+      stopWorker()
+      expect(g.__motifWorker).toBeUndefined()
+      delete g.__motifRuntime
+      delete process.env.MOTIF_DATA_DIR
+      delete process.env.IMAGE_API_BASE_URL
+      delete process.env.IMAGE_API_KEY
+    }
   })
 })

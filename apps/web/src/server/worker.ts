@@ -53,5 +53,15 @@ export function startWorker(): void {
 
   state.timer = setInterval(() => void tick(), 600)
   if (state.timer.unref) state.timer.unref()
+  // 启动即执行一轮：进程重启后立即恢复历史 queued 消息、重排过期租约，不等首个 600ms
+  void tick()
   console.log('[motif] 生成队列 worker 已启动')
+}
+
+/** 停止 worker（测试与未来优雅停机用） */
+export function stopWorker(): void {
+  const state = g.__motifWorker
+  if (!state) return
+  if (state.timer) clearInterval(state.timer)
+  g.__motifWorker = undefined
 }
