@@ -1,43 +1,44 @@
 @import "tailwindcss";
 
 /*
- * Motif 设计令牌 —— 亮色为基准，跟随系统切换暗色。
+ * Motif 设计令牌 —— 亮色为基准（默认），暗色由 html[data-theme="dark"] 控制
+ * （三态切换 light / dark / system，默认 light，见 components/workspace/ThemeToggle.tsx）。
  * 中性灰阶 + 语义色 + 任务状态色。
  */
 :root {
-  --home-background: #f7f7f6;
-  --background: #ffffff;
-  --foreground: #0d0d0d;
+  --home-background: #faf9f5;
+  --background: #faf9f5;
+  --foreground: #141413;
   --canvas-background: #ffffff;
-  --canvas-foreground: #1f2937;
-  --canvas-muted: #6b7280;
-  --surface-primary: #ffffff;
-  --surface-secondary: #f7f7f8;
-  --surface-tertiary: #ececf1;
-  --surface-hover: #f1f1f3;
-  --surface-active: #e9e9e9;
-  --sidebar: #f9f9f9;
-  --border: #e5e5e5;
-  --border-strong: #d1d5db;
-  --muted: #6b7280;
-  --muted-strong: #374151;
-  --accent: #ececec;
-  --accent-hover: #e3e3e3;
-  --accent-soft: #f1f1f3;
-  --button: #ececec;
-  --button-hover: #e3e3e3;
-  --button-text: #0d0d0d;
-  --brand-warm: #f3efe6;
-  --brand-warm-hover: #eae3d3;
-  --brand-warm-text: #131311;
-  --danger: #c2410c;
-  --danger-hover: #9a3412;
+  --canvas-foreground: #141413;
+  --canvas-muted: #6c6a64;
+  --surface-primary: #faf9f5;
+  --surface-secondary: #f5f0e8;
+  --surface-tertiary: #efe9de;
+  --surface-hover: #ebe6df;
+  --surface-active: #e8e0d2;
+  --sidebar: #f5f0e8;
+  --border: #e6dfd8;
+  --border-strong: #d3c8b6;
+  --muted: #6c6a64;
+  --muted-strong: #3d3d3a;
+  --accent: #efe9de;
+  --accent-hover: #e8e0d2;
+  --accent-soft: #f5f0e8;
+  --button: #efe9de;
+  --button-hover: #e8e0d2;
+  --button-text: #141413;
+  --brand-warm: #cc785c;
+  --brand-warm-hover: #a9583e;
+  --brand-warm-text: #ffffff;
+  --danger: #c64545;
+  --danger-hover: #a53a3a;
   --danger-text: #ffffff;
-  --danger-soft: #fff7ed;
-  --warning: #92400e;
-  --warning-soft: #fef3c7;
-  --success: #16a34a;
-  --success-soft: #f1f1f3;
+  --danger-soft: #f9ecec;
+  --warning: #a17c17;
+  --warning-soft: #f7eed7;
+  --success: #5db872;
+  --success-soft: #e9f2ea;
   --status-idle: #8e8ea0;
   --status-pending: #8e8ea0;
   --status-running: #3b82f6;
@@ -48,45 +49,44 @@
   --overlay: #00000073;
   --shadow-soft: 0 18px 45px #0f172a1f;
   --scrollbar-track: transparent;
-  --scrollbar-thumb: #d9d9de;
-  --scrollbar-thumb-hover: #bfc0c7;
+  --scrollbar-thumb: #ddd5c8;
+  --scrollbar-thumb-hover: #c4bba9;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --home-background: #212121;
-    --background: #212121;
-    --foreground: #ececec;
+html[data-theme="dark"] {
+    --home-background: #181715;
+    --background: #181715;
+    --foreground: #faf9f5;
     --canvas-background: #181818;
-    --canvas-foreground: #ececec;
-    --canvas-muted: #9ca3af;
-    --surface-primary: #212121;
-    --surface-secondary: #2a2a2a;
-    --surface-tertiary: #333333;
-    --surface-hover: #2e2e2e;
-    --surface-active: #383838;
-    --sidebar: #1b1b1b;
-    --border: #3a3a3a;
-    --border-strong: #4b5563;
-    --muted: #9ca3af;
-    --muted-strong: #d1d5db;
-    --accent: #2e2e2e;
-    --accent-hover: #383838;
-    --accent-soft: #2a2a2a;
-    --button: #2e2e2e;
-    --button-hover: #383838;
-    --button-text: #ececec;
-    --brand-warm: #f3efe6;
-    --brand-warm-hover: #eae3d3;
-    --brand-warm-text: #131311;
-    --danger: #ea580c;
-    --danger-hover: #c2410c;
+    --canvas-foreground: #faf9f5;
+    --canvas-muted: #a09d96;
+    --surface-primary: #1f1e1b;
+    --surface-secondary: #252320;
+    --surface-tertiary: #32302b;
+    --surface-hover: #2a2723;
+    --surface-active: #332f2a;
+    --sidebar: #141311;
+    --border: #38342d;
+    --border-strong: #4a453c;
+    --muted: #a09d96;
+    --muted-strong: #d8d4ca;
+    --accent: #2a2723;
+    --accent-hover: #332f2a;
+    --accent-soft: #252320;
+    --button: #2a2723;
+    --button-hover: #332f2a;
+    --button-text: #faf9f5;
+    --brand-warm: #cc785c;
+    --brand-warm-hover: #a9583e;
+    --brand-warm-text: #ffffff;
+    --danger: #d45757;
+    --danger-hover: #c64545;
     --danger-text: #ffffff;
-    --danger-soft: #3a2214;
-    --warning: #fbbf24;
-    --warning-soft: #33270e;
-    --success: #22c55e;
-    --success-soft: #14261b;
+    --danger-soft: #35201e;
+    --warning: #d4a017;
+    --warning-soft: #322a12;
+    --success: #5db872;
+    --success-soft: #1c2b20;
     --status-idle: #8e8ea0;
     --status-pending: #8e8ea0;
     --status-running: #3b82f6;
@@ -97,9 +97,8 @@
     --overlay: #000000b3;
     --shadow-soft: 0 18px 45px #00000066;
     --scrollbar-track: transparent;
-    --scrollbar-thumb: #3f3f46;
-    --scrollbar-thumb-hover: #52525b;
-  }
+    --scrollbar-thumb: #45403a;
+    --scrollbar-thumb-hover: #5a544b;
 }
 
 @theme inline {
@@ -188,18 +187,6 @@ body {
   font-weight: 700;
   letter-spacing: 0.2px;
   font-size: 16px;
-}
-
-.lp-brand-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--brand-warm), color-mix(in srgb, var(--brand-warm) 55%, #c8a15a));
-  color: var(--brand-warm-text);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 800;
 }
 
 .lp-main {
@@ -1060,4 +1047,34 @@ body {
   place-items: center;
   background: var(--home-background);
   padding: 24px;
+}
+
+/* ---------- 主题三态切换（浅色 / 深色 / 跟随系统） ---------- */
+.ws-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ws-theme-opt {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.ws-theme-opt + .ws-theme-opt {
+  border-left: 1px solid var(--border);
+}
+.ws-theme-opt:hover {
+  color: var(--foreground);
+  background: var(--surface-hover);
+}
+.ws-theme-opt.is-active {
+  background: var(--surface-active);
+  color: var(--foreground);
+  font-weight: 600;
 }
