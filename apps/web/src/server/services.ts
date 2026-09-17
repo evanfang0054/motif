@@ -233,7 +233,9 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       }
     })
 
-    for (let i = 0; i < msg.requestedCount; i++) {
+    // 断点续跑：崩溃重排后从已生成数继续，只补剩余张数（额度守恒，防超发）
+    const alreadyDone = store.countGeneratedInMessage(messageId)
+    for (let i = alreadyDone; i < msg.requestedCount; i++) {
       // 取消检查：canceling 状态时停止并把剩余张数退回
       const current = store.getMessage(messageId)
       if (!current || current.status === 'canceling' || current.status === 'canceled') break
