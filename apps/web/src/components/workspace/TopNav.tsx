@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { ThemeToggle } from '@/components/workspace/ThemeToggle'
 import type { User } from '@motif/core'
@@ -18,6 +19,7 @@ interface Props {
 }
 
 function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpenProfile, onLogout }: Props) {
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <header className="ws-nav">
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -35,11 +37,26 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
         余额 <b>{user.credits}</b> 张
       </div>
       <div className="flex items-center gap-2">
-        <span className="ws-badge lg:hidden">余额 {user.credits} 张</span>
-        <ThemeToggle />
-        <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
-        <button className="ws-btn" onClick={onOpenProfile} title="个人资料">{user.name}</button>
-        <button className="ws-btn" onClick={onLogout} title={user.email}>退出</button>
+        <span className="ws-badge hidden md:flex lg:hidden">余额 {user.credits} 张</span>
+        <div className="hidden items-center gap-2 md:flex">
+          <ThemeToggle />
+          <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
+          <button className="ws-btn" onClick={onOpenProfile} title="个人资料">{user.name}</button>
+          <button className="ws-btn" onClick={onLogout} title={user.email}>退出</button>
+        </div>
+        {/* <768：次要操作收进汉堡菜单（issue #6） */}
+        <div className="relative md:hidden">
+          <button className="ws-btn" aria-label="更多操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>⋯</button>
+          {menuOpen && (
+            <div className="ws-nav-menu" onClick={() => setMenuOpen(false)}>
+              <span className="ws-badge">余额 {user.credits} 张</span>
+              <ThemeToggle />
+              <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
+              <button className="ws-btn" onClick={onOpenProfile}>{user.name}</button>
+              <button className="ws-btn" onClick={onLogout}>退出</button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )
