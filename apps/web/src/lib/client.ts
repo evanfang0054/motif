@@ -68,6 +68,11 @@ export const api = {
     return data as { canvasImage: CanvasImage }
   },
   deleteCanvasImage: (id: string) => call<{ ok: true }>(`/api/canvas-images/${id}`, { method: 'DELETE' }),
+  deleteCanvasImages: (ids: string[]) =>
+    call<{ ok: true; deleted: number }>('/api/canvas-images/delete-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   billingPackages: () => call<BillingPackagesResponse>('/api/billing/packages'),
   checkout: (packageId: string) =>
     call<{ orderId: string; checkoutUrl: string }>('/api/billing/checkout', {
