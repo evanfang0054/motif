@@ -41,6 +41,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [panel, setPanel] = useState<PanelState>(IDLE_PANEL)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | null>(null)
+  const [panelOpen, setPanelOpen] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: 'image'; ids: CanvasImage[] }
     | { kind: 'topic'; id: string; title: string }
@@ -314,24 +315,31 @@ function Workspace({ initialUser }: { initialUser: User }) {
           )}
         </section>
 
-        <TaskPanel
-          status={detail?.topic.status ?? 'idle'}
-          prompt={panel.prompt}
-          count={panel.count}
-          size={panel.size}
-          customW={panel.customW}
-          customH={panel.customH}
-          referenceCount={panel.referenceIds.length}
-          busy={!!busy}
-          onPromptChange={(prompt) => setPanel((p) => ({ ...p, prompt }))}
-          onCountChange={(count) => setPanel((p) => ({ ...p, count }))}
-          onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
-          onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
-          onUploadReference={(f) => void uploadReference(f)}
-          onGenerate={() => void submitGenerate()}
-          onCancel={() => void cancelRunning()}
-          onNewTask={() => void createTopic()}
-        />
+        {panelOpen ? (
+          <TaskPanel
+            status={detail?.topic.status ?? 'idle'}
+            prompt={panel.prompt}
+            count={panel.count}
+            size={panel.size}
+            customW={panel.customW}
+            customH={panel.customH}
+            referenceCount={panel.referenceIds.length}
+            busy={!!busy}
+            onPromptChange={(prompt) => setPanel((p) => ({ ...p, prompt }))}
+            onCountChange={(count) => setPanel((p) => ({ ...p, count }))}
+            onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
+            onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
+            onUploadReference={(f) => void uploadReference(f)}
+            onGenerate={() => void submitGenerate()}
+            onCancel={() => void cancelRunning()}
+            onNewTask={() => void createTopic()}
+            onCollapse={() => setPanelOpen(false)}
+          />
+        ) : (
+          <div className="lg:hidden">
+            <button className="ws-btn" onClick={() => setPanelOpen(true)}>展开生成面板</button>
+          </div>
+        )}
       </div>
 
       {drawerOpen && (

@@ -21,6 +21,8 @@ interface Props {
   onGenerate: () => void
   onCancel: () => void
   onNewTask: () => void
+  /** 窄屏收起面板（<1024 显示折叠按钮，Workspace 控制开合） */
+  onCollapse?: () => void
 }
 
 /** 右侧任务面板：状态、参考图、张数、尺寸、提示词、生成/取消 */
@@ -31,7 +33,12 @@ function TaskPanel(p: Props) {
     <section className="ws-panel">
       <div className="flex items-center justify-between">
         <StatusBadge status={p.status} />
-        <button className="ws-btn" onClick={p.onNewTask}>＋ 新任务</button>
+        <div className="flex items-center gap-2">
+          {p.onCollapse && (
+            <button className="ws-btn lg:hidden" aria-label="收起生成面板" onClick={p.onCollapse}>收起</button>
+          )}
+          <button className="ws-btn" onClick={p.onNewTask}>＋ 新任务</button>
+        </div>
       </div>
 
       <div>
