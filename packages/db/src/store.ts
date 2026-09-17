@@ -544,6 +544,13 @@ export class MotifStore {
     this.db.prepare('DELETE FROM canvas_images WHERE id = ?').run(id)
   }
 
+  /** 批量删除画布图片行（归属校验由调用方完成）；空数组直接返回 */
+  deleteCanvasImages(ids: string[]): void {
+    if (ids.length === 0) return
+    const placeholders = ids.map(() => '?').join(',')
+    this.db.prepare(`DELETE FROM canvas_images WHERE id IN (${placeholders})`).run(...ids)
+  }
+
   // ---------- cdks ----------
 
   createCdk(code: string, credits: number): void {

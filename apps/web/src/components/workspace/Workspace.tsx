@@ -8,6 +8,7 @@ import { TEMPLATES } from '@/lib/templates'
 import { TopNav } from './TopNav'
 import { TemplateGallery } from './TemplateGallery'
 import { CanvasBoard } from './CanvasBoard'
+import { deleteImageConfirmText } from './canvas-geometry'
 import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
@@ -41,7 +42,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<
-    | { kind: 'image'; img: CanvasImage }
+    | { kind: 'image'; ids: CanvasImage[] }
     | { kind: 'topic'; id: string; title: string }
     | null
   >(null)
@@ -236,8 +237,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
     [activeId, refreshTopics, showToast]
   )
 
-  const removeImage = useCallback(async (img: CanvasImage) => {
-    await api.deleteCanvasImage(img.id)
+  const removeImages = useCallback(async (imgs: CanvasImage[]) => {
+    await api.deleteCanvasImages(imgs.map((i) => i.id))
     if (activeId) await refreshDetail(activeId)
   }, [activeId, refreshDetail])
 
@@ -305,7 +306,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             <CanvasBoard
               key={detail.topic.id}
               images={detail.canvasImages}
-              onRemove={(img) => setConfirmDelete({ kind: 'image', img })}
+              onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
               onAddReference={(img) => addReferenceFromCanvas(img)}
             />
           ) : (
@@ -407,7 +408,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             <h2 className="text-base font-bold">{confirmDelete.kind === 'image' ? '删除图片' : '删除任务'}</h2>
             {confirmDelete.kind === 'image' ? (
               <p className="mt-3 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-                将永久删除所选的 1 张图片及其存储文件，删除后无法恢复。
+                {deleteImageConfirmText(confirmDelete.ids.length)}
                 <br />
                 其余图片的编号保持不变，提示词里已写好的编号仍会指向原来的图片。
               </p>
@@ -424,7 +425,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
                 onClick={() => {
                   const target = confirmDelete
                   setConfirmDelete(null)
-                  if (target.kind === 'image') void removeImage(target.img)
+                  if (target.kind === 'image') void removeImages(target.ids)
                   else void deleteTopic(target.id)
                 }}
               >
