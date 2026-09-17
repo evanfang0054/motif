@@ -350,6 +350,19 @@ export class MotifStore {
     return rows.map(rowToTopic)
   }
 
+  /** 「新任务」复用：当前用户最近更新的 idle 且 0 张画布图的会话（不存在则 null） */
+  findReusableTopic(userId: string): Topic | null {
+    const row = this.db
+      .prepare(
+        `SELECT t.* FROM topics t
+         WHERE t.user_id = ? AND t.status = 'idle'
+           AND NOT EXISTS (SELECT 1 FROM canvas_images ci WHERE ci.topic_id = t.id)
+         ORDER BY t.updated_at DESC, t.id DESC LIMIT 1`
+      )
+      .get(userId) as TopicRow | undefined
+    return row ? rowToTopic(row) : null
+  }
+
   renameTopic(id: string, title: string): Topic | null {
     this.db.prepare('UPDATE topics SET title = ?, updated_at = ? WHERE id = ?').run(title, nowIso(), id)
     return this.getTopic(id)
