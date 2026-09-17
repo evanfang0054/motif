@@ -1,0 +1,23 @@
+services:
+  motif:
+    build: .
+    container_name: motif
+    ports:
+      - "3100:3100"
+    volumes:
+      # SQLite + 生成图片持久化：目录映射到宿主机 ./data
+      - ./data:/app/apps/web/.data
+    environment:
+      # 真实生图网关（OpenAI 兼容，必需）——替换为你的网关地址与令牌
+      - IMAGE_API_BASE_URL=http://your-gateway-host:3000/v1
+      - IMAGE_API_KEY=sk-替换为你的令牌
+      - IMAGE_MODEL=gpt-image-2
+      # 本地联调才开（注册验证码直出），生产保持注释
+      # - MOTIF_EXPOSE_DEV_CODE=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/billing/packages').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

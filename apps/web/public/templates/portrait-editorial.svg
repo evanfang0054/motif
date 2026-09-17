@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="683" height="1024" viewBox="0 0 683 1024">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3f4a"/><stop offset="1" stop-color="#17181d"/></linearGradient></defs>
+  <rect width="683" height="1024" fill="url(#g)"/>
+  <circle cx="341" cy="380" r="150" fill="#e8c9a8"/>
+  <rect x="221" y="540" width="240" height="300" rx="90" fill="#5a5f6e"/>
+  <rect x="80" y="120" width="523" height="820" rx="24" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="3"/>
+  <text x="341" y="940" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="30" fill="#ffffff" opacity="0.85">形象写真 · 杂志感</text>
+</svg>

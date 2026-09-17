@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="683" height="1024" viewBox="0 0 683 1024">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2b3a"/><stop offset="1" stop-color="#0c1218"/></linearGradient></defs>
+  <rect width="683" height="1024" fill="url(#g)"/>
+  <rect x="60" y="80" width="180" height="260" fill="#ffffff" opacity="0.06"/>
+  <rect x="440" y="60" width="160" height="320" fill="#ffffff" opacity="0.05"/>
+  <circle cx="341" cy="340" r="130" fill="#dda878"/>
+  <rect x="221" y="480" width="240" height="120" fill="#22303f"/>
+  <polygon points="341,600 261,840 341,840 421,840" fill="#16212c"/>
+  <polygon points="301,480 341,600 381,480 341,470" fill="#f2f2f2"/>
+  <text x="341" y="930" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="28" fill="#dfe8f2" opacity="0.9">男士商务 · 电影感</text>
+</svg>

@@ -1,0 +1,343 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { dirname, join } from 'node:path'
+import {
+  SIGNUP_BONUS_CREDITS,
+  inviteRewardFor,
+  validateEmail,
+  validateName,
+  validatePassword,
+  validatePrompt,
+  validateSize,
+  type CanvasImage,
+  type GenerateImagesInput,
+  type GenerateImagesResponse,
+  type Topic,
+  type User,
+} from '@motif/core'
+import { buildImageKey, storagePathFor, type MotifStore } from '@motif/db'
+import type { ImageProvider } from '@motif/image-provider'
+import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
+import type { MailerConfig } from './mailer'
+import { checkRate } from './rate-limit'
+
+export class ServiceError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+// ---------- auth ----------
+
+export async function sendCode(
+  store: MotifStore,
+  mailer: MailerConfig,
+  purpose: 'register' | 'password-reset',
+  email: string,
+  ip?: string
+): Promise<{ sent: true; devCode?: string; via: string }> {
+  const err = validateEmail(email)
+  if (err) throw new ServiceError(400, err)
+  // 防邮件轰炸/防爆破：每邮箱 60s 冷却 + 每小时 5 封；每 IP 每小时 30 封
+  if (!checkRate(`code:email:${email.toLowerCase()}`, 60_000, 1)) {
+    throw new ServiceError(429, '发送过于频繁，请 1 分钟后再试。')
+  }
+  if (!checkRate(`code:email1h:${email.toLowerCase()}`, 3_600_000, 5)) {
+    throw new ServiceError(429, '该邮箱验证码发送次数已达上限，请稍后再试。')
+  }
+  if (ip && !checkRate(`code:ip:${ip}`, 3_600_000, 30)) {
+    throw new ServiceError(429, '请求过于频繁，请稍后再试。')
+  }
+  const code = store.createVerificationCode(purpose, email, 1000 * 60 * 10)
+  // 真实渠道（smtp/resend/sendgrid）发信；console 为本地直出（只打日志）
+  await mailer.mailer.sendVerificationCode(email, code, purpose)
+  // 安全默认：devCode 回传仅限「console 渠道 + 非生产」或「显式开启 MOTIF_EXPOSE_DEV_CODE」
+  const expose =
+    mailer.isConsole && (process.env.NODE_ENV !== 'production' || process.env.MOTIF_EXPOSE_DEV_CODE === '1')
+  return { sent: true, ...(expose ? { devCode: code } : {}), via: mailer.mailer.name }
+}
+
+export function register(
+  store: MotifStore,
+  input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string }
+): User {
+  for (const [check, err] of [
+    [input.name, validateName(input.name || '')],
+    [input.email, validateEmail(input.email || '')],
+    [input.code, /^.{6}$/.test(input.code || '') ? null : '请输入 6 位邮箱验证码。'],
+    [input.password, validatePassword(input.password || '')],
+  ] as const) {
+    if (err) throw new ServiceError(400, err)
+  }
+  if (input.password !== input.passwordConfirm) throw new ServiceError(400, '两次输入的密码不一致。')
+  // 先消费验证码再做邮箱查重：避免「邮箱已注册」成为匿名可探测的枚举信号
+  if (!store.consumeVerificationCode('register', input.email, input.code)) {
+    throw new ServiceError(400, '验证码无效或已过期。')
+  }
+  if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
+
+  let invitedBy: string | null = null
+  if (input.inviteCode && input.inviteCode.trim()) {
+    const inviter = store.getUserByInviteCode(input.inviteCode.trim())
+    if (inviter) invitedBy = inviter.id
+  }
+
+  const user = store.createUser({
+    email: input.email,
+    passwordHash: hashPassword(input.password),
+    name: input.name.trim(),
+    invitedBy,
+    credits: SIGNUP_BONUS_CREDITS,
+  })
+
+  if (invitedBy) {
+    const inviter = store.getUserById(invitedBy)!
+    const reward = invitedBy ? inviteRewardFor(inviter.invitedCount) : 0
+    store.recordInvite(invitedBy, reward)
+  }
+  return user
+}
+
+export function login(store: MotifStore, email: string, password: string): User {
+  const user = store.getUserByEmail(email || '')
+  if (!user) throw new ServiceError(401, '邮箱或密码不正确。')
+  const stored = store.getPasswordHash(user.id)
+  if (!stored || !verifyPassword(password, stored)) throw new ServiceError(401, '邮箱或密码不正确。')
+  return user
+}
+
+export function resetPassword(
+  store: MotifStore,
+  input: { email: string; code: string; password: string }
+): void {
+  if (validateEmail(input.email)) throw new ServiceError(400, validateEmail(input.email)!)
+  if (validatePassword(input.password)) throw new ServiceError(400, validatePassword(input.password)!)
+  if (!store.consumeVerificationCode('password-reset', input.email, input.code)) {
+    throw new ServiceError(400, '验证码无效或已过期。')
+  }
+  const user = store.getUserByEmail(input.email)
+  if (!user) throw new ServiceError(404, '账号不存在。')
+  store.updateUserPassword(user.id, hashPassword(input.password))
+  // 凭证变更后吊销该账号全部会话（被盗会话立即失效）
+  store.revokeUserSessions(user.id)
+}
+
+// ---------- topics ----------
+
+export function assertOwnedTopic(store: MotifStore, userId: string, topicId: string): Topic {
+  const topic = store.getTopic(topicId)
+  if (!topic || topic.userId !== userId) throw new ServiceError(404, '任务不存在。')
+  return topic
+}
+
+// ---------- generate ----------
+
+export async function enqueueGeneration(
+  store: MotifStore,
+  provider: ImageProvider,
+  dataDir: string,
+  user: User,
+  input: GenerateImagesInput
+): Promise<GenerateImagesResponse> {
+  const promptErr = validatePrompt(input.prompt || '')
+  if (promptErr) throw new ServiceError(400, promptErr)
+  const countErr = validateCountOf(input.count)
+  if (countErr) throw new ServiceError(400, countErr)
+  const sizeCheck = validateSize(input.size || '1024x1024')
+  if (!sizeCheck.ok) throw new ServiceError(400, sizeCheck.error)
+
+  // 确定任务：无 topicId 时以提示词摘要建新任务
+  let topic = input.topicId ? store.getTopic(input.topicId) : null
+  if (input.topicId) {
+    if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
+  } else {
+    topic = store.createTopic(user.id, summarize(input.prompt))
+  }
+
+  if (topic.status === 'pending' || topic.status === 'running' || topic.status === 'canceling') {
+    throw new ServiceError(409, '当前任务仍在生成中，请稍候。')
+  }
+
+  // 校验参考图归属：必须存在、属于当前用户与当前任务
+  const validRefs: string[] = []
+  for (const id of Array.isArray(input.referenceCanvasImageIds) ? input.referenceCanvasImageIds : []) {
+    const img = store.getCanvasImage(id)
+    if (!img || img.userId !== user.id || img.topicId !== topic.id) {
+      throw new ServiceError(400, '参考图不存在或不属于当前任务。')
+    }
+    validRefs.push(id)
+  }
+
+  const cost = input.count
+  const updated = store.deductCredits(user.id, cost)
+  if (!updated) throw new ServiceError(402, '额度不足，请先充值。')
+
+  const size = sizeCheck.value
+  const message = store.createMessage({
+    topicId: topic.id,
+    userId: user.id,
+    prompt: input.prompt.trim(),
+    finalPrompt: input.prompt.trim(),
+    size,
+    requestedCount: input.count,
+    enhancePrompt: !!input.enhance,
+    referenceIds: validRefs,
+  })
+  store.setTopicActive(topic.id, message.id, input.prompt.trim(), 'pending')
+
+  return {
+    prompt: input.prompt.trim(),
+    topic: store.getTopic(topic.id)!,
+    messageId: message.id,
+    queued: true,
+    user: updated,
+  }
+}
+
+function validateCountOf(count: number): string | null {
+  if (!Number.isInteger(count) || count < 1 || count > 12) return '张数需在 1–12 之间。'
+  return null
+}
+
+function summarize(prompt: string): string {
+  const t = prompt.trim().replace(/\s+/g, ' ')
+  return t.length > 18 ? t.slice(0, 18) : t || '新任务'
+}
+
+// ---------- worker 执行单条消息 ----------
+
+export interface WorkerDeps {
+  store: MotifStore
+  provider: ImageProvider
+  dataDir: string
+  workerId: string
+}
+
+export async function executeMessage(deps: WorkerDeps, messageId: string): Promise<void> {
+  const { store, provider, dataDir } = deps
+  const msg = store.getMessage(messageId)
+  if (!msg) return
+
+  try {
+    // 图生图：读取参考图文件传给 Provider（网关 images/edits 端点）
+    const referenceImages = (msg.referenceIds ?? []).flatMap((id) => {
+      const meta = store.getCanvasImage(id)
+      if (!meta) return []
+      try {
+        return [{ buffer: readFileSync(storagePathFor(dataDir, meta.imageKey)), mimeType: meta.mimeType }]
+      } catch {
+        return [] // 参考图文件缺失时降级为纯文生图
+      }
+    })
+
+    for (let i = 0; i < msg.requestedCount; i++) {
+      // 取消检查：canceling 状态时停止并把剩余张数退回
+      const current = store.getMessage(messageId)
+      if (!current || current.status === 'canceling' || current.status === 'canceled') break
+
+      const img = await provider.generate({
+        prompt: msg.finalPrompt,
+        size: msg.size,
+        seedText: msg.id,
+        referenceImages,
+        indexInBatch: i,
+      })
+      const ext = img.mimeType.includes('png') ? 'png' : img.mimeType.includes('jpeg') ? 'jpg' : 'webp'
+      const imageKey = buildImageKey(msg.userId, msg.topicId, msg.id, `${randomUUID()}.${ext}`)
+      const abs = storagePathFor(dataDir, imageKey)
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, img.buffer)
+      store.insertCanvasImage({
+        topicId: msg.topicId,
+        userId: msg.userId,
+        messageId: msg.id,
+        origin: 'generated',
+        name: `图片 ${i + 1}`,
+        imageKey,
+        mimeType: img.mimeType,
+        bytes: img.buffer.length,
+        width: img.width,
+        height: img.height,
+      })
+    }
+
+    const final = store.getMessage(messageId)
+    const done = store.countGeneratedInMessage(messageId)
+    if (final && (final.status === 'canceling' || final.status === 'canceled')) {
+      finishCancel(store, msg, done)
+    } else {
+      store.setMessageStatus(messageId, 'completed')
+      store.setTopicActive(msg.topicId, null, null, 'idle')
+    }
+  } catch (e) {
+    const done = store.countGeneratedInMessage(messageId)
+    const refund = msg.requestedCount - done
+    if (refund > 0) store.addCredits(msg.userId, refund)
+    store.setMessageStatus(messageId, 'failed', e instanceof Error ? e.message : String(e))
+    store.setTopicActive(msg.topicId, null, null, 'idle')
+  }
+}
+
+export function finishCancel(store: MotifStore, msg: { id: string; topicId: string; requestedCount: number }, done: number): void {
+  const refund = msg.requestedCount - done
+  if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund)
+  store.setMessageStatus(msg.id, 'canceled')
+  store.setTopicActive(msg.topicId, null, null, 'idle')
+}
+
+// ---------- 参考图上传 ----------
+
+export function saveReferenceImage(
+  store: MotifStore,
+  dataDir: string,
+  user: User,
+  topicId: string,
+  file: { buffer: Buffer; mimeType: string }
+): CanvasImage {
+  const topic = store.getTopic(topicId)
+  if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
+  const ext = file.mimeType.includes('png') ? 'png' : file.mimeType.includes('webp') ? 'webp' : 'jpg'
+  const imageKey = buildImageKey(user.id, topicId, null, `${randomUUID()}.${ext}`)
+  const abs = storagePathFor(dataDir, imageKey)
+  mkdirSync(dirname(abs), { recursive: true })
+  writeFileSync(abs, file.buffer)
+  return store.insertCanvasImage({
+    topicId,
+    userId: user.id,
+    messageId: null,
+    origin: 'uploaded',
+    name: '参考图',
+    imageKey,
+    mimeType: file.mimeType,
+    bytes: file.buffer.length,
+    width: 0,
+    height: 0,
+  })
+}
+
+// ---------- billing / redeem ----------
+
+export const CREDIT_PACKAGES = [
+  { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' },
+  { id: 'credits_100', label: '100 张额度', credits: 100, amountTotal: 1736, currency: 'hkd' },
+  { id: 'credits_200', label: '200 张额度', credits: 200, amountTotal: 3472, currency: 'hkd' },
+  { id: 'credits_500', label: '500 张额度', credits: 500, amountTotal: 8680, currency: 'hkd' },
+]
+
+export function redeem(store: MotifStore, user: User, code: string): User {
+  if (!code || !code.trim()) throw new ServiceError(400, '请输入 CDK。')
+  const credits = store.redeemCdk(code.trim(), user.id)
+  if (credits === null) throw new ServiceError(400, 'CDK 无效或已被使用。')
+  return store.addCredits(user.id, credits)
+}
+
+/**
+ * 计费模式：mock（演示收银台，默认）| live（预留真实支付渠道接入位）。
+ * 安全基线：live 模式下 mock 支付端点一律 403，防止公开部署被"免费印钞"。
+ */
+export function billingMode(): 'mock' | 'live' {
+  return (process.env.MOTIF_BILLING_MODE || 'mock').toLowerCase() === 'live' ? 'live' : 'mock'
+}

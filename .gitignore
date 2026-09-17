@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.turbo/
+dist/
+*.tsbuildinfo
+.data/
+.data-e2e/
+.data-accept/
+data/
+.DS_Store
+.env
+.env.*
+!.env.example

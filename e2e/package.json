@@ -1,0 +1,10 @@
+{
+  "name": "@motif/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Motif 端到端与验收测试（ego-browser 驱动，直跑真实生图网关）",
+  "scripts": {
+    "e2e": "bash run.sh",
+    "acceptance": "bash acceptance.sh"
+  }
+}

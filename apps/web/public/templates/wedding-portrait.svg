@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="683" height="1024" viewBox="0 0 683 1024">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6ece4"/><stop offset="1" stop-color="#d8c3b4"/></linearGradient></defs>
+  <rect width="683" height="1024" fill="url(#g)"/>
+  <circle cx="341" cy="330" r="120" fill="#eecfae"/>
+  <path d="M341 450 L221 700 L461 700 Z" fill="#ffffff"/>
+  <path d="M341 450 C300 560 300 640 341 700 C382 640 382 560 341 450" fill="#f9f3ec"/>
+  <circle cx="285" cy="255" r="42" fill="#7a5c48"/>
+  <text x="341" y="920" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="28" fill="#7a5c48">婚纱旅拍 · 样片</text>
+</svg>

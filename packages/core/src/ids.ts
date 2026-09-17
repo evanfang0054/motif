@@ -1,0 +1,57 @@
+/**
+ * ID 生成：统一使用 Web Crypto（Node 20+ 与浏览器均支持），
+ * 保证同一入口可安全地在客户端与服务端打包。
+ */
+
+function randomBytes(len: number): Uint8Array {
+  const buf = new Uint8Array(len)
+  globalThis.crypto.getRandomValues(buf)
+  return buf
+}
+
+const ALPHABET = '0123456789abcdef'
+
+function hex(len: number): string {
+  const bytes = randomBytes(len)
+  let out = ''
+  for (let i = 0; i < len; i++) out += ALPHABET[bytes[i] % 16]
+  return out
+}
+
+/** 实体 ID 统一为 前缀_32位hex，与公开 API 契约一致 */
+export function newUserId(): string {
+  return `usr_${hex(32)}`
+}
+export function newTopicId(): string {
+  return `top_${hex(32)}`
+}
+export function newMessageId(): string {
+  return `msg_${hex(32)}`
+}
+export function newCanvasImageId(): string {
+  return `cimg_${hex(32)}`
+}
+export function newSessionToken(): string {
+  return hex(64)
+}
+export function newOrderId(): string {
+  return `ord_${hex(24)}`
+}
+
+const INVITE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+/** 邀请码：10 位大写字母数字 */
+export function newInviteCode(): string {
+  const bytes = randomBytes(10)
+  let out = ''
+  for (let i = 0; i < 10; i++) out += INVITE_ALPHABET[bytes[i] % INVITE_ALPHABET.length]
+  return out
+}
+
+/** 6 位数字邮箱验证码 */
+export function newVerificationCode(): string {
+  const bytes = randomBytes(6)
+  let out = ''
+  for (let i = 0; i < 6; i++) out += String(bytes[i] % 10)
+  return out
+}

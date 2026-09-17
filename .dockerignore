@@ -1,0 +1,13 @@
+# 构建上下文排除：镜像内重新安装依赖，绝不把本地文件/密钥带进去
+node_modules
+**/node_modules
+**/.next
+**/.data
+**/.data-e2e
+**/.data-accept
+**/data
+**/.env
+**/.env.*
+.git
+*.log
+.DS_Store

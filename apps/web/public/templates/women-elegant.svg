@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="683" height="1024" viewBox="0 0 683 1024">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2126"/><stop offset="1" stop-color="#120d10"/></linearGradient></defs>
+  <rect width="683" height="1024" fill="url(#g)"/>
+  <circle cx="341" cy="320" r="125" fill="#f0c9a2"/>
+  <path d="M341 445 C221 560 181 720 201 860 L481 860 C501 720 461 560 341 445" fill="#8c2f3a"/>
+  <path d="M201 860 Q341 920 481 860" stroke="#b0505c" stroke-width="8" fill="none"/>
+  <text x="341" y="940" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="28" fill="#f2dfe2" opacity="0.92">女士轻奢 · 封面感</text>
+</svg>

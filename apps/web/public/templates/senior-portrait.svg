@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="683" height="1024" viewBox="0 0 683 1024">
+  <rect width="683" height="1024" fill="#4a3f38"/>
+  <ellipse cx="341" cy="1024" rx="420" ry="220" fill="#5a4c42"/>
+  <circle cx="341" cy="360" r="140" fill="#e6c39a"/>
+  <path d="M201 360 Q341 180 481 360 Q481 300 341 260 Q201 300 201 360" fill="#cfcfcf"/>
+  <rect x="221" y="520" width="240" height="320" rx="80" fill="#6e5a4a"/>
+  <text x="341" y="930" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="28" fill="#f0e6da" opacity="0.9">长辈纪念 · 棚拍</text>
+</svg>

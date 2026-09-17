@@ -1,0 +1,22 @@
+{
+  "name": "motif",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Motif — AI 商业图片批量生成工作台（monorepo）",
+  "scripts": {
+    "dev": "pnpm --filter @motif/web dev",
+    "build": "pnpm --filter @motif/web build",
+    "start": "pnpm --filter @motif/web start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "bash e2e/run.sh",
+    "cdk": "node scripts/cdk.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "devDependencies": {
+    "better-sqlite3": "^12.2.0"
+  }
+}

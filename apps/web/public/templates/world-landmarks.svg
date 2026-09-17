@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="640" viewBox="0 0 800 640">
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2b26b"/><stop offset="1" stop-color="#7a5a8c"/></linearGradient></defs>
+  <rect width="800" height="640" fill="url(#sky)"/>
+  <circle cx="620" cy="150" r="60" fill="#ffd98c"/>
+  <rect x="120" y="220" width="90" height="320" fill="#2d2a3a"/>
+  <polygon points="165,120 120,220 210,220" fill="#2d2a3a"/>
+  <rect x="420" y="260" width="260" height="280" fill="#241f30"/>
+  <polygon points="550,180 420,260 680,260" fill="#241f30"/>
+  <ellipse cx="400" cy="560" rx="330" ry="30" fill="#00000033"/>
+  <text x="400" y="612" text-anchor="middle" font-family="PingFang SC, sans-serif" font-size="26" fill="#ffffff" opacity="0.9">环球地标 · 旅拍</text>
+</svg>
