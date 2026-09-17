@@ -5,11 +5,12 @@
  * 缺生图配置时降级为日志告警（保持旧行为：请求路径懒启动时才报错），不让进程起不来。
  */
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return
-  try {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { startWorker } = await import('./server/worker')
-    startWorker()
-  } catch (e) {
-    console.error('[motif] 启动队列 worker 失败（将在首个生图请求时重试懒启动）:', e)
+    try {
+      startWorker()
+    } catch (e) {
+      console.error('[motif] 启动队列 worker 失败（将在首个生图请求时重试懒启动）:', e)
+    }
   }
 }

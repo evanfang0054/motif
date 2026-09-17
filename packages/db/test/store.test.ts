@@ -175,3 +175,40 @@ describe('storage helpers', () => {
     expect(readFileSync(abs).length).toBe(3)
   })
 })
+
+describe('findReusableTopic（新任务复用）', () => {
+  it('无任何会话返回 null', () => {
+    const u = store.createUser({ email: 'ru0@b.co', passwordHash: 'h', name: 'ru0' })
+    expect(store.findReusableTopic(u.id)).toBeNull()
+  })
+
+  it('存在 idle 0 图会话：返回最近更新的那个', () => {
+    const u = store.createUser({ email: 'ru1@b.co', passwordHash: 'h', name: 'ru1' })
+    const t1 = store.createTopic(u.id, '旧空会话')
+    const t2 = store.createTopic(u.id, '新空会话')
+    // 同毫秒创建会令 updated_at 并列（次级 id 排序不确定），回拨 t1 使排序断言确定性
+    store.db.prepare('UPDATE topics SET updated_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', t1.id)
+    const got = store.findReusableTopic(u.id)
+    expect(got?.id).toBe(t2.id)
+    expect(got?.id).not.toBe(t1.id)
+  })
+
+  it('有图会话（含 uploaded 参考图）与非 idle 会话都不可复用', () => {
+    const u = store.createUser({ email: 'ru2@b.co', passwordHash: 'h', name: 'ru2' })
+    const withImg = store.createTopic(u.id, '有图会话')
+    store.insertCanvasImage({
+      topicId: withImg.id, userId: u.id, messageId: null, origin: 'uploaded',
+      name: '参考图', imageKey: 'k', mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+    })
+    const busy = store.createTopic(u.id, '生成中会话')
+    store.setTopicActive(busy.id, null, null, 'pending')
+    expect(store.findReusableTopic(u.id)).toBeNull()
+  })
+
+  it('其他用户的空会话不复用（按用户隔离）', () => {
+    const a = store.createUser({ email: 'ru3@b.co', passwordHash: 'h', name: 'ru3' })
+    const b = store.createUser({ email: 'ru4@b.co', passwordHash: 'h', name: 'ru4' })
+    store.createTopic(a.id, 'a 的空会话')
+    expect(store.findReusableTopic(b.id)).toBeNull()
+  })
+})

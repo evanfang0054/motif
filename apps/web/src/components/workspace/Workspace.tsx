@@ -196,17 +196,24 @@ function Workspace({ initialUser }: { initialUser: User }) {
     }
   }, [detail, refreshDetail, showToast])
 
+  const creatingRef = useRef(false)
   const createTopic = useCallback(async () => {
-    const { topic } = await fetch('/api/topics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '新任务' }),
-    }).then((r) => r.json() as Promise<{ topic: Topic }>)
-    setPanel(IDLE_PANEL)
-    setActiveId(topic.id)
-    await refreshTopics()
-    setDrawerOpen(false)
-    showToast('已新建任务')
+    if (creatingRef.current) return // 防连点：进行中忽略后续点击
+    creatingRef.current = true
+    try {
+      const { topic, reused } = await fetch('/api/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '新任务' }),
+      }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
+      setPanel(IDLE_PANEL)
+      setActiveId(topic.id)
+      await refreshTopics()
+      setDrawerOpen(false)
+      showToast(reused ? '已回到未使用的任务' : '已新建任务')
+    } finally {
+      creatingRef.current = false
+    }
   }, [refreshTopics, showToast])
 
   const renameTopic = useCallback(
