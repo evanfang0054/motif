@@ -124,7 +124,7 @@ await wait(4)
 const ws = await js(String.raw`(() => ({
   shell: !!document.querySelector('.ws-shell'),
   gallery: document.body.innerText.includes('选一个模板，成套出图'),
-  credits: (document.querySelector('.ws-nav').innerText.match(/(?:余额 )?(\d+) 张/) || [])[1] || null,
+  credits: (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1] || null,
 }))()`)
 cliLog('WORKSPACE ' + JSON.stringify(ws))
 if (!ws.shell || !ws.gallery) throw new Error('注册后未进入工作台')
@@ -208,7 +208,7 @@ if (!loaded.every(Boolean)) throw new Error('存在未加载完成的图片')
 cliLog('IMAGES_LOADED ' + JSON.stringify(loaded))
 
 // 额度应扣减为 1
-const credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额 )?(\d+) 张/) || [])[1])()`)
+const credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
 cliLog('CREDITS_AFTER_GEN ' + credits)
 if (credits !== '1') throw new Error('生成后额度应为 1，实际: ' + credits)
 EOF
@@ -287,7 +287,7 @@ await js(String.raw`(() => {
 let credits = null
 for (let i = 0; i < 15; i++) {
   await wait(1)
-  credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额 )?(\d+) 张/) || [])[1])()`)
+  credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
   if (credits === '51') break
 }
 cliLog('CREDITS_AFTER_PAY ' + credits)
