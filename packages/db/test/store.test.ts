@@ -212,3 +212,22 @@ describe('findReusableTopic（新任务复用）', () => {
     expect(store.findReusableTopic(b.id)).toBeNull()
   })
 })
+
+describe('deleteCanvasImages（批量删除）', () => {
+  it('只删除列出的行，忽略不存在的 id', () => {
+    const u = store.createUser({ email: 'bd1@b.co', passwordHash: 'h', name: 'bd1' })
+    const t = store.createTopic(u.id, '批量删除')
+    const mk = (key: string) =>
+      store.insertCanvasImage({
+        topicId: t.id, userId: u.id, messageId: null, origin: 'generated',
+        name: key, imageKey: key, mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+      })
+    const a = mk('a'), b = mk('b'), c = mk('c')
+    store.deleteCanvasImages([a.id, c.id, 'cimg_missing'])
+    expect(store.getCanvasImage(a.id)).toBeNull()
+    expect(store.getCanvasImage(c.id)).toBeNull()
+    expect(store.getCanvasImage(b.id)?.id).toBe(b.id)
+    store.deleteCanvasImages([]) // 空数组不抛错
+    expect(store.listCanvasImages(t.id).length).toBe(1)
+  })
+})
