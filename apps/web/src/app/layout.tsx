@@ -11,10 +11,16 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
+const THEME_INIT = `(function(){try{var m=localStorage.getItem('motif-theme')||'light';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.dataset.theme='dark';else delete document.documentElement.dataset.theme}catch(e){}})()`
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN" className="h-full">
-      <body className="min-h-full antialiased">{children}</body>
+      <body className="min-h-full antialiased">
+        {/* 首帧主题解析：默认浅色；读取 localStorage 三态，防闪烁 */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        {children}
+      </body>
     </html>
   )
 }
