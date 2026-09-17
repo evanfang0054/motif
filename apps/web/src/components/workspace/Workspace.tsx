@@ -52,20 +52,29 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, dwellMs = 2600) => {
     setToast(msg)
     if (toastTimer.current) clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 2600)
+    // 失败/退款等重要提示驻留更久，普通操作反馈保持轻量
+    toastTimer.current = setTimeout(() => setToast(null), dwellMs)
   }, [])
 
-  /** 统一入口：写 detail 前检测「取消完成」状态迁移，弹出退额提示 */
+  /** 统一入口：写 detail 前检测消息状态迁移（取消/失败/完成），弹出对应提示 */
   const applyDetail = useCallback(
     (d: TopicDetail) => {
       const active = d.messages.find((m) => m.id === d.topic.activeMessageId) ?? d.messages[d.messages.length - 1]
-      if (active && active.status === 'canceled' && lastMsgStatusRef.current && lastMsgStatusRef.current !== 'canceled') {
-        const done = d.canvasImages.filter((i) => i.messageId === active.id).length
-        const refund = active.requestedCount - done
-        if (refund > 0) showToast(`任务已取消，未完成的 ${refund} 张额度已退回。`)
+      // 切换任务时不提示历史状态，只同步基线
+      const topicChanged = detailRef.current !== null && detailRef.current.topic.id !== d.topic.id
+      if (active && !topicChanged && lastMsgStatusRef.current && lastMsgStatusRef.current !== active.status) {
+        if (active.status === 'canceled') {
+          const done = d.canvasImages.filter((i) => i.messageId === active.id).length
+          const refund = active.requestedCount - done
+          if (refund > 0) showToast(`任务已取消，未完成的 ${refund} 张额度已退回。`, 6000)
+        } else if (active.status === 'failed') {
+          showToast(`生成失败：${active.error ?? '未知原因'}。`, 6000)
+        } else if (active.status === 'completed') {
+          showToast('生成完成 ✓')
+        }
       }
       if (active) lastMsgStatusRef.current = active.status
       detailRef.current = d
@@ -181,7 +190,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       await refreshDetail(res.topic.id)
       showToast('任务已加入队列，后台生成中。')
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '提交失败，请重试。')
+      showToast(e instanceof Error ? e.message : '提交失败，请重试。', 4000)
     }
   }, [panel, activeId, refreshTopics, refreshDetail, showToast])
 

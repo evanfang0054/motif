@@ -278,9 +278,21 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     const done = store.countGeneratedInMessage(messageId)
     const refund = msg.requestedCount - done
     if (refund > 0) store.addCredits(msg.userId, refund)
-    store.setMessageStatus(messageId, 'failed', e instanceof Error ? e.message : String(e))
+    const raw = e instanceof Error ? e.message : String(e)
+    console.error('[motif] 生成失败:', raw)
+    store.setMessageStatus(messageId, 'failed', friendlyGenerateError(raw, refund))
     store.setTopicActive(msg.topicId, null, null, 'idle')
   }
+}
+
+/** 面向用户的失败文案：剥离网关原始 JSON，附带退额信息（原始错误走服务端日志） */
+export function friendlyGenerateError(raw: string, refund: number): string {
+  const refunded = refund > 0 ? `，已退还 ${refund} 张额度` : ''
+  const code = raw.match(/生图接口失败（(\d+)）/)
+  if (code) return `生图服务暂时不可用（网关 ${code[1]}）${refunded}`
+  if (/timeout|timed?\s?out|abort|ETIMEDOUT|ECONN/i.test(raw)) return `生图请求超时${refunded}，请稍后重试`
+  if (/余额不足|额度不足/.test(raw)) return raw.slice(0, 80)
+  return `生成失败：${raw.slice(0, 60)}${refunded}`
 }
 
 export function finishCancel(store: MotifStore, msg: { id: string; topicId: string; requestedCount: number }, done: number): void {

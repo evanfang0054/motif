@@ -219,6 +219,12 @@ body {
   font-size: 16px;
 }
 
+/* 品牌链接点击目标放大（负 margin 抵消布局位移，全端 ≥40px） */
+.lp-brand {
+  padding: 8px 10px;
+  margin: -8px -10px;
+}
+
 .lp-main {
   width: 100%;
   max-width: 1120px;
@@ -815,8 +821,8 @@ body {
 .canvas-tool-btn {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -1100,7 +1106,7 @@ body {
   color: var(--muted);
   font-size: 12px;
   line-height: 1;
-  padding: 7px 10px;
+  padding: 10px 10px; /* 点击目标 ≥32px */
   cursor: pointer;
 }
 .ws-theme-opt + .ws-theme-opt {
