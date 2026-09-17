@@ -760,6 +760,15 @@ body {
   pointer-events: none;
 }
 
+/* 框选选框（屏幕坐标覆盖层，不拦截指针） */
+.canvas-marquee {
+  position: absolute;
+  z-index: 20;
+  border: 1px dashed var(--brand-warm);
+  background: color-mix(in srgb, var(--brand-warm) 12%, transparent);
+  pointer-events: none;
+}
+
 /* 选中图片上方的浮动工具栏 */
 .canvas-toolbar {
   position: absolute;

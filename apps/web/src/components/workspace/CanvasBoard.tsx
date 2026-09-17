@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CanvasImage } from '@motif/core'
+import { hitTest, toWorld, type Rect } from './canvas-geometry'
 
 /**
  * 交互画布：图片卡片在世界坐标中自由拖拽定位，
@@ -52,17 +53,19 @@ function boundsOf(images: CanvasImage[], positions: Record<string, Pos>) {
 
 interface Props {
   images: CanvasImage[]
-  onRemove: (img: CanvasImage) => void
+  onRemoveImages: (imgs: CanvasImage[]) => void
   onAddReference: (img: CanvasImage) => void
 }
 
-function CanvasBoard({ images, onRemove, onAddReference }: Props) {
+function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 })
   const [positions, setPositions] = useState<Record<string, Pos>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [preview, setPreview] = useState<CanvasImage | null>(null)
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const dragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; orig: Pos; moved: boolean } | null>(null)
+  const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null)
   const fittedRef = useRef<string | null>(null)
 
   // 新图片出现时分配下一个网格槽位
@@ -192,8 +195,49 @@ function CanvasBoard({ images, onRemove, onAddReference }: Props) {
 
   const onCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
-    // 点/拖空白：取消全部选中
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const sx = e.clientX - rect.left
+    const sy = e.clientY - rect.top
+    // 点击/拖空白：先清空选中（拖动后由框选命中重设）
     setSelected((prev) => (prev.size ? new Set<string>() : prev))
+    marqueeRef.current = { pointerId: e.pointerId, startX: sx, startY: sy, moved: false }
+    setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy })
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }, [])
+
+  const onCanvasPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const m = marqueeRef.current
+      if (!m || m.pointerId !== e.pointerId) return
+      const el = containerRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+      if (!m.moved) {
+        if (Math.hypot(sx - m.startX, sy - m.startY) < 3) return
+        m.moved = true // 位移达阈值才算框选，否则保持「点击空白清空选中」语义
+      }
+      setMarquee({ x1: m.startX, y1: m.startY, x2: sx, y2: sy })
+      // 实时命中预览：屏幕选框 → 世界坐标 → 与卡片矩形相交
+      const a = toWorld(Math.min(m.startX, sx), Math.min(m.startY, sy), view)
+      const b = toWorld(Math.max(m.startX, sx), Math.max(m.startY, sy), view)
+      const cards = images.flatMap((img) => {
+        const p = positions[img.id]
+        return p ? [{ id: img.id, rect: { x: p.x, y: p.y, w: CARD_W, h: cardHeight(img) } as Rect }] : []
+      })
+      setSelected(new Set(hitTest(cards, { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y })))
+    },
+    [view, images, positions]
+  )
+
+  const onCanvasPointerUp = useCallback((e: React.PointerEvent) => {
+    const m = marqueeRef.current
+    if (!m || m.pointerId !== e.pointerId) return
+    marqueeRef.current = null
+    setMarquee(null)
   }, [])
 
   // ---------- 键盘：Esc 清除选中 / 关闭预览 ----------
@@ -227,6 +271,23 @@ function CanvasBoard({ images, onRemove, onAddReference }: Props) {
     }
   }, [selected, images, positions, view])
 
+  // 多选（≥2）：计算选中包围盒的屏幕位置，供批量工具栏定位
+  const multiSelected = useMemo(() => {
+    if (selected.size < 2) return null
+    const imgs = images.filter((i) => selected.has(i.id))
+    if (imgs.length === 0) return null
+    const pts = imgs.map((img) => positions[img.id]).filter((p): p is Pos => Boolean(p))
+    if (pts.length === 0) return null
+    const minX = Math.min(...pts.map((p) => p.x))
+    const minY = Math.min(...pts.map((p) => p.y))
+    const maxX = Math.max(...pts.map((p) => p.x + CARD_W))
+    return {
+      imgs,
+      screenX: (minX + (maxX - minX) / 2) * view.scale + view.x,
+      screenY: minY * view.scale + view.y - 12,
+    }
+  }, [selected, images, positions, view])
+
   return (
     <div className="relative min-h-full select-none" style={{ background: 'var(--canvas-background)' }}>
       {/* 世界画布 */}
@@ -235,6 +296,8 @@ function CanvasBoard({ images, onRemove, onAddReference }: Props) {
         className="canvas-stage relative h-full w-full overflow-hidden touch-none"
         style={{ minHeight: 'calc(100dvh - 64px)' }}
         onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={onCanvasPointerUp}
         onWheel={(e) => {
           e.preventDefault()
           const el = containerRef.current
@@ -271,6 +334,19 @@ function CanvasBoard({ images, onRemove, onAddReference }: Props) {
           })}
         </div>
 
+        {/* 框选选框（屏幕坐标覆盖层） */}
+        {marquee && marqueeRef.current?.moved && (
+          <div
+            className="canvas-marquee"
+            style={{
+              left: Math.min(marquee.x1, marquee.x2),
+              top: Math.min(marquee.y1, marquee.y2),
+              width: Math.abs(marquee.x2 - marquee.x1),
+              height: Math.abs(marquee.y2 - marquee.y1),
+            }}
+          />
+        )}
+
         {/* 选中图片上方浮动工具栏 */}
         {singleSelected && (
           <div
@@ -295,10 +371,30 @@ function CanvasBoard({ images, onRemove, onAddReference }: Props) {
               </svg>
             </a>
             <span className="canvas-tool-divider" />
-            <button type="button" className="canvas-tool-btn canvas-tool-btn-danger" title="删除所选图片" onClick={() => onRemove(singleSelected.img)}>
+            <button type="button" className="canvas-tool-btn canvas-tool-btn-danger" title="删除所选图片" onClick={() => onRemoveImages([singleSelected.img])}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               </svg>
+            </button>
+          </div>
+        )}
+
+        {/* 多选批量工具栏 */}
+        {multiSelected && (
+          <div
+            className="canvas-toolbar"
+            style={{ left: multiSelected.screenX, top: multiSelected.screenY }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span className="canvas-tool-btn canvas-tool-btn-text">已选 {multiSelected.imgs.length} 张</span>
+            <span className="canvas-tool-divider" />
+            <button
+              type="button"
+              className="canvas-tool-btn canvas-tool-btn-danger"
+              title="删除所选图片"
+              onClick={() => onRemoveImages(multiSelected.imgs)}
+            >
+              删除
             </button>
           </div>
         )}
