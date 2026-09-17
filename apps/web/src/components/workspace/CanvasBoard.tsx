@@ -83,6 +83,15 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
     })
   }, [images])
 
+  // 图片被移除后，同步清掉选中集里已不存在的 id（避免残留「已选 N」）
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => images.some((img) => img.id === id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [images])
+
   const fitView = useCallback(
     (imgs: CanvasImage[], positionsMap: Record<string, Pos>) => {
       const el = containerRef.current
