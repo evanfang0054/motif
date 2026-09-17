@@ -94,7 +94,7 @@ const script = String.raw`(() => {
 await js(script)
 await js(String.raw`(() => { [...document.querySelectorAll('#auth form button[type="submit"]')][0].click(); return true })()`)
 await wait(4)
-const credits = await js(String.raw`(() => (document.body.innerText.match(/余额 (\d+) 张/) || [])[1])()`)
+const credits = await js(String.raw`(() => (document.body.innerText.match(/(?:余额 )?(\d+) 张/) || [])[1])()`)
 cliLog('registered, credits=' + credits)
 if (credits !== '3') throw new Error('注册赠送应为 3，实际 ' + credits)
 EOF
@@ -131,7 +131,7 @@ await js(String.raw`(() => {
 let credits = null
 for (let i = 0; i < 10; i++) {
   await wait(1)
-  credits = await js(String.raw`(() => (document.body.innerText.match(/余额 (\d+) 张/) || [])[1])()`)
+  credits = await js(String.raw`(() => (document.body.innerText.match(/(?:余额 )?(\d+) 张/) || [])[1])()`)
   if (credits === '23') break
 }
 cliLog('CDK redeem → credits=' + credits)
@@ -199,7 +199,7 @@ echo "[accept] D: cancel with refund conservation"
 ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
-const before = await js(String.raw`(() => Number((document.body.innerText.match(/余额 (\d+) 张/) || [])[1]))()`)
+const before = await js(String.raw`(() => Number((document.body.innerText.match(/(?:余额 )?(\d+) 张/) || [])[1]))()`)
 const beforeImgs = await js(String.raw`document.querySelectorAll('.canvas-img-card img').length`)
 cliLog(`before: credits=${before} imgs=${beforeImgs}`)
 
@@ -237,7 +237,7 @@ for (let i = 0; i < 60; i++) {
 if (!idle) throw new Error('任务未回到空闲态')
 await wait(2)
 
-const after = await js(String.raw`(() => Number((document.body.innerText.match(/余额 (\d+) 张/) || [])[1]))()`)
+const after = await js(String.raw`(() => Number((document.body.innerText.match(/(?:余额 )?(\d+) 张/) || [])[1]))()`)
 const afterImgs = await js(String.raw`document.querySelectorAll('.canvas-img-card img').length`)
 const newImgs = afterImgs - beforeImgs
 cliLog(`after: credits=${after} newImgs=${newImgs} conservation=${after}+${newImgs}==${before}`)
