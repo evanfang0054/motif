@@ -13,3 +13,4 @@ data/
 !.env.example
 !CLAUDE.md
 !AGENTS.md
+!CONTEXT.md
