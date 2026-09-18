@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { MotifStore, buildImageKey, storagePathFor } from '../src/index'
 
 let dir: string
@@ -229,5 +230,132 @@ describe('deleteCanvasImages（批量删除）', () => {
     expect(store.getCanvasImage(b.id)?.id).toBe(b.id)
     store.deleteCanvasImages([]) // 空数组不抛错
     expect(store.listCanvasImages(t.id).length).toBe(1)
+  })
+})
+
+describe('三级角色与用户状态', () => {
+  it('新建用户默认 active、不强制改密、角色 user', () => {
+    const s = new MotifStore(join(dir, 't.db'))
+    const u = s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
+    expect(u.role).toBe('user')
+    expect(u.status).toBe('active')
+    expect(u.mustChangePassword).toBe(false)
+    s.close()
+  })
+
+  it('可创建 root 账号并统计各角色数量', () => {
+    const s = new MotifStore(join(dir, 't2.db'))
+    s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
+    const root = s.createUser({ email: 'r@b.co', passwordHash: 'h', name: '超管', role: 'root', mustChangePassword: true })
+    expect(root.role).toBe('root')
+    expect(root.mustChangePassword).toBe(true)
+    expect(s.countUsersByRole('root')).toBe(1)
+    expect(s.countUsersByRole('user')).toBe(1)
+    expect(s.countUsersByRole('admin')).toBe(0)
+    s.close()
+  })
+
+  it('改角色与启用状态生效，禁用写入 disabled_at、启用清空', () => {
+    const s = new MotifStore(join(dir, 't3.db'))
+    const u = s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
+    s.updateUserRole(u.id, 'admin')
+    expect(s.getUserById(u.id)!.role).toBe('admin')
+
+    s.setUserStatus(u.id, 'disabled')
+    expect(s.getUserById(u.id)!.status).toBe('disabled')
+    // disabled_at 列本身必须被写入（User 类型不暴露该字段，直查数据库）
+    const disabledAt = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as { disabled_at: string | null }
+    expect(disabledAt.disabled_at).not.toBeNull()
+
+    s.setUserStatus(u.id, 'active')
+    expect(s.getUserById(u.id)!.status).toBe('active')
+    const cleared = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as { disabled_at: string | null }
+    expect(cleared.disabled_at).toBeNull()
+    s.close()
+  })
+
+  it('审计表可写入并按操作者查回', () => {
+    const s = new MotifStore(join(dir, 't4.db'))
+    const u = s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
+    s.insertAudit({ actorId: u.id, action: 'credit.adjust', targetType: 'user', targetId: u.id, detail: '{"delta":10,"reason":"补偿"}' })
+    const rows = s.listAudit({ actorId: u.id })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].action).toBe('credit.adjust')
+    expect(rows[0].detail).toContain('补偿')
+    s.close()
+  })
+})
+
+describe('旧库迁移（真旧 schema → 新 schema）', () => {
+  // 手工建「加列之前」的库，并塞入存量行，用于真正执行 7 条 ALTER 迁移路径
+  function makeLegacyDb(file: string): void {
+    const db = new Database(file)
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+        name TEXT NOT NULL, avatar_url TEXT, role TEXT NOT NULL DEFAULT 'user',
+        credits INTEGER NOT NULL DEFAULT 0, invite_code TEXT NOT NULL UNIQUE,
+        invited_by TEXT, invited_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE cdks (code TEXT PRIMARY KEY, credits INTEGER NOT NULL, redeemed_by TEXT, redeemed_at TEXT, created_at TEXT NOT NULL);
+      CREATE TABLE feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
+    `)
+    const t = '2026-01-01T00:00:00.000Z'
+    db.prepare('INSERT INTO users (id, email, password_hash, name, role, credits, invite_code, invited_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run('usr_legacy', 'legacy@b.co', 'scrypt$s$h', '老用户', 'user', 7, 'LEGACYCODE', 0, t, t)
+    db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?,?,?)').run('OLD-CODE', 5, t)
+    db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?,?,?)').run('usr_legacy', '老反馈', t)
+    db.close()
+  }
+
+  it('在存量旧库上应用迁移：既有行不变、新列取到声明默认值、新表可用', () => {
+    const file = join(dir, 'legacy.db')
+    makeLegacyDb(file)
+
+    // 构造 store 即触发 applySchema 的 CREATE + 7 条 ALTER
+    const s = new MotifStore(file)
+
+    // 既有行不丢、原有字段不变
+    const legacy = s.getUserById('usr_legacy')!
+    expect(legacy.email).toBe('legacy@b.co')
+    expect(legacy.credits).toBe(7)
+    expect(legacy.inviteCode).toBe('LEGACYCODE')
+
+    // 新列取到声明默认值
+    expect(legacy.status).toBe('active')
+    expect(legacy.mustChangePassword).toBe(false)
+
+    const cdk = s.db.prepare('SELECT credits, revoked_at FROM cdks WHERE code = ?').get('OLD-CODE') as { credits: number; revoked_at: string | null }
+    expect(cdk.credits).toBe(5)
+    expect(cdk.revoked_at).toBeNull()
+
+    const fb = s.db.prepare('SELECT content, status, resolved_at, resolved_by FROM feedback WHERE user_id = ?').get('usr_legacy') as {
+      content: string
+      status: string
+      resolved_at: string | null
+      resolved_by: string | null
+    }
+    expect(fb.content).toBe('老反馈')
+    expect(fb.status).toBe('pending')
+    expect(fb.resolved_at).toBeNull()
+    expect(fb.resolved_by).toBeNull()
+
+    // 新表已建
+    s.insertAudit({ actorId: 'usr_legacy', action: 'settings.update' })
+    expect(s.listAudit()).toHaveLength(1)
+
+    s.close()
+  })
+
+  it('迁移幂等：对同一新库重复构造 store 不抛错且数据不变', () => {
+    const file = join(dir, 'twice.db')
+    const s1 = new MotifStore(file)
+    const u = s1.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
+    s1.close()
+    const s2 = new MotifStore(file)
+    expect(s2.getUserById(u.id)!.email).toBe('a@b.co')
+    expect(s2.getUserById(u.id)!.status).toBe('active')
+    s2.close()
   })
 })

@@ -17,6 +17,8 @@ import {
   type Topic,
   type TopicDetail,
   type User,
+  type UserRole,
+  type UserStatus,
 } from '@motif/core'
 import { applySchema } from './schema'
 
@@ -41,12 +43,25 @@ interface UserRow {
   name: string
   avatar_url: string | null
   role: string
+  status: string
+  must_change_password: number
+  disabled_at: string | null
   credits: number
   invite_code: string
   invited_by: string | null
   invited_count: number
   created_at: string
   updated_at: string
+}
+
+interface AuditRow {
+  id: number
+  actor_id: string
+  action: string
+  target_type: string | null
+  target_id: string | null
+  detail: string | null
+  created_at: string
 }
 
 interface TopicRow {
@@ -103,6 +118,8 @@ function rowToUser(r: UserRow): User {
     name: r.name,
     avatarUrl: r.avatar_url,
     role: r.role as User['role'],
+    status: (r.status ?? 'active') as UserStatus,
+    mustChangePassword: !!r.must_change_password,
     credits: r.credits,
     inviteCode: r.invite_code,
     invitedCount: r.invited_count,
@@ -166,6 +183,10 @@ export interface CreateUserInput {
   name: string
   invitedBy?: string | null
   credits?: number
+  /** 缺省为普通用户 */
+  role?: UserRole
+  /** 由引导或管理员重置产生时置真 */
+  mustChangePassword?: boolean
 }
 
 /** SQLite 存储层：所有持久化读写集中在这里 */
@@ -190,10 +211,22 @@ export class MotifStore {
     const inviteCode = newInviteCode()
     this.db
       .prepare(
-        `INSERT INTO users (id, email, password_hash, name, avatar_url, role, credits, invite_code, invited_by, invited_count, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, 'user', ?, ?, ?, 0, ?, ?)`
+        `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
       )
-      .run(id, input.email.toLowerCase(), input.passwordHash, input.name, input.credits ?? 0, inviteCode, input.invitedBy ?? null, t, t)
+      .run(
+        id,
+        input.email.toLowerCase(),
+        input.passwordHash,
+        input.name,
+        input.role ?? 'user',
+        input.mustChangePassword ? 1 : 0,
+        input.credits ?? 0,
+        inviteCode,
+        input.invitedBy ?? null,
+        t,
+        t
+      )
     return this.getUserById(id)!
   }
 
@@ -246,6 +279,30 @@ export class MotifStore {
   recordInvite(inviterId: string, reward: number): void {
     this.db.prepare('UPDATE users SET invited_count = invited_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), inviterId)
     if (reward > 0) this.addCredits(inviterId, reward)
+  }
+
+  countUsersByRole(role: UserRole): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS c FROM users WHERE role = ?').get(role) as { c: number }
+    return row.c
+  }
+
+  /**
+   * 更新角色。**不加保护** —— 「管理员不可操作超级管理员」「最后一个超级管理员不可降级」
+   * 是服务层契约（apps/web/src/server/admin.ts 的 assertCanModifyRole），调用方必须先过断言。
+   */
+  updateUserRole(userId: string, role: UserRole): void {
+    this.db.prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(role, nowIso(), userId)
+  }
+
+  /** 禁用时记录 disabled_at；启用时清空。保护规则同 updateUserRole。 */
+  setUserStatus(userId: string, status: UserStatus): void {
+    this.db
+      .prepare('UPDATE users SET status = ?, disabled_at = ?, updated_at = ? WHERE id = ?')
+      .run(status, status === 'disabled' ? nowIso() : null, nowIso(), userId)
+  }
+
+  setMustChangePassword(userId: string, value: boolean): void {
+    this.db.prepare('UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?').run(value ? 1 : 0, nowIso(), userId)
   }
 
   // ---------- sessions ----------
@@ -591,6 +648,45 @@ export class MotifStore {
 
   insertFeedback(userId: string, content: string): void {
     this.db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)').run(userId, content, nowIso())
+  }
+
+  // ---------- admin audit ----------
+
+  insertAudit(input: {
+    actorId: string
+    action: string
+    targetType?: string | null
+    targetId?: string | null
+    detail?: string | null
+  }): void {
+    this.db
+      .prepare('INSERT INTO admin_audit (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(input.actorId, input.action, input.targetType ?? null, input.targetId ?? null, input.detail ?? null, nowIso())
+  }
+
+  /** 审计流水（可按操作者过滤，倒序，默认上限 100 条） */
+  listAudit(filter: { actorId?: string; limit?: number } = {}): Array<{
+    id: number
+    actorId: string
+    action: string
+    targetType: string | null
+    targetId: string | null
+    detail: string | null
+    createdAt: string
+  }> {
+    const limit = filter.limit ?? 100
+    const rows = filter.actorId
+      ? (this.db.prepare('SELECT * FROM admin_audit WHERE actor_id = ? ORDER BY id DESC LIMIT ?').all(filter.actorId, limit) as AuditRow[])
+      : (this.db.prepare('SELECT * FROM admin_audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[])
+    return rows.map((r) => ({
+      id: r.id,
+      actorId: r.actor_id,
+      action: r.action,
+      targetType: r.target_type,
+      targetId: r.target_id,
+      detail: r.detail,
+      createdAt: r.created_at,
+    }))
   }
 }
 
