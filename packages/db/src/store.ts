@@ -51,6 +51,29 @@ function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: 
   return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
 }
 
+/** 按用户/状态/时间范围构造订单查询条件（供 list / count 共用，避免两处口径漂移） */
+function orderWhere(filter: { userId?: string; status?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.userId) {
+    clauses.push('user_id = ?')
+    params.push(filter.userId)
+  }
+  if (filter.status) {
+    clauses.push('status = ?')
+    params.push(filter.status)
+  }
+  if (filter.from) {
+    clauses.push('created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
 interface UserRow {
   id: string
   email: string
@@ -88,6 +111,18 @@ interface TopicRow {
   active_prompt: string | null
   created_at: string
   updated_at: string
+}
+
+interface OrderRow {
+  id: string
+  user_id: string
+  package_id: string
+  credits: number
+  amount_total: number
+  currency: string
+  status: string
+  created_at: string
+  paid_at: string | null
 }
 
 interface MessageRow {
@@ -757,6 +792,42 @@ export class MotifStore {
       return row.credits
     })
     return tx()
+  }
+
+  listOrders(filter: { userId?: string; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
+    id: string
+    userId: string
+    packageId: string
+    credits: number
+    amountTotal: number
+    currency: string
+    status: string
+    createdAt: string
+    paidAt: string | null
+  }> {
+    const { where, params } = orderWhere(filter)
+    const limit = filter.limit ?? 50
+    const offset = filter.offset ?? 0
+    const rows = this.db
+      .prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as OrderRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      packageId: r.package_id,
+      credits: r.credits,
+      amountTotal: r.amount_total,
+      currency: r.currency,
+      status: r.status,
+      createdAt: r.created_at,
+      paidAt: r.paid_at,
+    }))
+  }
+
+  countOrders(filter: { userId?: string; status?: string; from?: string; to?: string }): number {
+    const { where, params } = orderWhere(filter)
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM orders ${where}`).get(...params) as { c: number }
+    return row.c
   }
 
   // ---------- feedback ----------
