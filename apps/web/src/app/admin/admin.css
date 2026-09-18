@@ -640,3 +640,33 @@
   margin: 12px 0;
   font-size: 13px;
 }
+
+/* ---------- 渠道引导卡 ---------- */
+/* 不用 .admin-panel：引导卡嵌在设置分组内部，双边框 + 双阴影会形成「卡中卡」；
+   这里用浅底（--surface-secondary）+ 无阴影，视觉上从属于所在分组。 */
+
+.admin-guide {
+  background: var(--surface-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 8px 0 16px;
+}
+
+.admin-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin-guide-link {
+  color: var(--brand-warm);
+  font-weight: 600;
+}
+
+/* 二维码白底衬垫：QR 模块本身是黑/白，暗色主题下直接贴暗面板会看不清 */
+.admin-qr {
+  background: #fff;
+  padding: 8px;
+  border-radius: 8px;
+  display: inline-block;
+}
