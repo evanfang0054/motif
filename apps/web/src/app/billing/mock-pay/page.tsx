@@ -37,7 +37,7 @@ function PayPanel() {
     <div className="lp-card" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
       <div className="flex items-center justify-center gap-2">
         <BrandMark />
-        <b>motif 模拟收银台</b>
+        <b>Motif 模拟收银台</b>
       </div>
       <p className="mt-3 text-sm" style={{ color: 'var(--muted)' }}>
         订单号：{orderId || '（缺失）'}

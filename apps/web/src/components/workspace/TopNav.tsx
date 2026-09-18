@@ -25,7 +25,7 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Link href="/" className="lp-brand" onClick={(e) => e.preventDefault()}>
           <BrandMark size={26} />
-          motif
+          Motif
         </Link>
         <button className="ws-btn" onClick={onOpenTasks}>任务</button>
         <button className="ws-btn" onClick={onNewTask}>＋ 新任务</button>
