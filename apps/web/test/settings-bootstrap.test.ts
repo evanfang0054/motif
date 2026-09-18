@@ -34,7 +34,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('启动播种步骤（契约要求的「空库首次启动后」）', () => {
+describe('启动播种步骤（空库首次启动后的行为）', () => {
   it('空库首次启动后，settings 表含由环境变量播种的键', async () => {
     const seeded = await bootstrapConfig()
     expect(seeded).toContain('IMAGE_API_BASE_URL')
