@@ -742,3 +742,79 @@ describe('反馈处理', () => {
     s.close()
   })
 })
+
+describe('生成日志（跨用户）与清理', () => {
+  it('跨用户返回、含 prompt/finalPrompt 原文、倒序且分页生效', () => {
+    const s = new MotifStore(join(dir, 'log1.db'))
+    const u1 = s.createUser({ email: 'l1@b.co', passwordHash: 'h', name: '甲' })
+    const u2 = s.createUser({ email: 'l2@b.co', passwordHash: 'h', name: '乙' })
+    const t1 = s.createTopic(u1.id, 't1')
+    const t2 = s.createTopic(u2.id, 't2')
+    s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '甲的提示词', finalPrompt: '甲增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    s.createMessage({ topicId: t2.id, userId: u2.id, prompt: '乙的提示词', finalPrompt: '乙增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    const third = s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '第三轮', finalPrompt: '第三增强', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    s.setMessageStatus(third.id, 'failed', '网关 502')
+
+    const all = s.listAllMessages({})
+    expect(all).toHaveLength(3)
+    expect(new Set(all.map((r) => r.userId)).size).toBe(2) // 确实是跨用户
+    expect(all[0].prompt).toBe('第三轮') // 倒序
+    expect(all[0].finalPrompt).toBe('第三增强')
+    expect(all[0].error).toBe('网关 502')
+    expect(all[0].status).toBe('failed')
+
+    expect(s.listAllMessages({ userId: u2.id })).toHaveLength(1)
+    expect(s.listAllMessages({ status: 'failed' })).toHaveLength(1)
+    expect(s.listAllMessages({ limit: 2 })).toHaveLength(2)
+    expect(s.listAllMessages({ limit: 2, offset: 2 })).toHaveLength(1)
+    expect(s.countAllMessages({ userId: u1.id })).toBe(2)
+    expect(s.countAllMessages({})).toBe(3)
+    s.close()
+  })
+
+  it('清理只删终态且超期，不删画布资产、不动额度与流水，且幂等', () => {
+    const s = new MotifStore(join(dir, 'log2.db'))
+    const u = s.createUser({ email: 'l3@b.co', passwordHash: 'h', name: '丙', credits: 40 })
+    const t = s.createTopic(u.id, 't')
+    const mk = (rc: number) =>
+      s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: rc, enhancePrompt: false, referenceIds: [] })
+    const oldDone = mk(2)
+    const oldFailed = mk(3)
+    const oldQueued = mk(2) // 非终态 + 超期 → 不能删（未结清账目）
+    const freshDone = mk(1)
+    s.setMessageStatus(oldDone.id, 'completed')
+    s.setMessageStatus(oldFailed.id, 'failed', 'e')
+    s.setMessageStatus(freshDone.id, 'completed')
+    s.db.prepare("UPDATE messages SET created_at = '2026-01-01T00:00:00.000Z' WHERE id IN (?, ?, ?)").run(oldDone.id, oldFailed.id, oldQueued.id)
+    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldDone.id, origin: 'generated', name: 'a.png', imageKey: 'k/a.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
+    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldFailed.id, origin: 'generated', name: 'b.png', imageKey: 'k/b.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
+
+    const before = {
+      credits: s.getUserById(u.id)!.credits,
+      images: (s.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c,
+      ledgerRows: (s.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c,
+      ledgerSum: (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s,
+    }
+
+    expect(s.cleanupMessagesBefore('2026-06-01T00:00:00.000Z')).toBe(2)
+
+    const left = s.listAllMessages({})
+    expect(left.map((r) => r.id).sort()).toEqual([oldQueued.id, freshDone.id].sort())
+    // 【守恒的实质】清理只删日志：余额、画布资产、以及流水都必须一动不动
+    expect(s.getUserById(u.id)!.credits).toBe(before.credits)
+    expect((s.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c).toBe(before.images)
+    expect((s.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(before.ledgerRows)
+    expect((s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(before.ledgerSum)
+    // 存活的两轮各自精确对得上
+    const queued = left.find((r) => r.id === oldQueued.id)!
+    expect(queued.status).toBe('queued')
+    expect(queued.requestedCount).toBe(2)
+    expect(queued.generatedCount).toBe(0)
+    const done = left.find((r) => r.id === freshDone.id)!
+    expect(done.status).toBe('completed')
+    expect(done.requestedCount).toBe(1)
+    // 幂等：再清一次没有可删的
+    expect(s.cleanupMessagesBefore('2026-06-01T00:00:00.000Z')).toBe(0)
+    s.close()
+  })
+})

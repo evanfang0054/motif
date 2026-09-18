@@ -16,6 +16,7 @@ import {
   type CreditPackage,
   type CreditSource,
   type Message,
+  type MessageStatus,
   type Topic,
   type TopicDetail,
   type User,
@@ -36,6 +37,45 @@ function safeParseIds(raw: string | null | undefined): string[] {
   } catch {
     return []
   }
+}
+
+/** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
+function messageWhere(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.status) {
+    clauses.push('m.status = ?')
+    params.push(filter.status)
+  }
+  if (filter.userId) {
+    clauses.push('m.user_id = ?')
+    params.push(filter.userId)
+  }
+  if (filter.from) {
+    clauses.push('m.created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('m.created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
+/** 生成日志行（管理端跨用户视图） */
+export interface AdminLogRow {
+  id: string
+  topicId: string
+  userId: string
+  prompt: string
+  finalPrompt: string
+  size: string
+  requestedCount: number
+  status: MessageStatus
+  attempts: number
+  error: string | null
+  generatedCount: number
+  createdAt: string
 }
 
 /** 按状态构造反馈查询条件（供 list / count 共用，避免两处口径漂移） */
@@ -1010,6 +1050,64 @@ export class MotifStore {
     const { where, params } = orderWhere(filter)
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM orders ${where}`).get(...params) as { c: number }
     return row.c
+  }
+
+  // ---------- 生成日志（管理端跨用户视图）与清理 ----------
+
+  /**
+   * 跨用户生成轮次列表。含 `prompt` 原文与 `finalPrompt`（实际发往网关的提示词）——
+   * 排障必须同时看到「用户说了什么」和「系统实际发了什么」。
+   *
+   * 排序用 `rowid DESC` 而不是 `created_at DESC`：同一毫秒内创建的多条记录无法靠时间区分，
+   * 而 `id` 是随机 hex 前缀，按其倒序等于随机顺序（测试与页面都会看到不稳定的「最新一条」）。
+   */
+  listAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string; limit?: number; offset?: number }): AdminLogRow[] {
+    const { where, params } = messageWhere(filter)
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, COALESCE(g.c, 0) AS generated_count
+           FROM messages m
+           LEFT JOIN (SELECT message_id, COUNT(*) AS c FROM canvas_images WHERE message_id IS NOT NULL GROUP BY message_id) g ON g.message_id = m.id
+           ${where} ORDER BY m.rowid DESC LIMIT ? OFFSET ?`
+      )
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<MessageRow & { generated_count: number }>
+    return rows.map((r) => ({
+      id: r.id,
+      topicId: r.topic_id,
+      userId: r.user_id,
+      prompt: r.prompt,
+      finalPrompt: r.final_prompt,
+      size: r.size,
+      requestedCount: r.requested_count,
+      status: r.status as MessageStatus,
+      attempts: r.attempts,
+      error: r.error,
+      generatedCount: r.generated_count,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): number {
+    const { where, params } = messageWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${where}`).get(...params) as { c: number }).c
+  }
+
+  /**
+   * 清理超期的**已终态**生成轮次，返回删除条数。
+   *
+   * 为什么必须是终态：messages 是「扣费 / 交付 / 退额」的唯一对账依据；非终态轮次的账还没结清，
+   * 删掉就等于销毁未结清的账目。
+   * 为什么不动 canvas_images：那是用户画布资产，且 `message_id` 不是外键，删 messages 只会留下
+   * 悬空引用 —— 不删不会报错，但会永久丢失用户资产。
+   * 同样不动 credit_ledger：流水是账目本身，与「日志保留期」是两件事。
+   */
+  cleanupMessagesBefore(before: string): number {
+    const tx = this.db.transaction((): number => {
+      return this.db
+        .prepare("DELETE FROM messages WHERE created_at < ? AND status IN ('completed','failed','canceled')")
+        .run(before).changes
+    })
+    return tx()
   }
 
   // ---------- feedback ----------
