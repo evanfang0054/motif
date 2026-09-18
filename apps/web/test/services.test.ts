@@ -202,8 +202,30 @@ describe('CDK 兑换', () => {
     const u = store.createUser({ email: 'c@b.co', passwordHash: 'h', name: 'c', credits: 1 })
     store.createCdk('hello-10', 10)
     expect(redeem(store, u, 'HELLO-10').credits).toBe(11)
-    expect(() => redeem(store, u, 'HELLO-10')).toThrow(/无效|已使用/)
+    // ⚠️ 这里原本写 `/无效|已使用/`：文案含「已被使用」（「被」夹在中间），
+    // 所以第二条分支**从来没匹配过**，一直是靠「无效」那条分支蒙对的。改成精确文案。
+    expect(() => redeem(store, u, 'HELLO-10')).toThrow('该 CDK 已被使用。')
     expect(() => redeem(store, u, '')).toThrow(/CDK/)
+  })
+
+  it('三种失败原因给出可区分的文案（不存在 / 已作废 / 已使用）', () => {
+    const u = store.createUser({ email: 'c2@b.co', passwordHash: 'h', name: 'c2', credits: 0 })
+
+    // ① 码不存在：多半是输错了，提示「检查输入」
+    expect(() => redeem(store, u, 'NOPE-XXXX')).toThrow('CDK 无效，请检查是否输入有误。')
+
+    // ② 码被运营作废：不要笼统说「已被使用」，否则用户会以为是自己输错了
+    store.createCdk('void-25', 25)
+    expect(store.revokeCdk('VOID-25')).toBe(true)
+    expect(() => redeem(store, u, 'VOID-25')).toThrow('该 CDK 已失效，请联系发放方。')
+
+    // ③ 码已被兑换过
+    store.createCdk('used-25', 25)
+    expect(redeem(store, u, 'USED-25').credits).toBe(25)
+    expect(() => redeem(store, u, 'USED-25')).toThrow('该 CDK 已被使用。')
+
+    // 三条失败路径都不改额度（原子裁决仍在 store.redeemCdk）
+    expect(store.getUserById(u.id)!.credits).toBe(25)
   })
 })
 
