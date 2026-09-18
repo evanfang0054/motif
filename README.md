@@ -1,8 +1,17 @@
+<div align="center">
+  <img src="docs/brand/motif-logo-editorial.svg" alt="Motif 印章：暖米纸底 + 珊瑚手绘母题 M" width="104" />
+</div>
+
 # Motif — AI 商业图片批量生成工作台
 
 以「参考图 + 模板 → 成套商业图片」为核心的全栈 SaaS 工作台。
 前端为暗/亮双色单页应用（落地页 + 登录后工作台），服务端为 Next.js API 全栈实现，
 生图走 OpenAI 兼容网关（gpt-image 系）真实出图。
+
+<div align="center">
+  <img src="docs/brand/motif-banner.png" alt="Motif 横幅：一张参考图，成套产出商业图片" width="720" />
+</div>
+
 
 > 品牌、文案、模板提示词与全部代码均为原创实现。
 
@@ -26,7 +35,7 @@ motif/
 ├── apps/web/                  # Next.js 全栈应用（UI + API）
 │   ├── src/app/               # 页面与 API 路由
 │   │   ├── page.tsx           # / ：未登录落地页 / 已登录工作台
-│   │   ├── admin/             # 管理后台（服务端角色守卫；运营页陆续接入）
+│   │   ├── admin/             # 管理后台（服务端角色守卫）：概览 · 用户 · CDK · 订单 · 反馈 · 生成日志 · 审计 · 系统设置
 │   │   ├── billing/mock-pay/  # 模拟收银台（待接真实支付）
 │   │   └── api/               # auth · topics(+watch) · generate-images · canvas-images
 │   │                          #   · billing · redeem · feedback · messages/cancel · admin
@@ -34,7 +43,7 @@ motif/
 │   ├── src/server/            # 会话、业务服务、队列 worker、Mailer
 │   └── src/lib/               # 模板定义（原创文案）· API client
 ├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 校验
-├── packages/db/               # SQLite 存储层（11 张表 + 仓储）
+├── packages/db/               # SQLite 存储层（12 张表 + 仓储）
 ├── packages/image-provider/   # 生图 Provider（OpenAI 兼容网关）
 ├── scripts/cdk.mjs            # CDK 发放 CLI
 ├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
@@ -64,27 +73,33 @@ motif/
   选中浮动工具栏（放大预览 / @引用 / 下载 / 删除确认）、双击灯箱
 
 ### 运营与计费（部分真实）
-- 额度：按张扣费、失败/取消退回、余额不足拦截
+- 额度：按张扣费、失败/取消退回、余额不足拦截；每笔额度变动写入 `credit_ledger` 流水表（账目与余额同事务一致）
 - 充值：套餐（50/100/200/500 张，港元定价 HK$68 起）→ ⚠️ 模拟收银台（真实支付待接入，见 [#14](https://github.com/evanfang0054/motif/issues/14)）
-- CDK：CLI 发码 + 页面兑换（真实）
+- CDK：CLI 发码 + 管理后台「CDK 管理」页发放/查询 + 页面兑换（真实）
 - 邀请：专属邀请码/链接，好友经邀请链接注册自动带上邀请码，双方得利（+3 张/人，上限 3 人）（真实）
-- 反馈：提交反馈入库（真实）
+- 反馈：提交入库 + 管理后台反馈处理（真实）
 - 参考图：上传 PNG/JPG/WebP ≤10MB 作为生成依据
 
-### 管理后台（地基已就绪，运营页迭代中）
+### 管理后台（已上线，见 [#16](https://github.com/evanfang0054/motif/issues/16)）
 - **三级角色**：普通用户 / 管理员 / 超级管理员，角色比较收敛在 `packages/core/src/roles.ts`
 - **管理员账号自动引导**：服务启动时若库中尚无超级管理员，自动创建并生成**随机强密码**，
   写入 `dataDir/admin-credentials.txt`（权限 600）并打印到启动日志。
   幂等依据是**数据库而非凭据文件** —— 重复启动不会重建账号，也不会覆盖你已改过的密码
 - **管理面守卫**：`/admin` 对未登录 / 被禁用 / 角色不足一律返回 404（不泄露管理面存在性）；
   `/api/admin/*` 区分 401（未登录）与 403（权限不足）
+- **运营页面**：概览看板（六组运营指标直接读流水）、用户（调整额度 / 禁用启用 / 修改角色 /
+  一次性重置密码）、CDK 管理、订单、反馈、生成日志（跨用户查询、按天清理——仅终态记录，
+  不删画布资产与流水）、审计日志（仅超级管理员可见）
+- **系统设置**：运行配置以 `settings` 表为唯一真相（首启播种，之后改库生效）；密钥类键只写不读
+  （界面回显掩码）、数据位置只读展示；危险区开关需二次确认并留痕审计；
+  保存后 provider / mailer **热重载**，无需重启进程
 - **角色保护**：管理员不可修改或授予超级管理员角色；系统不允许失去最后一个超级管理员
-- **审计地基**：`admin_audit` 表与写入封装（审计写入失败只告警，不影响主操作）
+- **审计**：`admin_audit` 表与写入封装（审计写入失败只告警，不影响主操作）
 - **强制改密软提示**：引导创建的账号在工作台顶部提示改密，可关闭、不拦截任何操作
-- ⚠️ 运营页面（CDK 发放 / 订单 / 用户 / 反馈 / 生成日志 / 系统设置）尚在迭代中，见 [#16](https://github.com/evanfang0054/motif/issues/16)
+- **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · 123 个单元测试
+- pnpm monorepo · TypeScript strict · 285 个单元测试（core 27 · db 51 · provider 8 · web 199）
 - ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
 - Docker 多阶段构建一键部署，数据卷持久化，健康检查
 
@@ -99,7 +114,7 @@ motif/
 
 ### 可选配置（按需）
 
-> ⚠️ **下表里除「数据位置」与引导类参数外，都是「首次启动播种、此后以数据库为准」**：首次启动会把环境变量写进 `settings` 表，之后在管理后台「系统设置」里改才生效，再改这里的值不会覆盖已播种的配置。
+> ⚠️ **下表里除「数据位置」与引导类参数外，都是「首次启动播种、此后以数据库为准」**：首次启动会把环境变量写进 `settings` 表，之后在管理后台「系统设置」里改才生效，再改这里的值不会覆盖已播种的配置。系统设置保存后 provider / mailer 即时热重载，无需重启。
 
 | 配置 | 说明 |
 | --- | --- |
@@ -144,7 +159,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 123 个单元测试（core 22 · db 26 · provider 8 · web 67）
+pnpm test             # 285 个单元测试（core 27 · db 51 · provider 8 · web 199）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布
