@@ -125,3 +125,17 @@ export interface GenerateImagesResponse {
   queued: boolean
   user: User
 }
+
+/**
+ * 额度变动的来源。**每一次 `users.credits` 的变动都必须能在 `credit_ledger` 里找到一条带来源的记录** ——
+ * 这是「账目与余额一致」这条不变式的前提，也是概览看板所有额度口径的唯一依据。
+ */
+export type CreditSource =
+  | 'opening_balance' // 建档/迁移时的初始额度（迁移与测试造数）
+  | 'signup_bonus'
+  | 'invite_reward'
+  | 'order_paid'
+  | 'cdk_redeem'
+  | 'admin_adjust'
+  | 'generation_charge'
+  | 'generation_refund'

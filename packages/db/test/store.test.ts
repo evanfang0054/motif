@@ -51,15 +51,15 @@ describe('users & sessions', () => {
 
   it('额度原子扣减：不足则失败且余额不变', () => {
     const u = seedUser() // 10
-    expect(store.deductCredits(u.id, 4)?.credits).toBe(6)
-    expect(store.deductCredits(u.id, 100)).toBeNull()
+    expect(store.deductCredits(u.id, 4, { source: 'generation_charge' })?.credits).toBe(6)
+    expect(store.deductCredits(u.id, 100, { source: 'generation_charge' })).toBeNull()
     expect(store.getUserById(u.id)?.credits).toBe(6)
   })
 
   it('加额度与邀请计数', () => {
     const u = seedUser()
-    store.addCredits(u.id, 5)
-    store.recordInvite(u.id, 3)
+    store.addCredits(u.id, 5, { source: 'signup_bonus' })
+    store.recordInvite(u.id, 3, 'usr_invitee')
     const fresh = store.getUserById(u.id)!
     expect(fresh.credits).toBe(18)
     expect(fresh.invitedCount).toBe(1)
@@ -96,7 +96,7 @@ describe('topics & messages & canvas images', () => {
   it('生成消息租约与取消退额闭环', () => {
     const u = seedUser()
     const t = store.createTopic(u.id, 'T')
-    store.deductCredits(u.id, 8)
+    store.deductCredits(u.id, 8, { source: 'generation_charge' })
     const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: '1024x1024', requestedCount: 8, enhancePrompt: false })
     store.setTopicActive(t.id, m.id, 'p', 'pending')
     expect(store.getTopic(t.id)?.status).toBe('pending')
@@ -113,7 +113,7 @@ describe('topics & messages & canvas images', () => {
     }
     expect(store.countGeneratedInMessage(m.id)).toBe(3)
     store.setMessageStatus(m.id, 'canceled')
-    store.addCredits(u.id, 8 - 3)
+    store.addCredits(u.id, 8 - 3, { source: 'generation_refund' })
     store.setTopicActive(t.id, null, null, 'idle')
 
     expect(store.getUserById(u.id)?.credits).toBe(7) // seed 10 → 扣 8 → 退 5 = 7
@@ -466,5 +466,93 @@ describe('CDK 批量发放、列表与作废', () => {
     expect(row.revokedAt).toBeNull()
     expect(row.createdAt).toBeTruthy()
     s.close()
+  })
+})
+
+describe('额度流水（credit_ledger）', () => {
+  it('每次额度变动都留下带来源的流水，且全库账目与余额一致', () => {
+    const s = new MotifStore(join(dir, 'led1.db'))
+    const u = s.createUser({ email: 'led@b.co', passwordHash: 'h', name: '甲', credits: 5 }) // 建档初始额度 → opening_balance
+    s.addCredits(u.id, 3, { source: 'signup_bonus' })
+    s.deductCredits(u.id, 2, { source: 'generation_charge', refId: 'msg_x' })
+    s.addCredits(u.id, 1, { source: 'generation_refund', refId: 'msg_x' })
+    s.addCredits(u.id, 10, { source: 'admin_adjust', refId: 'usr_admin', note: '渠道补偿' })
+    s.addCredits(u.id, 20, { source: 'order_paid', refId: 'ord_x' })
+    s.addCredits(u.id, 7, { source: 'cdk_redeem', refId: 'MOTIF-XYZ' })
+
+    const rows = s.listLedger({ userId: u.id })
+    expect(rows.map((r) => r.source)).toEqual([
+      'cdk_redeem', 'order_paid', 'admin_adjust', 'generation_refund', 'generation_charge', 'signup_bonus', 'opening_balance',
+    ])
+    // 倒序由 id 保证（created_at 可能同毫秒并列，不能拿它断言顺序）
+    expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort((a, b) => b - a))
+    expect(rows[0].refId).toBe('MOTIF-XYZ') // 最近一条是 cdk_redeem，带 refId
+    expect(rows[rows.length - 1].refId).toBeNull() // 最早一条是建档的 opening_balance，没有 refId
+
+    // 【关键不变式】逐用户与全库都要成立
+    const perUser = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger WHERE user_id = ?').get(u.id) as { s: number }).s
+    expect(perUser).toBe(s.getUserById(u.id)!.credits)
+    const allLedger = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
+    const allUsers = (s.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
+    expect(allLedger).toBe(allUsers)
+
+    // 来源可精确归集
+    expect(s.countLedger({ source: 'generation_charge' })).toBe(1)
+    expect(s.listLedger({ source: 'admin_adjust' })[0].note).toBe('渠道补偿')
+    s.close()
+  })
+
+  it('扣减余额不足返回 null，且绝不留下「只有流水没有余额变动」的残迹', () => {
+    const s = new MotifStore(join(dir, 'led2.db'))
+    const u = s.createUser({ email: 'led3@b.co', passwordHash: 'h', name: '丙', credits: 2 })
+    expect(s.deductCredits(u.id, 99, { source: 'generation_charge' })).toBeNull()
+    expect(s.getUserById(u.id)!.credits).toBe(2)
+    expect(s.countLedger({ userId: u.id })).toBe(1) // 只有建档那一条，失败那次没写进去
+    s.close()
+  })
+
+  it('【迁移】老库（无 credit_ledger 表、有余额）升级后自动补期初结存，且重复构造不重复补', () => {
+    const file = join(dir, 'led3.db')
+    // ⚠️ 必须用**裸 better-sqlite3 造一个真的不含 credit_ledger 的老库**，
+    // 不能用 `DELETE FROM credit_ledger` 模拟 —— 那样表是存在的，恰好会被「表里没有行」这个
+    // 错误判据接受，于是实现写错、测试也绿。
+    const raw = new Database(file)
+    raw.exec(`CREATE TABLE users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL,
+      avatar_url TEXT, role TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'active',
+      must_change_password INTEGER NOT NULL DEFAULT 0, disabled_at TEXT, credits INTEGER NOT NULL DEFAULT 0,
+      invite_code TEXT NOT NULL UNIQUE, invited_by TEXT, invited_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`)
+    raw
+      .prepare("INSERT INTO users (id,email,password_hash,name,credits,invite_code,created_at,updated_at) VALUES ('usr_legacy','legacy@b.co','scrypt$a$b','老用户',42,'LEGACY0001','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')")
+      .run()
+    expect(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'credit_ledger'").get()).toBeUndefined()
+    raw.close()
+
+    const s2 = new MotifStore(file) // 触发 applySchema
+    const rows = s2.listLedger({ userId: 'usr_legacy' })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].source).toBe('opening_balance')
+    expect(rows[0].delta).toBe(42)
+    expect((s2.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(42)
+    s2.close()
+
+    const s3 = new MotifStore(file)
+    expect(s3.listLedger({ userId: 'usr_legacy' })).toHaveLength(1) // 幂等
+    s3.close()
+  })
+
+  it('【迁移的反向判据】表已存在但为空时不得补期初结存（否则会把账目缺口洗白）', () => {
+    const file = join(dir, 'led4.db')
+    const s1 = new MotifStore(file)
+    const u = s1.createUser({ email: 'led5@b.co', passwordHash: 'h', name: '戊', credits: 0 })
+    s1.db.prepare('UPDATE users SET credits = 42 WHERE id = ?').run(u.id) // 手工制造「账目缺口」
+    s1.db.prepare('DELETE FROM credit_ledger').run() // 表还在，只是空了
+    s1.close()
+
+    const s2 = new MotifStore(file) // 表已存在 → 走「不补」分支
+    expect(s2.listLedger({ userId: u.id })).toHaveLength(0) // ← 旧判据（表为空）在这里会补一条，必红
+    expect(s2.getUserById(u.id)!.credits).toBe(42) // 余额不动，缺口如实保留（可被巡检发现）
+    s2.close()
   })
 })

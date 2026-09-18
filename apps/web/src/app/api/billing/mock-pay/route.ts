@@ -14,7 +14,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { store } = getRuntime()
     const credits = store.payOrder(orderId, user.id)
     if (credits === null) throw new ServiceError(400, '订单不存在或已支付。')
-    const updated = store.addCredits(user.id, credits)
+    const updated = store.addCredits(user.id, credits, { source: 'order_paid', refId: orderId, note: '订单支付到账' })
     return NextResponse.json({ ok: true, paid: credits, user: updated })
   } catch (e) {
     return jsonError(e)

@@ -14,6 +14,7 @@ import {
   newOrderId,
   type CanvasImage,
   type CreditPackage,
+  type CreditSource,
   type Message,
   type Topic,
   type TopicDetail,
@@ -123,6 +124,33 @@ interface OrderRow {
   status: string
   created_at: string
   paid_at: string | null
+}
+
+/** 额度流水的写入参数。`source` 必填 —— 没有来源的额度变动等于不可对账 */
+export interface LedgerEntry {
+  source: CreditSource
+  refId?: string | null
+  note?: string | null
+}
+
+export interface LedgerRow {
+  id: number
+  userId: string
+  delta: number
+  source: CreditSource
+  refId: string | null
+  note: string | null
+  createdAt: string
+}
+
+interface LedgerDbRow {
+  id: number
+  user_id: string
+  delta: number
+  source: string
+  ref_id: string | null
+  note: string | null
+  created_at: string
 }
 
 interface MessageRow {
@@ -259,24 +287,30 @@ export class MotifStore {
     const id = newUserId()
     const t = nowIso()
     const inviteCode = newInviteCode()
-    this.db
-      .prepare(
-        `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
-      )
-      .run(
-        id,
-        input.email.toLowerCase(),
-        input.passwordHash,
-        input.name,
-        input.role ?? 'user',
-        input.mustChangePassword ? 1 : 0,
-        input.credits ?? 0,
-        inviteCode,
-        input.invitedBy ?? null,
-        t,
-        t
-      )
+    const initialCredits = input.credits ?? 0
+    const tx = this.db.transaction((): void => {
+      this.db
+        .prepare(
+          `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
+        )
+        .run(
+          id,
+          input.email.toLowerCase(),
+          input.passwordHash,
+          input.name,
+          input.role ?? 'user',
+          input.mustChangePassword ? 1 : 0,
+          initialCredits,
+          inviteCode,
+          input.invitedBy ?? null,
+          t,
+          t
+        )
+      // 建档时就带额度（引导、测试造数）→ 记一条 opening_balance，使不变式从第一行起就成立
+      if (initialCredits > 0) this.insertLedger(id, initialCredits, { source: 'opening_balance', note: '建档初始额度' })
+    })
+    tx()
     return this.getUserById(id)!
   }
 
@@ -309,26 +343,76 @@ export class MotifStore {
     return row ? rowToUser(row) : null
   }
 
-  /** 原子扣减额度；余额不足返回 null */
-  deductCredits(userId: string, amount: number): User | null {
+  /**
+   * 原子扣减额度；余额不足返回 null（不做部分扣减）。
+   * 余额更新与流水写入在**同一事务**内 —— 不允许出现「余额变了却没有流水」或反之。
+   */
+  deductCredits(userId: string, amount: number, entry: LedgerEntry): User | null {
     const tx = this.db.transaction((): User | null => {
       const row = this.db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number } | undefined
       if (!row || row.credits < amount) return null
       this.db.prepare('UPDATE users SET credits = credits - ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.insertLedger(userId, -amount, entry)
       return this.getUserById(userId)
     })
     return tx()
   }
 
-  addCredits(userId: string, amount: number): User {
-    this.db.prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
-    return this.getUserById(userId)!
+  /** 加额。`entry` 必填：没有来源的额度变动等于不可对账（与余额更新同事务） */
+  addCredits(userId: string, amount: number, entry: LedgerEntry): User {
+    const tx = this.db.transaction((): User => {
+      this.db.prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.insertLedger(userId, amount, entry)
+      return this.getUserById(userId)!
+    })
+    return tx()
   }
 
-  /** 记录邀请成功；返回受赠额度（受上限约束） */
-  recordInvite(inviterId: string, reward: number): void {
+  /** 写一条额度流水。只应在 addCredits / deductCredits / createUser 的事务内被调用 */
+  insertLedger(userId: string, delta: number, entry: LedgerEntry): void {
+    this.db
+      .prepare('INSERT INTO credit_ledger (user_id, delta, source, ref_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, delta, entry.source, entry.refId ?? null, entry.note ?? null, nowIso())
+  }
+
+  /** 某人的额度流水，倒序（按 id，避免同毫秒并列时顺序不定） */
+  listLedger(filter: { userId?: string; source?: CreditSource; limit?: number; offset?: number }): LedgerRow[] {
+    const clauses: string[] = []
+    const params: string[] = []
+    if (filter.userId) {
+      clauses.push('user_id = ?')
+      params.push(filter.userId)
+    }
+    if (filter.source) {
+      clauses.push('source = ?')
+      params.push(filter.source)
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    const rows = this.db
+      .prepare(`SELECT * FROM credit_ledger ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as LedgerDbRow[]
+    return rows.map((r) => ({ id: r.id, userId: r.user_id, delta: r.delta, source: r.source as CreditSource, refId: r.ref_id, note: r.note, createdAt: r.created_at }))
+  }
+
+  countLedger(filter: { userId?: string; source?: CreditSource }): number {
+    const clauses: string[] = []
+    const params: string[] = []
+    if (filter.userId) {
+      clauses.push('user_id = ?')
+      params.push(filter.userId)
+    }
+    if (filter.source) {
+      clauses.push('source = ?')
+      params.push(filter.source)
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM credit_ledger ${where}`).get(...params) as { c: number }).c
+  }
+
+  /** 记录邀请成功；返回受赠额度（受上限约束）。inviteeId 用于流水溯源「这笔奖励是谁带来的」 */
+  recordInvite(inviterId: string, reward: number, inviteeId: string): void {
     this.db.prepare('UPDATE users SET invited_count = invited_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), inviterId)
-    if (reward > 0) this.addCredits(inviterId, reward)
+    if (reward > 0) this.addCredits(inviterId, reward, { source: 'invite_reward', refId: inviteeId, note: '邀请奖励' })
   }
 
   countUsersByRole(role: UserRole): number {
@@ -589,9 +673,9 @@ export class MotifStore {
         .prepare(`UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND status = 'queued'`)
         .run(id)
       if (res.changes === 0) return { found: true, canceled: false, refund: 0 }
-      this.db
-        .prepare(`UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?`)
-        .run(row.requested_count, nowIso(), userId)
+      // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式
+      // 在「用户取消排队任务」这一条路径上破掉（而这条路径原本没有任何测试覆盖）
+      this.addCredits(userId, row.requested_count, { source: 'generation_refund', refId: id, note: '取消排队中的生成' })
       this.db
         .prepare(`UPDATE topics SET active_message_id = NULL, active_prompt = NULL, status = 'idle', updated_at = ? WHERE id = ?`)
         .run(nowIso(), row.topic_id)

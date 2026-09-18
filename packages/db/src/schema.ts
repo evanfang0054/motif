@@ -5,6 +5,14 @@ export function applySchema(db: Database): void {
   db.pragma('journal_mode = WAL')
   // 开启外键约束（better-sqlite3 默认关闭），保证 ON DELETE CASCADE 生效
   db.pragma('foreign_keys = ON')
+
+  // ⚠️ 必须在建表之前探测：判据是「credit_ledger 在这次启动前不存在」。
+  // 不能用「表里没有行」—— 那样任何把流水清空的情形（手工清理 / 测试造数 / 将来某个 bug）
+  // 都会让下次启动按当时的余额重新贴一条期初结存，把已经发生的账目缺口"洗白"成合法历史。
+  const ledgerExisted = !!db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'credit_ledger'")
+    .get()
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -172,5 +180,32 @@ export function applySchema(db: Database): void {
     } catch {
       // 列已存在：重复启动时的正常路径
     }
+  }
+
+  // 额度流水：把「额度变动」变成一等公民，使 SUM(delta) === SUM(users.credits) 可被断言与巡检
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credit_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      delta INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      ref_id TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ledger_user ON credit_ledger(user_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_ledger_source ON credit_ledger(source, id DESC);
+  `)
+
+  // 仅当这张表是本次新建时才补期初结存（判据见函数顶部）。老库用户的额度是历史累积的、没有对应流水，
+  // 补一条 opening_balance 让不变式在升级库上立刻成立；表已存在则一律不动（缺口如实保留，可被巡检发现）。
+  if (!ledgerExisted) {
+    const holders = db.prepare('SELECT id, credits FROM users WHERE credits <> 0').all() as Array<{ id: string; credits: number }>
+    const insert = db.prepare('INSERT INTO credit_ledger (user_id, delta, source, ref_id, note, created_at) VALUES (?, ?, ?, NULL, ?, ?)')
+    const t = new Date().toISOString()
+    const tx = db.transaction(() => {
+      for (const u of holders) insert.run(u.id, u.credits, 'opening_balance', '升级时的期初结存', t)
+    })
+    tx()
   }
 }

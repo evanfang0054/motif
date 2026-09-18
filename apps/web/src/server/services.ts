@@ -90,15 +90,17 @@ export function register(
     passwordHash: hashPassword(input.password),
     name: input.name.trim(),
     invitedBy,
-    credits: SIGNUP_BONUS_CREDITS,
+    credits: 0, // 赠送额度改走 addCredits，好让流水里是语义正确的 signup_bonus 而不是期初结存
   })
+  store.addCredits(user.id, SIGNUP_BONUS_CREDITS, { source: 'signup_bonus', note: '注册赠送' })
 
   if (invitedBy) {
     const inviter = store.getUserById(invitedBy)!
     const reward = invitedBy ? inviteRewardFor(inviter.invitedCount) : 0
-    store.recordInvite(invitedBy, reward)
+    store.recordInvite(invitedBy, reward, user.id)
   }
-  return user
+  // ⚠️ 必须返回赠额之后的用户：直接 return 上面那个 user 会让注册接口带着 credits=0 出去
+  return store.getUserById(user.id)!
 }
 
 export function login(store: MotifStore, email: string, password: string): User {
@@ -172,7 +174,9 @@ export async function enqueueGeneration(
   }
 
   const cost = input.count
-  const updated = store.deductCredits(user.id, cost)
+  // refId 留空：扣费发生在 createMessage 之前，此刻还没有消息 id（把扣费挪后又会改变
+  // 「额度不足时不建 topic/message」的既有语义）
+  const updated = store.deductCredits(user.id, cost, { source: 'generation_charge', refId: null, note: '入队扣费' })
   if (!updated) throw new ServiceError(402, '额度不足，请先充值。')
 
   const size = sizeCheck.value
@@ -277,7 +281,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
   } catch (e) {
     const done = store.countGeneratedInMessage(messageId)
     const refund = msg.requestedCount - done
-    if (refund > 0) store.addCredits(msg.userId, refund)
+    if (refund > 0) store.addCredits(msg.userId, refund, { source: 'generation_refund', refId: messageId, note: '生成失败退额' })
     const raw = e instanceof Error ? e.message : String(e)
     console.error('[motif] 生成失败:', raw)
     store.setMessageStatus(messageId, 'failed', friendlyGenerateError(raw, refund))
@@ -297,7 +301,7 @@ export function friendlyGenerateError(raw: string, refund: number): string {
 
 export function finishCancel(store: MotifStore, msg: { id: string; topicId: string; requestedCount: number }, done: number): void {
   const refund = msg.requestedCount - done
-  if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund)
+  if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund, { source: 'generation_refund', refId: msg.id, note: '取消退额' })
   store.setMessageStatus(msg.id, 'canceled')
   store.setTopicActive(msg.topicId, null, null, 'idle')
 }
@@ -359,7 +363,7 @@ export function redeem(store: MotifStore, user: User, code: string): User {
   const credits = store.redeemCdk(target, user.id)
   // 走到这里仍可能拿到 null：并发下另一个请求刚刚抢先兑换了同一张码
   if (credits === null) throw new ServiceError(400, '该 CDK 已被使用。')
-  return store.addCredits(user.id, credits)
+  return store.addCredits(user.id, credits, { source: 'cdk_redeem', refId: target, note: 'CDK 兑换' })
 }
 
 /**
