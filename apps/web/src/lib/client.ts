@@ -98,6 +98,30 @@ export interface AdminAuditRow {
   createdAt: string
 }
 
+/** 管理后台：一项系统配置。密钥项的 value 恒为 null，只给掩码与「已设置」标记 */
+export interface AdminSettingItem {
+  key: string
+  group: 'generation' | 'mailer' | 'danger' | 'security' | 'data'
+  label: string
+  kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url'
+  value: string | null
+  masked: string | null
+  isSet: boolean
+  source: 'db' | 'env' | 'unset'
+  readOnly: boolean
+  danger: boolean
+  options: string[] | null
+  defaultHint: string | null
+  hint: string | null
+}
+
+/** 管理后台：某组配置当前能否构造出可用的实现（判据由服务端复用构造器给出） */
+export interface AdminConfigHealth {
+  group: string
+  ready: boolean
+  reason: string | null
+}
+
 /** 只带上真正有值的查询参数，避免 `?status=` 这类空串污染服务端筛选 */
 function toQuery(params: Record<string, string | number | undefined>): string {
   const qs = new URLSearchParams()
@@ -219,4 +243,16 @@ export const api = {
     call<{ ok: true; deleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
   adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }>(`/api/admin/audit${toQuery(params)}`),
+  adminGetSettings: () => call<{ items: AdminSettingItem[]; health: AdminConfigHealth[] }>('/api/admin/settings'),
+  adminSaveSettings: (updates: Record<string, string>) =>
+    call<{ ok: true; updated: string[]; runtimeReloaded: boolean }>('/api/admin/settings', {
+      method: 'POST',
+      body: JSON.stringify({ updates }),
+    }),
+  /** 危险区专用入口：确认由服务端强校验（必须严格等于 true），页面上的勾选只是前置流程 */
+  adminSaveDangerSettings: (updates: Record<string, string>) =>
+    call<{ ok: true; updated: string[] }>('/api/admin/settings/danger', {
+      method: 'POST',
+      body: JSON.stringify({ updates, confirm: true }),
+    }),
 }

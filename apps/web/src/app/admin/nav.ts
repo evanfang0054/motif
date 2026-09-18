@@ -17,5 +17,5 @@ export const ADMIN_NAV: AdminNavItem[] = [
   { href: '/admin/logs', label: '生成日志', minRole: 'admin' },
   { href: '/admin/users', label: '用户', minRole: 'admin' },
   { href: '/admin/audit', label: '审计日志', minRole: 'root' },
-  { href: '/admin/settings', label: '系统设置', minRole: 'root', pending: true },
+  { href: '/admin/settings', label: '系统设置', minRole: 'root' },
 ]

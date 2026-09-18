@@ -7,7 +7,7 @@ import { ServiceError, billingMode } from '@/server/services'
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const user = requireUser(req)
-    if (billingMode() === 'live') {
+    if (billingMode(getRuntime().store) === 'live') {
       throw new ServiceError(403, '模拟支付在正式计费模式下不可用。')
     }
     const { orderId } = await readJson<{ orderId: string }>(req)

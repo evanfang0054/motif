@@ -20,6 +20,7 @@ import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
 import { checkRate } from './rate-limit'
+import { resolveBool, resolveSetting } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -54,9 +55,11 @@ export async function sendCode(
   const code = store.createVerificationCode(purpose, email, 1000 * 60 * 10)
   // 真实渠道（smtp/resend/sendgrid）发信；console 为本地直出（只打日志）
   await mailer.mailer.sendVerificationCode(email, code, purpose)
-  // 安全默认：devCode 回传仅限「console 渠道 + 非生产」或「显式开启 MOTIF_EXPOSE_DEV_CODE」
+  // 安全默认：devCode 回传仅限「console 渠道 + 非生产」或「显式开启直出开关」。
+  // 开关读配置（数据库优先、回退环境变量），因此可以在管理后台危险区里热改。
+  // ⚠️ 保留「非生产」这一半：本地开发默认直出是既有行为，改成纯开关会让本地注册流程拿不到验证码。
   const expose =
-    mailer.isConsole && (process.env.NODE_ENV !== 'production' || process.env.MOTIF_EXPOSE_DEV_CODE === '1')
+    mailer.isConsole && (process.env.NODE_ENV !== 'production' || resolveBool(store, process.env, 'MOTIF_EXPOSE_DEV_CODE'))
   return { sent: true, ...(expose ? { devCode: code } : {}), via: mailer.mailer.name }
 }
 
@@ -372,7 +375,8 @@ export function redeem(store: MotifStore, user: User, code: string): User {
 /**
  * 计费模式：mock（演示收银台，默认）| live（预留真实支付渠道接入位）。
  * 安全基线：live 模式下 mock 支付端点一律 403，防止公开部署被"免费印钞"。
+ * 取值读配置（数据库优先、回退环境变量），因此可在管理后台危险区里热改。
  */
-export function billingMode(): 'mock' | 'live' {
-  return (process.env.MOTIF_BILLING_MODE || 'mock').toLowerCase() === 'live' ? 'live' : 'mock'
+export function billingMode(store: MotifStore): 'mock' | 'live' {
+  return (resolveSetting(store, process.env, 'MOTIF_BILLING_MODE') ?? 'mock').toLowerCase() === 'live' ? 'live' : 'mock'
 }

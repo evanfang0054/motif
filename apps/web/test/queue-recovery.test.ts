@@ -129,7 +129,7 @@ describe('worker 启动', () => {
       __motifWorker?: { timer: ReturnType<typeof setInterval> | null }
     }
     process.env.MOTIF_DATA_DIR = dir // 隔离：getRuntime 建库落在临时目录
-    // getRuntime 构造 provider 时强校验生图 env（缺失即抛，vitest 不加载 .env），注入桩值
+    // 显式注入桩值：让本测试不依赖宿主环境里有没有 .env（配置缺失时已不再抛错）
     process.env.IMAGE_API_BASE_URL = 'http://127.0.0.1:9'
     process.env.IMAGE_API_KEY = 'stub'
     delete g.__motifRuntime

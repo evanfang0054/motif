@@ -99,6 +99,8 @@ motif/
 
 ### 可选配置（按需）
 
+> ⚠️ **下表里除「数据位置」与引导类参数外，都是「首次启动播种、此后以数据库为准」**：首次启动会把环境变量写进 `settings` 表，之后在管理后台「系统设置」里改才生效，再改这里的值不会覆盖已播种的配置。
+
 | 配置 | 说明 |
 | --- | --- |
 | `IMAGE_MODEL` | 默认 `gpt-image-2` |
@@ -106,11 +108,11 @@ motif/
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `MAIL_FROM` | smtp 渠道（QQ 邮箱 = smtp.qq.com:465 + 授权码） |
 | `SMTP_SECURE` | 按端口推断 | 465 默认 SSL；非 465 端口如需关闭可设 `false` |
 | `RESEND_API_KEY` / `SENDGRID_API_KEY` | 对应 API 渠道 |
-| `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` | 数据位置（默认 `apps/web/.data/motif.db`） |
+| `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` | 数据位置（默认 `apps/web/.data/motif.db`）。**只能在环境变量里改**，管理后台只读展示 |
 | `MOTIF_ADMIN_EMAIL` | 自动创建的管理员邮箱，默认 `admin@motif.local` |
 | `MOTIF_ADMIN_PASSWORD` | 指定管理员初始密码（不设则生成 20 位随机强密码） |
 | `MOTIF_SKIP_ADMIN_BOOTSTRAP` | `1` = 跳过管理员账号自动创建（本地开发常用） |
-| `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开） |
+| `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
 | `MOTIF_BILLING_MODE` | `mock` | `mock`=演示收银台；`live`=关闭模拟支付（真实渠道接入位） |
 

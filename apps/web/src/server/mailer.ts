@@ -122,14 +122,37 @@ export class SendGridMailer implements Mailer {
   }
 }
 
+/**
+ * 配置不完整时的占位发信器：**构造不抛错，抛错推迟到真正发信时**。
+ *
+ * 为什么必须容忍：发信配置写坏（例如选了 smtp 却没填密码）不该让整个进程起不来 ——
+ * 否则运维连设置页都打不开，也就无法把配置改回来。
+ * 调用方需保证 isConsole 为 false：配置坏了更不能把验证码直出回传给调用方。
+ */
+export class MisconfiguredMailer implements Mailer {
+  readonly name = 'misconfigured'
+
+  constructor(private readonly reason: string) {}
+
+  async sendVerificationCode(): Promise<never> {
+    throw new Error(this.reason)
+  }
+}
+
 export type MailerConfig = {
   mailer: Mailer
   /** console 直出模式下，验证码可随接口回传（本地联调） */
   isConsole: boolean
 }
 
-/** 从环境变量选择发信实现；选了真实渠道但配置不全时直接抛错（快速暴露配置问题） */
-export function createMailerFromEnv(env: NodeJS.ProcessEnv = process.env): MailerConfig {
+/**
+ * 发信配置的取值表。刻意用 `Record<string, string | undefined>` 而不是 `NodeJS.ProcessEnv` ——
+ * 配置来源已经从「环境变量」变成「数据库优先、回退 env」，而构造逻辑一行都不该变。
+ */
+export type MailerConfigValues = Record<string, string | undefined>
+
+/** 从取值表选择发信实现；选了真实渠道但配置不全时直接抛错（快速暴露配置问题） */
+export function createMailerFromConfig(env: MailerConfigValues): MailerConfig {
   const choice = (env.MOTIF_MAILER || 'console').toLowerCase()
   const from = env.MAIL_FROM
   switch (choice) {
@@ -159,4 +182,9 @@ export function createMailerFromEnv(env: NodeJS.ProcessEnv = process.env): Maile
     default:
       return { mailer: new ConsoleMailer(), isConsole: true }
   }
+}
+
+/** 兼容入口：等价于把 process.env 当取值表传进去 */
+export function createMailerFromEnv(env: NodeJS.ProcessEnv = process.env): MailerConfig {
+  return createMailerFromConfig(env)
 }
