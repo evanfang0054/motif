@@ -30,6 +30,9 @@ export default function AdminSettingsPage() {
   const [msg, setMsg] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [testTo, setTestTo] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -194,6 +197,47 @@ export default function AdminSettingsPage() {
           <button className="ws-btn" disabled={saving} onClick={() => void save(group)}>
             保存
           </button>
+        )}
+        {group === 'mailer' && (
+          <div className="admin-field">
+            <label htmlFor="test-mail-to">发送测试邮件到（需超级管理员）</label>
+            <input
+              id="test-mail-to"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              placeholder="you@example.com"
+              aria-label="测试收件邮箱"
+            />
+            <button
+              className="ws-btn"
+              aria-busy={testing}
+              disabled={testing || !testTo.trim()}
+              onClick={async () => {
+                setTesting(true)
+                setTestResult(null)
+                try {
+                  const r = await api.adminTestMail(testTo.trim())
+                  setTestResult(
+                    r.via === 'console'
+                      ? { ok: true, text: '当前是 console 渠道：不会真实发信，测试内容已打印到服务端日志。' }
+                      : { ok: true, text: `测试邮件已通过 ${r.via} 渠道发出，请查收。` }
+                  )
+                } catch (e) {
+                  setTestResult({ ok: false, text: e instanceof Error ? e.message : '发送失败' })
+                } finally {
+                  setTesting(false)
+                }
+              }}
+            >
+              {testing ? '发送中…' : '发送测试邮件'}
+            </button>
+            <p className="admin-field-hint">先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。</p>
+            {testResult && (
+              <div className={testResult.ok ? 'admin-alert-ok' : 'admin-alert-err'} role="status">
+                {testResult.text}
+              </div>
+            )}
+          </div>
         )}
       </section>
     )

@@ -250,6 +250,8 @@ export const api = {
       body: JSON.stringify({ updates }),
     }),
   /** 危险区专用入口：确认由服务端强校验（必须严格等于 true），页面上的勾选只是前置流程 */
+  adminTestMail: (to: string) =>
+    call<{ ok: true; via: string }>('/api/admin/settings/test-mail', { method: 'POST', body: JSON.stringify({ to }) }),
   adminSaveDangerSettings: (updates: Record<string, string>) =>
     call<{ ok: true; updated: string[] }>('/api/admin/settings/danger', {
       method: 'POST',
