@@ -3,7 +3,7 @@ import { roleAtLeast, type UserRole } from '@motif/core'
 import { ADMIN_NAV } from '@/app/admin/nav'
 
 /**
- * 契约：菜单可见性由 ADMIN_NAV 的 minRole 与角色层级共同决定。
+ * 规则：菜单可见性由 ADMIN_NAV 的 minRole 与角色层级共同决定。
  * 这里锁的是**菜单表本身**（哪个页面属于哪个角色），不是 roleAtLeast 的实现。
  */
 function labelsFor(role: UserRole): string[] {

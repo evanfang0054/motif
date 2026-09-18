@@ -37,7 +37,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('C4 契约：订单管理只读', () => {
+describe('订单管理只读（无任何写端点）', () => {
   it('route 模块导出的 HTTP 动词恰好只有 GET', () => {
     // 只按 HTTP 动词白名单过滤：对 segment config（dynamic / fetchCache / maxDuration …）
     // 完全免疫，避免将来有人合法加了 fetchCache 就误红

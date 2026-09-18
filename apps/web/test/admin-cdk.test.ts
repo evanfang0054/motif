@@ -107,7 +107,7 @@ describe('GET /api/admin/cdks（列表）', () => {
   })
 })
 
-describe('【C2】批量生成的码可经既有兑换接口真实兑换', () => {
+describe('批量生成的码可经既有兑换接口真实兑换（跨模块）', () => {
   it('兑换后买方额度精确增加该面额，且不可重复兑换', async () => {
     const t = sessionFor('admin', 'a8@b.co')
     const created = (await (await cdksPOST(req(t, { count: 2, credits: 25 }))).json()) as { codes: string[] }
@@ -117,7 +117,7 @@ describe('【C2】批量生成的码可经既有兑换接口真实兑换', () =>
     const buyerToken = store.createSession(buyer.id, 60_000)
     expect(store.getUserById(buyer.id)!.credits).toBe(0)
 
-    // 走真实的既有兑换接口（不是 store.redeemCdk），这才覆盖契约 C2 的跨模块路径
+    // 走真实的既有兑换接口（不是 store.redeemCdk），这才覆盖「管理端发码 → 用户端兑换」的完整链路
     const ok = await redeemPOST(req(buyerToken, { code: created.codes[0] }))
     expect(ok.status).toBe(200)
     expect(((await ok.json()) as { user: { credits: number } }).user.credits).toBe(25)
@@ -126,7 +126,7 @@ describe('【C2】批量生成的码可经既有兑换接口真实兑换', () =>
     // 同一张码不可重复兑换
     expect((await redeemPOST(req(buyerToken, { code: created.codes[0] }))).status).toBe(400)
 
-    // 【F1/C3 交叉】另一张作废后同样不可兑换
+    // 【作废与兑换的交叉】另一张作废后同样不可兑换
     expect((await revokePOST(req(t, { code: created.codes[1] }))).status).toBe(200)
     expect((await redeemPOST(req(buyerToken, { code: created.codes[1] }))).status).toBe(400)
     expect(store.getUserById(buyer.id)!.credits).toBe(25) // 额度未因失败兑换而变

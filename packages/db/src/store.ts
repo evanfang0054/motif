@@ -762,7 +762,7 @@ export class MotifStore {
       const row = this.db
         .prepare('SELECT credits, redeemed_by, revoked_at FROM cdks WHERE code = ?')
         .get(code.toUpperCase()) as { credits: number; redeemed_by: string | null; revoked_at: string | null } | undefined
-      // 已作废的码不可兑换（F1）：修复前只判断 redeemed_by，导致作废形同虚设
+      // 已作废的码不可兑换：修复前只判断 redeemed_by、忽略 revoked_at，导致作废形同虚设
       if (!row || row.redeemed_by || row.revoked_at) return null
       // 条件 UPDATE：并发下只有一个请求能把 redeemed_by 从 NULL 写成自己
       const res = this.db

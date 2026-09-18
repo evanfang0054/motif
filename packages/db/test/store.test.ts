@@ -445,7 +445,7 @@ describe('CDK 批量发放、列表与作废', () => {
     s.close()
   })
 
-  it('【F1 回归】已作废的码不能再被兑换', () => {
+  it('已作废的码不能再被兑换（回归）', () => {
     const s = new MotifStore(join(dir, 'cdk6.db'))
     const [a] = s.createCdkBatch({ count: 1, credits: 9 })
     const u = s.createUser({ email: 'e@b.co', passwordHash: 'h', name: 'e' })
