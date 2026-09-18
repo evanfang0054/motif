@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { ThemeToggle } from '@/components/workspace/ThemeToggle'
 import type { User } from '@motif/core'
-import { TOPIC_STATUS_LABEL } from '@motif/core'
+import { roleAtLeast, TOPIC_STATUS_LABEL } from '@motif/core'
 
 interface Props {
   user: User
@@ -20,6 +20,8 @@ interface Props {
 
 function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpenProfile, onLogout }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // 管理后台入口仅对管理员与超级管理员可见（普通用户看不到任何管理面线索）
+  const isAdmin = roleAtLeast(user.role, 'admin')
   return (
     <header className="ws-nav">
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -43,6 +45,11 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
         <span className="ws-badge hidden xl:flex">余额 {user.credits} 张</span>
         {/* 完整操作区只在 ≥xl（1280）展示；平板档保留「充值」主操作，其余收进菜单 */}
         <div className="hidden items-center gap-2 xl:flex">
+          {isAdmin && (
+            <Link href="/admin" className="ws-btn" title="进入管理后台">
+              管理后台
+            </Link>
+          )}
           <ThemeToggle />
           <button className="ws-btn" onClick={onOpenProfile} title="个人资料">{user.name}</button>
           <button className="ws-btn" onClick={onLogout} title={user.email}>退出</button>
@@ -53,6 +60,7 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
           <button className="ws-btn" aria-label="更多操作" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>⋯</button>
           {menuOpen && (
             <div className="ws-nav-menu" onClick={() => setMenuOpen(false)}>
+              {isAdmin && <Link href="/admin" className="ws-btn">管理后台</Link>}
               <ThemeToggle />
               <button className="ws-btn md:hidden" onClick={onOpenBilling}>充值</button>
               <button className="ws-btn" onClick={onOpenProfile}>{user.name}</button>

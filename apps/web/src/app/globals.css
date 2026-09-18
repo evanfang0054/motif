@@ -1131,3 +1131,38 @@ body {
   color: var(--foreground);
   font-weight: 600;
 }
+
+/* 强制改密软提示横幅 */
+.ws-password-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--warning-soft, var(--surface-secondary));
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.ws-password-hint-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ws-password-hint-primary {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--button-text, #fff);
+}
+
+.ws-password-hint-dismiss {
+  border: none;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  padding: 4px 8px;
+}

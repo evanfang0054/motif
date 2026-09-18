@@ -1,6 +1,9 @@
 /** Motif 领域类型 —— 与服务端 API 契约保持一致 */
 
-export type UserRole = 'user' | 'admin'
+export type UserRole = 'user' | 'admin' | 'root'
+
+/** 账号启用状态：禁用后不可登录，既有会话失效；不影响正在执行的生成轮次 */
+export type UserStatus = 'active' | 'disabled'
 
 export interface User {
   id: string
@@ -8,6 +11,9 @@ export interface User {
   name: string
   avatarUrl: string | null
   role: UserRole
+  status: UserStatus
+  /** 由引导创建或管理员重置密码后置真：仅作顶栏软提示，不拦截请求 */
+  mustChangePassword: boolean
   credits: number
   inviteCode: string
   invitedCount: number

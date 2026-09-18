@@ -13,6 +13,9 @@ export function applySchema(db: Database): void {
       name TEXT NOT NULL,
       avatar_url TEXT,
       role TEXT NOT NULL DEFAULT 'user',
+      status TEXT NOT NULL DEFAULT 'active',
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      disabled_at TEXT,
       credits INTEGER NOT NULL DEFAULT 0,
       invite_code TEXT NOT NULL UNIQUE,
       invited_by TEXT,
@@ -97,7 +100,8 @@ export function applySchema(db: Database): void {
       credits INTEGER NOT NULL,
       redeemed_by TEXT,
       redeemed_at TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      revoked_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS orders (
@@ -116,8 +120,28 @@ export function applySchema(db: Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      resolved_at TEXT,
+      resolved_by TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      detail TEXT,
       created_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit(actor_id, id DESC);
   `)
 
   // 旧库平滑迁移：messages.reference_ids + verification_codes.attempts
@@ -131,5 +155,22 @@ export function applySchema(db: Database): void {
     db.exec('ALTER TABLE verification_codes ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0')
   } catch {
     // 列已存在
+  }
+
+  // 旧库平滑迁移：三级角色与用户状态（Issue #16）
+  for (const ddl of [
+    "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+    'ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN disabled_at TEXT',
+    'ALTER TABLE cdks ADD COLUMN revoked_at TEXT',
+    "ALTER TABLE feedback ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
+    'ALTER TABLE feedback ADD COLUMN resolved_at TEXT',
+    'ALTER TABLE feedback ADD COLUMN resolved_by TEXT',
+  ]) {
+    try {
+      db.exec(ddl)
+    } catch {
+      // 列已存在：重复启动时的正常路径
+    }
   }
 }
