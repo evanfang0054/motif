@@ -172,3 +172,141 @@
     display: flex;
   }
 }
+
+/* ---------- 表单 / 工具栏 / 表格 ---------- */
+
+.admin-form,
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.admin-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted-strong);
+}
+
+.admin-form input,
+.admin-toolbar input,
+.admin-toolbar select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.admin-toolbar input[type='search'] {
+  min-width: 180px;
+}
+
+.admin-btn-primary,
+.admin-btn-danger,
+.admin-toolbar button {
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.admin-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--button-text, #fff);
+}
+
+.admin-btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.admin-toolbar button:disabled,
+.admin-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-alert-ok,
+.admin-alert-err {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.admin-alert-ok {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.admin-alert-err {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  color: var(--muted-strong);
+  font-weight: 600;
+}
+
+.admin-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.admin-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface-tertiary);
+}
+
+.admin-chip.is-unredeemed { background: var(--status-pending); color: #fff; }
+.admin-chip.is-redeemed { background: var(--status-completed); color: #fff; }
+.admin-chip.is-revoked { background: var(--status-canceled); color: #fff; }
+
+/* 窄屏：表格转卡片，避免横向滚动（td 的 data-label 由页面提供） */
+@media (max-width: 767px) {
+  .admin-table thead {
+    display: none;
+  }
+  .admin-table tr {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 6px 8px;
+  }
+  .admin-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: none;
+    padding: 4px 0;
+  }
+  .admin-table td::before {
+    content: attr(data-label);
+    color: var(--muted-strong);
+  }
+}
