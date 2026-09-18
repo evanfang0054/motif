@@ -87,20 +87,20 @@ function Landing() {
             </div>
             <div className="lp-shot">
               <figure>
-                <img src="/templates/ecommerce-suite.svg" alt="商品套图示例" width={1448} height={1086} />
-                <figcaption>主图 1448×1086</figcaption>
+                <img src="/templates/ecommerce-suite.jpg" alt="商品套图示例" width={1536} height={1024} />
+                <figcaption>电商商品全套图 · 示例成片</figcaption>
               </figure>
               <figure>
-                <img src="/templates/portrait-editorial.svg" alt="人物写真示例" width={1024} height={1536} />
-                <figcaption>写真 1024×1536</figcaption>
+                <img src="/templates/portrait-editorial.jpg" alt="人物写真示例" width={1536} height={1024} />
+                <figcaption>个人形象写真 · 示例成片</figcaption>
               </figure>
               <figure>
-                <img src="/templates/world-landmarks.svg" alt="旅拍示例" width={1402} height={1122} />
-                <figcaption>旅拍 1402×1122</figcaption>
+                <img src="/templates/world-landmarks.jpg" alt="旅拍示例" width={1536} height={1024} />
+                <figcaption>环球地标旅拍 · 示例成片</figcaption>
               </figure>
               <figure>
-                <img src="/templates/wedding-portrait.svg" alt="婚纱样片示例" width={1024} height={1536} />
-                <figcaption>样片 1024×1536</figcaption>
+                <img src="/templates/wedding-portrait.jpg" alt="婚纱样片示例" width={1536} height={1024} />
+                <figcaption>婚纱旅拍样片 · 示例成片</figcaption>
               </figure>
             </div>
           </div>
