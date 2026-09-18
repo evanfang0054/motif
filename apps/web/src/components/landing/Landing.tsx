@@ -131,6 +131,15 @@ function Landing() {
 
         <section className="lp-showcase" style={{ paddingBottom: 80 }}>
           <div className="lp-card" style={{ textAlign: 'center' }}>
+            {/* 完整纹样版印章（含墨色小 m 变奏）：只在 ≥64px 的大画幅出场，
+                顶栏/favicon 用减法版 BrandMark，分层约定见 docs/brand/README.md */}
+            <img
+              src="/brand/motif-logo-editorial.svg"
+              alt="Motif 印章"
+              width={96}
+              height={96}
+              style={{ display: 'block', margin: '0 auto 20px' }}
+            />
             <h2 className="lp-section-title">准备好开始了吗？</h2>
             <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
             <a className="lp-btn lp-btn-primary mt-5" href="#auth" onClick={goRegister}>免费注册</a>

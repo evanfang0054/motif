@@ -1,10 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#cc785c"/>
-      <stop offset="1" stop-color="#e8a55a"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="url(#g)"/>
-  <text x="32" y="44" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#ffffff">M</text>
+  <!-- Motif 印章：暖米纸底 + 珊瑚手绘母题 M + 打样对位角标 -->
+  <!-- 与 apps/web/src/components/BrandMark.tsx 保持同一视觉，改这里请同步组件 -->
+  <!-- 暖米纸底：印章的画布 -->
+  <rect width="64" height="64" rx="14" fill="#faf9f5"/>
+  <!-- 四角对位角标：印刷打样的 registration mark -->
+  <g stroke="#cc785c" stroke-width="2.4" stroke-linecap="round" fill="none">
+    <path d="M11.5 17.5 V11.5 H17.5"/>
+    <path d="M46.5 11.5 H52.5 V17.5"/>
+    <path d="M52.5 46.5 V52.5 H46.5"/>
+    <path d="M17.5 52.5 H11.5 V46.5"/>
+  </g>
+  <!-- 上星下点：纹样的起止符 -->
+  <path d="M32 7.2 L33.2 10.8 L36.8 12 L33.2 13.2 L32 16.8 L30.8 13.2 L27.2 12 L30.8 10.8 Z" fill="#cc785c"/>
+  <path d="M29.5 53.5 H34.5" stroke="#cc785c" stroke-width="2.4" stroke-linecap="round"/>
+  <!-- 手绘母题 M：连续一笔，微不对称，呼应「参考图 → 成套出图」的母题 -->
+  <path d="M19.3 43.8 C19.9 37 21.4 28.6 22.9 22.1 C26.4 27.1 29.5 32.1 32 36.7 C34.5 32.2 37.6 27.2 41.1 21.9 C42.6 28.4 44.1 36.9 44.7 43.6"
+        stroke="#cc785c" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 暖米纸底 -->
+  <rect width="64" height="64" rx="14" fill="#faf9f5"/>
+  <!-- 四角对位角标 + 左右中线短划：印刷打样对位符 -->
+  <g stroke="#cc785c" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <path d="M11.5 17.5 V11.5 H17.5"/>
+    <path d="M46.5 11.5 H52.5 V17.5"/>
+    <path d="M52.5 46.5 V52.5 H46.5"/>
+    <path d="M17.5 52.5 H11.5 V46.5"/>
+    <path d="M8.8 32 H13.2"/>
+    <path d="M50.8 32 H55.2"/>
+  </g>
+  <!-- 上星下点 -->
+  <path d="M32 7.2 L33.2 10.8 L36.8 12 L33.2 13.2 L32 16.8 L30.8 13.2 L27.2 12 L30.8 10.8 Z" fill="#cc785c"/>
+  <path d="M29.5 53.5 H34.5" stroke="#cc785c" stroke-width="2.2" stroke-linecap="round"/>
+  <!-- 手绘母题 M -->
+  <path d="M19.3 43.8 C19.9 37 21.4 28.6 22.9 22.1 C26.4 27.1 29.5 32.1 32 36.7 C34.5 32.2 37.6 27.2 41.1 21.9 C42.6 28.4 44.1 36.9 44.7 43.6"
+        stroke="#cc785c" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 墨色小 m 变奏：母题的两个衍生体 -->
+  <g stroke="#141413" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M47.2 27.5 C47.5 25.3 48 23.8 48.8 23.8 C49.6 23.8 49.7 25 49.5 26.2 C50.4 24.3 51.3 24 51.8 24.9 C52 25.6 51.9 26.6 51.7 27.5"/>
+    <path d="M12.2 44 C12.5 41.8 13 40.3 13.8 40.3 C14.6 40.3 14.7 41.5 14.5 42.7 C15.4 40.8 16.3 40.5 16.8 41.4 C17 42.1 16.9 43.1 16.7 44"/>
+  </g>
+</svg>
