@@ -120,6 +120,7 @@ export function applySchema(db: Database): void {
       amount_total INTEGER NOT NULL,
       currency TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      channel TEXT NOT NULL DEFAULT 'mock',
       created_at TEXT NOT NULL,
       paid_at TEXT
     );
