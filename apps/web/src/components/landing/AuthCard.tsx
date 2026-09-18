@@ -12,6 +12,12 @@ function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 }
 
+interface AuthCardProps {
+  /** 模式由 Landing 持有：落地页默认 login，各 CTA 可显式切到 register */
+  mode: Mode
+  onModeChange: (m: Mode) => void
+}
+
 /** 可见性切换的密码输入框 */
 function PasswordInput({
   id,
@@ -77,10 +83,8 @@ function PasswordInput({
 }
 
 /** 登录 / 注册 / 找回密码 三合一卡片 */
-function AuthCard() {
+function AuthCard({ mode, onModeChange }: AuthCardProps) {
   const router = useRouter()
-  // 新访客默认展示注册（落地页主推「注册送 3 张」；老用户点「已有账号？登录」）
-  const [mode, setMode] = useState<Mode>('register')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [inviteCode, setInviteCode] = useState('')
@@ -97,14 +101,9 @@ function AuthCard() {
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    // 支持显式入口：/?mode=login（如老用户书签）与邀请链接自动注册
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('mode') === 'login') setMode('login')
-    const invite = params.get('invite')
-    if (invite) {
-      setInviteCode(invite.trim().toUpperCase())
-      setMode('register')
-    }
+    // 邀请链接（/?invite=CODE）自动填充邀请码；落地页初始模式由 Landing 根据 URL 决定
+    const invite = new URLSearchParams(window.location.search).get('invite')
+    if (invite) setInviteCode(invite.trim().toUpperCase())
   }, [])
 
   useEffect(() => {
@@ -150,7 +149,7 @@ function AuthCard() {
             if (!r.ok) throw new Error(d.error || '重置失败')
           })
           setNotice('密码已重置，请用新密码登录。')
-          setMode('login')
+          onModeChange('login')
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '操作失败，请重试。')
@@ -190,7 +189,7 @@ function AuthCard() {
   }, [mode, email, cooldown, startCooldown])
 
   const switchMode = useCallback((m: Mode) => {
-    setMode(m)
+    onModeChange(m)
     setError(null)
     setNotice(null)
     setCodeMsg(null)
@@ -294,3 +293,4 @@ function AuthCard() {
 }
 
 export { AuthCard }
+export type { Mode }

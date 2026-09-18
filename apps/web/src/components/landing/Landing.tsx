@@ -1,24 +1,46 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { BrandMark } from '@/components/BrandMark'
-import { AuthCard } from './AuthCard'
+import { AuthCard, type Mode } from './AuthCard'
 
 /** 未登录落地页：导航 + 主视觉 + 登录卡 + 案例 + 功能 + 页脚 */
 function Landing() {
+  // 默认登录模式（回访/老用户主路径）；「免费注册」「注册送额度」等注册意图入口显式切换
+  const [authMode, setAuthMode] = useState<Mode>('login')
+
+  // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const mode = params.get('mode')
+    if (mode === 'register' || mode === 'login') setAuthMode(mode)
+    if (params.get('invite')) setAuthMode('register')
+  }, [])
+
+  /** 注册意图 CTA：切到注册模式并滚动到卡片 */
+  const goRegister = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    setAuthMode('register')
+    e.preventDefault()
+    document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  /** 登录意图 CTA：确保卡片处于登录模式 */
+  const goLogin = () => setAuthMode('login')
+
   return (
     <div className="lp-shell" id="top">
       <header className="lp-nav">
         <Link href="#top" className="lp-brand">
           <BrandMark />
-          motif
+          Motif
         </Link>
         <nav className="lp-nav-links hidden md:flex">
           <a href="#showcase">案例一览</a>
           <a href="#features">核心能力</a>
-          <a href="#auth">注册送额度</a>
+          <a href="#auth" onClick={goRegister}>注册送额度</a>
         </nav>
-        <a className="lp-btn lp-btn-primary" href="#auth">开始体验</a>
+        <a className="lp-btn lp-btn-primary" href="#auth" onClick={goLogin}>开始体验</a>
       </header>
 
       <main className="lp-main">
@@ -35,7 +57,7 @@ function Landing() {
               生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
             </p>
             <div className="lp-actions">
-              <a className="lp-btn lp-btn-primary" href="#auth">立即开始</a>
+              <a className="lp-btn lp-btn-primary" href="#auth" onClick={goLogin}>立即开始</a>
               <a className="lp-btn lp-btn-ghost" href="#showcase">先看效果</a>
             </div>
             <div className="lp-hero-points">
@@ -44,7 +66,7 @@ function Landing() {
               <span>✓ 云端队列不占本地算力</span>
             </div>
           </div>
-          <AuthCard />
+          <AuthCard mode={authMode} onModeChange={setAuthMode} />
         </section>
 
         <section id="showcase" className="lp-showcase">
@@ -111,7 +133,7 @@ function Landing() {
           <div className="lp-card" style={{ textAlign: 'center' }}>
             <h2 className="lp-section-title">准备好开始了吗？</h2>
             <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
-            <a className="lp-btn lp-btn-primary mt-5" href="#auth">免费注册</a>
+            <a className="lp-btn lp-btn-primary mt-5" href="#auth" onClick={goRegister}>免费注册</a>
           </div>
         </section>
       </main>
@@ -119,9 +141,9 @@ function Landing() {
       <footer className="lp-footer">
         <span className="lp-brand" style={{ fontSize: 14 }}>
           <BrandMark size={22} />
-          motif
+          Motif
         </span>
-        <span>© 2026 motif · AI 商业图片批量生成工作台</span>
+        <span>© 2026 Motif · AI 商业图片批量生成工作台</span>
       </footer>
     </div>
   )
