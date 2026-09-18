@@ -6,6 +6,8 @@
   min-height: 100dvh;
   background: var(--background);
   color: var(--foreground);
+  /* 让 <1024 的图标按钮能贴到头部右上角 */
+  position: relative;
 }
 
 .admin-header {
@@ -148,30 +150,74 @@
   display: none;
 }
 
-/* <1024：导航收进抽屉，由顶部按钮开关 */
+/* 遮罩默认不存在（桌面档不需要，抽屉档由 .is-open 打开） */
+.admin-nav-backdrop {
+  display: none;
+}
+
+/* <1024：导航变成**从左边滑入的抽屉**，由头部右上角的图标按钮开关 */
 @media (max-width: 1023px) {
   .admin-body {
     display: block;
   }
+  /* 给右上角的图标按钮留位，避免与身份文案重叠 */
+  .admin-header {
+    padding-right: 60px;
+  }
   .admin-nav-toggle {
     display: inline-flex;
-    margin: 10px 20px 0;
-    padding: 6px 12px;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--surface-secondary);
     color: var(--foreground);
     cursor: pointer;
+    z-index: 70; /* 高于遮罩：抽屉开着时按钮仍可点，用于收起 */
   }
+  .admin-nav-backdrop.is-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: #00000059;
+    z-index: 60;
+  }
+  /* 抽屉常驻 DOM，用 transform 控制显隐；visibility 让关闭时不会被 Tab 聚焦到 */
   .admin-nav {
-    display: none;
-    width: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    margin-top: 10px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 240px;
+    max-width: 82vw;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    border-bottom: none;
+    margin-top: 0;
+    transform: translateX(-100%);
+    visibility: hidden;
+    z-index: 65;
   }
   .admin-nav.is-open {
-    display: flex;
+    transform: translateX(0);
+    visibility: visible;
+  }
+}
+
+/* 滑动动画只在用户没有要求减少动效时启用。
+   尊重 prefers-reduced-motion 是应有的无障碍行为；顺带让「无渲染帧」的环境（如无头浏览器）
+   可以确定性地关掉动画来验证抽屉状态，不必与卡住的过渡搏斗。 */
+@media (max-width: 1023px) and (prefers-reduced-motion: no-preference) {
+  .admin-nav {
+    transition: transform 0.2s ease, visibility 0.2s;
   }
 }
 
