@@ -223,3 +223,25 @@ describe('一次性重置密码（C11）', () => {
     expect(JSON.stringify(store.listLedger({})).replace(/"/g, '')).not.toContain(password)
   })
 })
+
+describe('审计失败隔离（D5 / L3-14）', () => {
+  it('审计写入抛错时，主操作仍 200 且额度已落库不回滚', async () => {
+    const t = sessionFor('admin', 'a13@b.co')
+    const u = store.createUser({ email: 'd5@b.co', passwordHash: 'h', name: 'x', credits: 1 })
+    const original = store.insertAudit.bind(store)
+    // 让审计写入必然抛错
+    store.insertAudit = (() => {
+      throw new Error('审计表写入失败（测试注入）')
+    }) as typeof store.insertAudit
+    try {
+      const res = await creditsPOST(req(t, { userId: u.id, delta: 9, reason: 'D5 用例' }))
+      expect(res.status).toBe(200) // 主操作不被审计失败拖垮
+      // 而且额度**确实已落库**：审计是事后记录，它失败不回滚业务
+      expect(store.getUserById(u.id)!.credits).toBe(10)
+      expect(ledgerSum()).toBe(balance())
+    } finally {
+      store.insertAudit = original
+    }
+    expect(store.listAudit({})).toHaveLength(0) // 审计确实没写成
+  })
+})

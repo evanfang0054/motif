@@ -78,6 +78,11 @@ export default function AdminHomePage() {
           <div className="admin-card-sub">
             发放 {c.granted} · 期初 {c.openingBalance} · 调整 +{c.adjustedIn}/-{c.adjustedOut}
           </div>
+          {/* 对账口径常显：差额非 0 就是账目被旁路改过，不能藏在折叠区里 */}
+          <div className={ledgerDiff === 0 ? 'admin-card-sub' : 'admin-card-sub admin-neg'}>
+            对账：发放+期初+调整+退回−回收−扣费 = {closed}
+            {ledgerDiff === 0 ? `（与存量 ${c.balance} 一致）` : `（与存量 ${c.balance} 相差 ${ledgerDiff}，账目可能被旁路修改）`}
+          </div>
           <details className="admin-card-detail">
             <summary>来源构成</summary>
             <ul className="admin-card-list">
@@ -88,9 +93,6 @@ export default function AdminHomePage() {
                 </li>
               ))}
             </ul>
-            <p className="admin-muted" style={{ fontSize: 12 }}>
-              对账：发放+期初+调整+退回−回收−扣费 = {closed}（当前存量 {c.balance}）· 账目差额 {ledgerDiff}
-            </p>
           </details>
         </div>
 
