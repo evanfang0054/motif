@@ -80,7 +80,7 @@ describe('访问控制', () => {
   })
 })
 
-describe('额度调整（C6 / C7）', () => {
+describe('额度调整', () => {
   it('正向调整精确生效，写审计且 detail 含原因', async () => {
     const t = sessionFor('admin', 'a5@b.co')
     const u = store.createUser({ email: 'c6@b.co', passwordHash: 'h', name: '补额', credits: 10 })
@@ -126,7 +126,7 @@ describe('额度调整（C6 / C7）', () => {
     expect((await creditsPOST(req(t, { userId: boss.id, delta: 5, reason: '给超管' }))).status).toBe(403)
   })
 
-  it('【C7】调整后账面恒等：余额与账目同步变化且仍然相等', async () => {
+  it('调整后账面恒等：余额与账目同步变化且仍然相等', async () => {
     const t = sessionFor('admin', 'a8@b.co')
     const u = store.createUser({ email: 'c7@b.co', passwordHash: 'h', name: 'x', credits: 10 })
     expect(ledgerSum()).toBe(balance()) // 前置：起点就一致
@@ -138,8 +138,8 @@ describe('额度调整（C6 / C7）', () => {
   })
 })
 
-describe('禁用 / 启用（C8 / C9）', () => {
-  it('【C8】禁用后既有会话立即失效，且用真实密码也登不进来', async () => {
+describe('禁用 / 启用', () => {
+  it('禁用后既有会话立即失效，且用真实密码也登不进来', async () => {
     const t = sessionFor('admin', 'a9@b.co')
     // ⚠️ 必须用真实 hash：假 hash（如 'h'）会让 verifyPassword 恒为 false，
     // 于是「登录失败」这条断言与 status 校验完全无关 —— 是恒真的假绿
@@ -158,7 +158,7 @@ describe('禁用 / 启用（C8 / C9）', () => {
     expect(() => login(store, 'ban@b.co', 'wrong-pass')).toThrow(/邮箱或密码不正确/)
   })
 
-  it('【C9】禁用不产生任何退额：额度前后完全相等', async () => {
+  it('禁用不产生任何退额：额度前后完全相等', async () => {
     const t = sessionFor('admin', 'a10@b.co')
     const u = store.createUser({ email: 'ban2@b.co', passwordHash: 'h', name: '被封2', credits: 17 })
     // 造一轮「排队中」的生成，制造「禁用会不会顺手退额」的可观测面
@@ -194,7 +194,7 @@ describe('禁用 / 启用（C8 / C9）', () => {
   })
 })
 
-describe('一次性重置密码（C11）', () => {
+describe('一次性重置密码', () => {
   it('新密码可登录、旧密码失效、must_change_password=1，且审计不含明文', async () => {
     const r = sessionFor('root', 'r3@b.co')
     const u = store.createUser({ email: 'pwd@b.co', passwordHash: hashPassword('old-password-123'), name: '改密' })
@@ -224,7 +224,7 @@ describe('一次性重置密码（C11）', () => {
   })
 })
 
-describe('审计失败隔离（D5 / L3-14）', () => {
+describe('审计写入失败的隔离', () => {
   it('审计写入抛错时，主操作仍 200 且额度已落库不回滚', async () => {
     const t = sessionFor('admin', 'a13@b.co')
     const u = store.createUser({ email: 'd5@b.co', passwordHash: 'h', name: 'x', credits: 1 })
@@ -234,7 +234,7 @@ describe('审计失败隔离（D5 / L3-14）', () => {
       throw new Error('审计表写入失败（测试注入）')
     }) as typeof store.insertAudit
     try {
-      const res = await creditsPOST(req(t, { userId: u.id, delta: 9, reason: 'D5 用例' }))
+      const res = await creditsPOST(req(t, { userId: u.id, delta: 9, reason: '审计失败隔离用例' }))
       expect(res.status).toBe(200) // 主操作不被审计失败拖垮
       // 而且额度**确实已落库**：审计是事后记录，它失败不回滚业务
       expect(store.getUserById(u.id)!.credits).toBe(10)

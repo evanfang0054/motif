@@ -54,7 +54,7 @@ describe('访问控制', () => {
   })
 })
 
-describe('GET /api/admin/logs（D1）', () => {
+describe('GET /api/admin/logs（跨用户视图）', () => {
   it('跨用户返回且含 prompt / finalPrompt 原文，倒序分页', async () => {
     const u1 = store.createUser({ email: 'l1@b.co', passwordHash: 'h', name: '甲' })
     const u2 = store.createUser({ email: 'l2@b.co', passwordHash: 'h', name: '乙' })
@@ -78,7 +78,7 @@ describe('GET /api/admin/logs（D1）', () => {
   })
 })
 
-describe('POST /api/admin/logs/cleanup（D2 / D3 / D4）', () => {
+describe('POST /api/admin/logs/cleanup', () => {
   it('缺 confirm 一律 400 且一条都不删', async () => {
     const u = store.createUser({ email: 'l3@b.co', passwordHash: 'h', name: 'x' })
     const t = store.createTopic(u.id, 't')

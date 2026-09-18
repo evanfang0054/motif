@@ -78,7 +78,7 @@ describe('GET /api/admin/feedback', () => {
 })
 
 describe('POST /api/admin/feedback/resolve', () => {
-  it('标记成功并写审计（C5：status/resolved_at/resolved_by 齐备）', async () => {
+  it('标记成功并写审计：状态、处理时间与处理人齐备', async () => {
     const u = store.createUser({ email: 'fb2@b.co', passwordHash: 'h', name: 'x' })
     store.insertFeedback(u.id, '待处理')
     const t = sessionFor('admin', 'a3@b.co')
