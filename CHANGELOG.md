@@ -6,6 +6,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- **管理后台地基**（#24）：三级角色 `user < admin < root`；服务启动时若库中尚无超级管理员则自动创建并交付
+  **随机强密码**（写入 `dataDir/admin-credentials.txt`，权限 600，同时打印到启动日志；幂等依据是数据库而非文件）；
+  `/admin` 服务端角色守卫（未登录 / 被禁用 / 角色不足一律 404，不泄露存在性）与 `/api/admin/*` 鉴权（区分 401 与 403）；
+  角色保护规则（管理员不可操作或授予超级管理员、系统不允许失去最后一个超级管理员）；
+  `admin_audit` 审计表与写入封装；强制改密软提示横幅；工作台顶栏管理入口（仅管理员可见）
+- **管理员凭据工具**（#24）：`pnpm admin:reset` 重置超级管理员密码、`pnpm admin:list` 查看管理员账号；
+  兼容「加列之前」的旧库（自愈补列）
+- 新增环境变量 `MOTIF_ADMIN_EMAIL` / `MOTIF_ADMIN_PASSWORD` / `MOTIF_SKIP_ADMIN_BOOTSTRAP`
+
+### Fixed
+
+- `<html>` 元素的水合属性警告（#24）：防闪烁内联脚本写入 `data-theme`，以及浏览器扩展注入属性，都会触发该警告；
+  改由 `<html suppressHydrationWarning>` 覆盖这两类预期改写
+
+### Changed
+
+- 存储层（#24）：新增 `settings` 与 `admin_audit` 两张表；`users` +3 列、`cdks` +1 列、`feedback` +3 列，
+  沿用既有 `try/catch ALTER` 自愈迁移风格
+
 ## [0.2.0] - 2026-09-18
 
 首次发版（0.1.0）以来的第二轮迭代：7 个 PR、37 个提交、30 个文件变更（+1861 / −233）。

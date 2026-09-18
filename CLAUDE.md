@@ -24,6 +24,7 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - `pnpm test` — 全部 Vitest 单测（core/db/provider/web 各自 `test/*.test.ts`）；单包跑 `pnpm --filter @motif/core test`
 - `pnpm build` — 构建 @motif/web
 - `pnpm cdk <CODE> <N>` / `pnpm cdk --list` — CDK 发放/查询 CLI（与 apps/web 共用数据库）
+- `pnpm admin:reset` / `pnpm admin:list` — 超级管理员凭据工具（重置密码并吊销其会话 / 查看管理员账号）
 - `pnpm test:e2e`、`bash e2e/acceptance.sh` — ⚠️ ego-browser 驱动、直跑真实生图网关并消耗额度：仅当用户明确要求时运行
 
 ## 关键机制与坑
@@ -31,6 +32,8 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - workspace 包直接导出 TS 源码（`main: src/index.ts`），没有构建产物，靠 Next `transpilePackages` 编译；跨包引用用 `workspace:*`。
 - `@/*` 别名指向 `apps/web/src/*`（tsconfig paths + vitest alias 均已配置）。
 - SQLite（better-sqlite3, WAL）schema 在服务端首次 `getRuntime` 时懒建表；数据默认在 `apps/web/.data/`（`MOTIF_DATA_DIR` / `MOTIF_DB_FILE` 可覆盖），生成图片存 `.data/storage/`。
+- **管理员引导**：服务启动时（`instrumentation.ts` 的 `register()`）若库中尚无 `role='root'` 账号，自动创建并把随机强密码写入 `dataDir/admin-credentials.txt`（0600）＋启动日志。幂等依据是**数据库而非凭据文件**。`MOTIF_SKIP_ADMIN_BOOTSTRAP=1` 可跳过。⚠️ 引导与 worker 启动**必须各自包 try/catch** —— `getRuntime()` 缓存未命中时会构造生图 provider，缺 `IMAGE_API_*` 会抛错，不包裹会让缺配置的部署起不来。
+- **管理面**：`/admin` 用服务端守卫（非授权 `notFound()` → 404）；`/api/admin/*` 用 `requireAdmin` / `requireRoot`。⚠️ App Router 中 layout 与 page **并行渲染**，layout 的 `notFound()` 拦不住 page 的服务端渲染（其文本会进 404 响应的 RSC flight payload）—— 故管理页**必须客户端取数**走已守卫接口，校验断言用 HTTP 状态码或 `innerText`，**不得 grep 原始 HTML**。
 - 本地联调注册需 `MOTIF_EXPOSE_DEV_CODE=1`（验证码随接口直出）；生产环境严禁开启。
 - 额度按张扣费，生成失败/取消必须退额（额度守恒是验收项）；改动计费、队列或 worker（`apps/web/src/server/worker.ts`）时必须保持守恒。
 - 原生依赖 better-sqlite3 / sharp 首次安装需编译（已通过 pnpm-workspace.yaml `allowBuilds` 放行；.npmrc 走 npmmirror 二进制镜像）。
