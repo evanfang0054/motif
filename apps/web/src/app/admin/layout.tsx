@@ -21,12 +21,16 @@ async function getAdminUser() {
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getAdminUser()
   if (!user) notFound()
+  const roleLabel = user.role === 'root' ? '超级管理员' : '管理员'
+  // 引导创建的账号 name 就是「超级管理员」，此时再拼角色会得到「超级管理员（超级管理员）」
+  const showRole = user.name !== roleLabel
   return (
     <div className="admin-shell">
       <header className="admin-header">
         <span className="admin-brand">Motif 管理后台</span>
         <span className="admin-identity">
-          {user.name}（{user.role === 'root' ? '超级管理员' : '管理员'}）
+          {user.name}
+          {showRole ? `（${roleLabel}）` : ''}
         </span>
       </header>
       <main className="admin-main">{children}</main>
