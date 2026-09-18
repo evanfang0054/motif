@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getRuntime } from '@/server/context'
 import { SESSION_COOKIE, SESSION_TTL_MS } from '@/server/auth'
+import { resolveBool } from './settings'
 
 /** 登录/注册成功后：签发会话并写入 httpOnly Cookie */
 export function createSessionResponse(body: Record<string, unknown>, userId: string, status = 200): NextResponse {
@@ -12,8 +13,9 @@ export function createSessionResponse(body: Record<string, unknown>, userId: str
     value: token,
     httpOnly: true,
     sameSite: 'lax',
-    // HTTPS 部署时设 MOTIF_COOKIE_SECURE=1（本地 http 联调勿开，否则浏览器拒收 cookie）
-    secure: process.env.MOTIF_COOKIE_SECURE === '1',
+    // HTTPS 部署时开启（本地 http 联调勿开，否则浏览器拒收 cookie）。
+    // 读配置（数据库优先、回退环境变量），每次签发会话时现读，因此改完下次登录即生效。
+    secure: resolveBool(store, process.env, 'MOTIF_COOKIE_SECURE'),
     path: '/',
     maxAge: SESSION_TTL_MS / 1000,
   })

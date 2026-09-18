@@ -10,7 +10,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { packageId } = await readJson<{ packageId: string }>(req)
     const pkg = CREDIT_PACKAGES.find((p) => p.id === packageId)
     if (!pkg) throw new ServiceError(400, '套餐不存在。')
-    if (billingMode() === 'live') {
+    if (billingMode(getRuntime().store) === 'live') {
       throw new ServiceError(501, '真实支付渠道尚未接入，请使用 CDK 兑换额度。')
     }
     const orderId = getRuntime().store.createOrder(user.id, pkg)
