@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { User } from '@motif/core'
 import { api } from '@/lib/client'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
 
 type RoleFilter = '' | 'user' | 'admin' | 'root'
 type StatusFilter = '' | 'active' | 'disabled'
 
 const ROLE_LABEL: Record<string, string> = { user: '普通用户', admin: '管理员', root: '超级管理员' }
+const PAGE_SIZE = 20
 
 export default function AdminUsersPage() {
   const [me, setMe] = useState<User | null>(null)
@@ -19,6 +21,8 @@ export default function AdminUsersPage() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   // 额度调整弹窗
   const [adjust, setAdjust] = useState<{ user: User; delta: string; reason: string } | null>(null)
@@ -28,15 +32,18 @@ export default function AdminUsersPage() {
   const isRoot = me?.role === 'root'
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListUsers({ q: q || undefined, role: role || undefined, status: status || undefined, pageSize: 100 })
+      const r = await api.adminListUsers({ q: q || undefined, role: role || undefined, status: status || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [q, role, status])
+  }, [q, role, status, page])
 
   useEffect(() => {
     void load()
@@ -120,19 +127,19 @@ export default function AdminUsersPage() {
       <h1 className="admin-title">用户</h1>
 
       <div className="admin-toolbar">
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索邮箱或昵称" />
-        <select value={role} onChange={(e) => setRole(e.target.value as RoleFilter)}>
+        <input type="search" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="搜索邮箱或昵称" />
+        <select value={role} onChange={(e) => { setRole(e.target.value as RoleFilter); setPage(1) }}>
           <option value="">全部角色</option>
           <option value="user">普通用户</option>
           <option value="admin">管理员</option>
           <option value="root">超级管理员</option>
         </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1) }}>
           <option value="">全部状态</option>
           <option value="active">正常</option>
           <option value="disabled">已禁用</option>
         </select>
-        <span className="admin-muted">共 {total} 个</span>
+        <ListCount loading={loading} total={total} unit="个" />
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
@@ -194,11 +201,15 @@ export default function AdminUsersPage() {
               </tr>
             )
           })}
-          {items.length === 0 && (
-            <tr><td colSpan={6} className="admin-muted">（无匹配的用户）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={6} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={6} text="（无匹配的用户）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
       {adjust && (
         <div className="admin-modal-mask" onClick={() => setAdjust(null)}>

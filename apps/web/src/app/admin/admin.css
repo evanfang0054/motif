@@ -367,6 +367,23 @@
   gap: 10px;
   padding: 2px 0;
   font-size: 12px;
+  align-items: flex-start;
+}
+
+/* 长串必须能断行：失败原因里常有 `{"error":{"message":"…"}}` 这种没有断行机会的长串，
+   不给 min-width:0 + overflow-wrap 的话会把卡片/表格撑破（实测 1440 与 390 都会） */
+.admin-card-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 但右侧那个数字不能被挤没：不给 flex:none 的话，左侧长文本会把「3」压到 2px 宽并溢出 5px */
+.admin-card-list li > span:last-child {
+  flex: none;
+}
+
+.admin-table td {
+  overflow-wrap: anywhere;
 }
 
 .admin-neg {
@@ -455,4 +472,28 @@
   font-size: 12px;
   line-height: 1.7;
   word-break: break-word;
+}
+
+/* ---------- 分页 ---------- */
+
+.admin-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.admin-pager button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.admin-pager button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

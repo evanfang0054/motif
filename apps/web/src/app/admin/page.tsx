@@ -57,6 +57,9 @@ export default function AdminHomePage() {
   // 闭合恒等式：这一行让页面自己能证明「账目加得回来」
   const closed = c.granted + c.openingBalance + c.adjustedIn + c.refunded - c.adjustedOut - c.generatedCharged
   const ledgerDiff = c.balance - c.ledgerSum
+  // 只有期初结存时（刚升级完、本系统还没产生任何流水），「发放 0 / 净消耗 0」看着像坏了 —— 明确说清楚
+  const onlyOpening =
+    c.openingBalance > 0 && c.granted === 0 && c.adjustedIn === 0 && c.adjustedOut === 0 && c.generatedCharged === 0 && c.refunded === 0
 
   return (
     <section className="admin-panel">
@@ -83,6 +86,11 @@ export default function AdminHomePage() {
             对账：发放+期初+调整+退回−回收−扣费 = {closed}
             {ledgerDiff === 0 ? `（与存量 ${c.balance} 一致）` : `（与存量 ${c.balance} 相差 ${ledgerDiff}，账目可能被旁路修改）`}
           </div>
+          {onlyOpening && (
+            <div className="admin-card-sub">
+              本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存
+            </div>
+          )}
           <details className="admin-card-detail">
             <summary>来源构成</summary>
             <ul className="admin-card-list">

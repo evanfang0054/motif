@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminAuditRow } from '@/lib/client'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
+
+const PAGE_SIZE = 20
 
 export default function AdminAuditPage() {
   const [items, setItems] = useState<AdminAuditRow[]>([])
@@ -9,17 +12,22 @@ export default function AdminAuditPage() {
   const [actorId, setActorId] = useState('')
   const [action, setAction] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListAudit({ actorId: actorId || undefined, action: action || undefined, pageSize: 100 })
+      const r = await api.adminListAudit({ actorId: actorId || undefined, action: action || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [actorId, action])
+  }, [actorId, action, page])
 
   useEffect(() => {
     void load()
@@ -31,9 +39,9 @@ export default function AdminAuditPage() {
       <p className="admin-muted">所有会改变他人或系统状态的管理动作都在这里留痕，用于回答「谁对谁做了什么」。</p>
 
       <div className="admin-toolbar">
-        <input type="search" value={actorId} onChange={(e) => setActorId(e.target.value)} placeholder="按操作者 ID 筛选" />
-        <input type="search" value={action} onChange={(e) => setAction(e.target.value)} placeholder="按动作精确筛选，如 credit.adjust" />
-        <span className="admin-muted">共 {total} 条</span>
+        <input type="search" value={actorId} onChange={(e) => { setActorId(e.target.value); setPage(1) }} placeholder="按操作者 ID 筛选" />
+        <input type="search" value={action} onChange={(e) => { setAction(e.target.value); setPage(1) }} placeholder="按动作精确筛选，如 credit.adjust" />
+        <ListCount loading={loading} total={total} unit="条" />
       </div>
 
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
@@ -57,11 +65,15 @@ export default function AdminAuditPage() {
               </td>
             </tr>
           ))}
-          {items.length === 0 && (
-            <tr><td colSpan={5} className="admin-muted">（无匹配的审计记录）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={5} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={5} text="（无匹配的审计记录）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>
   )
 }

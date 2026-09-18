@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminFeedbackRow } from '@/lib/client'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
 
 type StatusFilter = '' | 'pending' | 'resolved'
+
+const PAGE_SIZE = 20
 
 export default function AdminFeedbackPage() {
   const [items, setItems] = useState<AdminFeedbackRow[]>([])
@@ -12,17 +15,22 @@ export default function AdminFeedbackPage() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListFeedback({ status: status || undefined, pageSize: 100 })
+      const r = await api.adminListFeedback({ status: status || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [status])
+  }, [status, page])
 
   useEffect(() => {
     void load()
@@ -48,12 +56,12 @@ export default function AdminFeedbackPage() {
       <h1 className="admin-title">反馈</h1>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1) }}>
           <option value="">全部状态</option>
           <option value="pending">待处理</option>
           <option value="resolved">已处理</option>
         </select>
-        <span className="admin-muted">共 {total} 条</span>
+        <ListCount loading={loading} total={total} unit="条" />
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
@@ -86,11 +94,15 @@ export default function AdminFeedbackPage() {
               </td>
             </tr>
           ))}
-          {items.length === 0 && (
-            <tr><td colSpan={6} className="admin-muted">（无匹配的反馈）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={6} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={6} text="（无匹配的反馈）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>
   )
 }

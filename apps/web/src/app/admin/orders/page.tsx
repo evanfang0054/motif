@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminOrder } from '@/lib/client'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
+
+const PAGE_SIZE = 20
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '待支付',
@@ -25,17 +28,22 @@ export default function AdminOrdersPage() {
   const [status, setStatus] = useState('')
   const [userId, setUserId] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListOrders({ status: status || undefined, userId: userId || undefined, pageSize: 100 })
+      const r = await api.adminListOrders({ status: status || undefined, userId: userId || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [status, userId])
+  }, [status, userId, page])
 
   useEffect(() => {
     void load()
@@ -49,13 +57,13 @@ export default function AdminOrdersPage() {
       </p>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
           <option value="">全部状态</option>
           <option value="pending">待支付</option>
           <option value="paid">已支付</option>
         </select>
-        <input type="search" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="按用户 ID 筛选" />
-        <span className="admin-muted">共 {total} 笔</span>
+        <input type="search" value={userId} onChange={(e) => { setUserId(e.target.value); setPage(1) }} placeholder="按用户 ID 筛选" />
+        <ListCount loading={loading} total={total} unit="笔" />
       </div>
 
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
@@ -78,11 +86,15 @@ export default function AdminOrdersPage() {
               <td data-label="支付时间">{o.paidAt ? o.paidAt.slice(0, 19).replace('T', ' ') : '—'}</td>
             </tr>
           ))}
-          {items.length === 0 && (
-            <tr><td colSpan={7} className="admin-muted">（无匹配的订单）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={7} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={7} text="（无匹配的订单）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>
   )
 }

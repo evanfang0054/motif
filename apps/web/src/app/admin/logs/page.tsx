@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminLogRow } from '@/lib/client'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
 
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中',
@@ -13,6 +14,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const DAYS_DEFAULT = 90
+const PAGE_SIZE = 20
 
 export default function AdminLogsPage() {
   const [items, setItems] = useState<AdminLogRow[]>([])
@@ -23,17 +25,22 @@ export default function AdminLogsPage() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListLogs({ status: status || undefined, userId: userId || undefined, pageSize: 100 })
+      const r = await api.adminListLogs({ status: status || undefined, userId: userId || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [status, userId])
+  }, [status, userId, page])
 
   useEffect(() => {
     void load()
@@ -67,14 +74,14 @@ export default function AdminLogsPage() {
       <p className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</p>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <input type="search" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="按用户 ID 筛选" />
-        <span className="admin-muted">共 {total} 条</span>
+        <input type="search" value={userId} onChange={(e) => { setUserId(e.target.value); setPage(1) }} placeholder="按用户 ID 筛选" />
+        <ListCount loading={loading} total={total} unit="条" />
         <span style={{ flex: 1 }} />
         <input
           type="number"
@@ -121,11 +128,15 @@ export default function AdminLogsPage() {
               </td>
             </tr>
           ))}
-          {items.length === 0 && (
-            <tr><td colSpan={7} className="admin-muted">（无匹配的生成记录）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={7} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={7} text="（无匹配的生成记录）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>
   )
 }
