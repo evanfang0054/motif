@@ -14,7 +14,9 @@ import {
   newOrderId,
   type CanvasImage,
   type CreditPackage,
+  type CreditSource,
   type Message,
+  type MessageStatus,
   type Topic,
   type TopicDetail,
   type User,
@@ -35,6 +37,128 @@ function safeParseIds(raw: string | null | undefined): string[] {
   } catch {
     return []
   }
+}
+
+/** 按操作者/动作/时间构造审计查询条件（供 list / count 共用）。action 用**精确匹配** —— 前缀匹配会让 credit.adjust 与 credit.adjust.rollback 互相污染 */
+function auditWhere(filter: { actorId?: string; action?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.actorId) {
+    clauses.push('actor_id = ?')
+    params.push(filter.actorId)
+  }
+  if (filter.action) {
+    clauses.push('action = ?')
+    params.push(filter.action)
+  }
+  if (filter.from) {
+    clauses.push('created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
+/** 审计流水行（管理端分页视图） */
+export interface AuditLogRow {
+  id: number
+  actorId: string
+  action: string
+  targetType: string | null
+  targetId: string | null
+  detail: string | null
+  createdAt: string
+}
+
+/** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
+function messageWhere(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.status) {
+    clauses.push('m.status = ?')
+    params.push(filter.status)
+  }
+  if (filter.userId) {
+    clauses.push('m.user_id = ?')
+    params.push(filter.userId)
+  }
+  if (filter.from) {
+    clauses.push('m.created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('m.created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
+/** 生成日志行（管理端跨用户视图） */
+export interface AdminLogRow {
+  id: string
+  topicId: string
+  userId: string
+  prompt: string
+  finalPrompt: string
+  size: string
+  requestedCount: number
+  status: MessageStatus
+  attempts: number
+  error: string | null
+  generatedCount: number
+  createdAt: string
+}
+
+/** 按状态构造反馈查询条件（供 list / count 共用，避免两处口径漂移） */
+function feedbackWhere(filter: { status?: 'pending' | 'resolved' }): { where: string; params: string[] } {
+  if (!filter.status) return { where: '', params: [] }
+  return { where: 'WHERE status = ?', params: [filter.status] }
+}
+
+interface FeedbackDbRow {
+  id: number
+  user_id: string
+  content: string
+  status: string
+  resolved_at: string | null
+  resolved_by: string | null
+  created_at: string
+}
+
+/** 反馈列表行（管理端视图） */
+export interface FeedbackRow {
+  id: number
+  userId: string
+  content: string
+  status: string
+  resolvedAt: string | null
+  resolvedBy: string | null
+  createdAt: string
+}
+
+/** 按关键词/角色/状态构造用户查询条件（供 list / count 共用，避免两处口径漂移） */
+function userWhere(filter: { q?: string; role?: UserRole; status?: UserStatus }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.q && filter.q.trim()) {
+    // 邮箱与昵称都搜。邮箱统一小写存储，故用小写的 like 参数即可覆盖大小写；
+    // 昵称保持大小写敏感（不为此引入 LOWER() 全表扫描），中文昵称不受影响
+    clauses.push('(email LIKE ? OR name LIKE ?)')
+    const like = `%${filter.q.trim().toLowerCase()}%`
+    params.push(like, like)
+  }
+  if (filter.role) {
+    clauses.push('role = ?')
+    params.push(filter.role)
+  }
+  if (filter.status) {
+    clauses.push('status = ?')
+    params.push(filter.status)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
 }
 
 /** 按状态与关键词构造 CDK 查询条件（供 list / count 共用，避免两处口径漂移） */
@@ -123,6 +247,61 @@ interface OrderRow {
   status: string
   created_at: string
   paid_at: string | null
+}
+
+/** 额度流水的写入参数。`source` 必填 —— 没有来源的额度变动等于不可对账 */
+export interface LedgerEntry {
+  source: CreditSource
+  refId?: string | null
+  note?: string | null
+}
+
+export interface LedgerRow {
+  id: number
+  userId: string
+  delta: number
+  source: CreditSource
+  refId: string | null
+  note: string | null
+  createdAt: string
+}
+
+interface LedgerDbRow {
+  id: number
+  user_id: string
+  delta: number
+  source: string
+  ref_id: string | null
+  note: string | null
+  created_at: string
+}
+
+/**
+ * 概览看板的六组指标。
+ *
+ * 额度口径：`granted` **不含**退款（否则会与 `netSpent` 的减项重复计数）、不含期初结存（那是迁移前的
+ * 历史存量）、不含管理调整（它有自己的正/负一对数字）。它们之间满足闭合恒等式：
+ *   `balance === granted + openingBalance + adjustedIn + refunded - adjustedOut - generatedCharged`
+ * 而 `ledgerSum === balance` 由全局不变式保证 —— 把两者都返回，是为了让差值成为可巡检的观测量。
+ */
+export interface AdminOverview {
+  users: { total: number; newLast7d: number }
+  credits: {
+    balance: number
+    ledgerSum: number
+    granted: number
+    openingBalance: number
+    adjustedIn: number
+    adjustedOut: number
+    generatedCharged: number
+    refunded: number
+    netSpent: number
+    bySource: Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
+  }
+  generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
+  orders: { pending: number; paid: number; amountTotal: number }
+  cdks: { unredeemed: number; redeemed: number; revoked: number }
+  feedback: { pending: number }
 }
 
 interface MessageRow {
@@ -259,24 +438,30 @@ export class MotifStore {
     const id = newUserId()
     const t = nowIso()
     const inviteCode = newInviteCode()
-    this.db
-      .prepare(
-        `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
-      )
-      .run(
-        id,
-        input.email.toLowerCase(),
-        input.passwordHash,
-        input.name,
-        input.role ?? 'user',
-        input.mustChangePassword ? 1 : 0,
-        input.credits ?? 0,
-        inviteCode,
-        input.invitedBy ?? null,
-        t,
-        t
-      )
+    const initialCredits = input.credits ?? 0
+    const tx = this.db.transaction((): void => {
+      this.db
+        .prepare(
+          `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
+           VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
+        )
+        .run(
+          id,
+          input.email.toLowerCase(),
+          input.passwordHash,
+          input.name,
+          input.role ?? 'user',
+          input.mustChangePassword ? 1 : 0,
+          initialCredits,
+          inviteCode,
+          input.invitedBy ?? null,
+          t,
+          t
+        )
+      // 建档时就带额度（引导、测试造数）→ 记一条 opening_balance，使不变式从第一行起就成立
+      if (initialCredits > 0) this.insertLedger(id, initialCredits, { source: 'opening_balance', note: '建档初始额度' })
+    })
+    tx()
     return this.getUserById(id)!
   }
 
@@ -309,31 +494,95 @@ export class MotifStore {
     return row ? rowToUser(row) : null
   }
 
-  /** 原子扣减额度；余额不足返回 null */
-  deductCredits(userId: string, amount: number): User | null {
+  /**
+   * 原子扣减额度；余额不足返回 null（不做部分扣减）。
+   * 余额更新与流水写入在**同一事务**内 —— 不允许出现「余额变了却没有流水」或反之。
+   */
+  deductCredits(userId: string, amount: number, entry: LedgerEntry): User | null {
     const tx = this.db.transaction((): User | null => {
       const row = this.db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number } | undefined
       if (!row || row.credits < amount) return null
       this.db.prepare('UPDATE users SET credits = credits - ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.insertLedger(userId, -amount, entry)
       return this.getUserById(userId)
     })
     return tx()
   }
 
-  addCredits(userId: string, amount: number): User {
-    this.db.prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
-    return this.getUserById(userId)!
+  /** 加额。`entry` 必填：没有来源的额度变动等于不可对账（与余额更新同事务） */
+  addCredits(userId: string, amount: number, entry: LedgerEntry): User {
+    const tx = this.db.transaction((): User => {
+      this.db.prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.insertLedger(userId, amount, entry)
+      return this.getUserById(userId)!
+    })
+    return tx()
   }
 
-  /** 记录邀请成功；返回受赠额度（受上限约束） */
-  recordInvite(inviterId: string, reward: number): void {
+  /** 写一条额度流水。只应在 addCredits / deductCredits / createUser 的事务内被调用 */
+  insertLedger(userId: string, delta: number, entry: LedgerEntry): void {
+    this.db
+      .prepare('INSERT INTO credit_ledger (user_id, delta, source, ref_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, delta, entry.source, entry.refId ?? null, entry.note ?? null, nowIso())
+  }
+
+  /** 某人的额度流水，倒序（按 id，避免同毫秒并列时顺序不定） */
+  listLedger(filter: { userId?: string; source?: CreditSource; limit?: number; offset?: number }): LedgerRow[] {
+    const clauses: string[] = []
+    const params: string[] = []
+    if (filter.userId) {
+      clauses.push('user_id = ?')
+      params.push(filter.userId)
+    }
+    if (filter.source) {
+      clauses.push('source = ?')
+      params.push(filter.source)
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    const rows = this.db
+      .prepare(`SELECT * FROM credit_ledger ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as LedgerDbRow[]
+    return rows.map((r) => ({ id: r.id, userId: r.user_id, delta: r.delta, source: r.source as CreditSource, refId: r.ref_id, note: r.note, createdAt: r.created_at }))
+  }
+
+  countLedger(filter: { userId?: string; source?: CreditSource }): number {
+    const clauses: string[] = []
+    const params: string[] = []
+    if (filter.userId) {
+      clauses.push('user_id = ?')
+      params.push(filter.userId)
+    }
+    if (filter.source) {
+      clauses.push('source = ?')
+      params.push(filter.source)
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM credit_ledger ${where}`).get(...params) as { c: number }).c
+  }
+
+  /** 记录邀请成功；返回受赠额度（受上限约束）。inviteeId 用于流水溯源「这笔奖励是谁带来的」 */
+  recordInvite(inviterId: string, reward: number, inviteeId: string): void {
     this.db.prepare('UPDATE users SET invited_count = invited_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), inviterId)
-    if (reward > 0) this.addCredits(inviterId, reward)
+    if (reward > 0) this.addCredits(inviterId, reward, { source: 'invite_reward', refId: inviteeId, note: '邀请奖励' })
   }
 
   countUsersByRole(role: UserRole): number {
     const row = this.db.prepare('SELECT COUNT(*) AS c FROM users WHERE role = ?').get(role) as { c: number }
     return row.c
+  }
+
+  /** 管理端用户列表。复用 rowToUser 同一条行映射，避免两处字段漂移 */
+  listUsers(filter: { q?: string; role?: UserRole; status?: UserStatus; limit?: number; offset?: number }): User[] {
+    const { where, params } = userWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM users ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as UserRow[]
+    return rows.map(rowToUser)
+  }
+
+  countUsers(filter: { q?: string; role?: UserRole; status?: UserStatus }): number {
+    const { where, params } = userWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM users ${where}`).get(...params) as { c: number }).c
   }
 
   /**
@@ -371,12 +620,19 @@ export class MotifStore {
     return token
   }
 
+  /**
+   * 按会话 token 解析用户。**被禁用的用户一律解析为 null** —— 这是契约要求的：
+   * 禁用后既有会话必须失效，否则「禁用」只是把会话删掉，用户重新登录即可拿回全部权限。
+   * 放在这一层是因为它是所有会话态鉴权的唯一收口（页面守卫、requireUser、requireRole 都经过它）。
+   */
   getUserBySession(token: string): User | null {
     const row = this.db
       .prepare('SELECT user_id FROM sessions WHERE token = ? AND expires_at > ?')
       .get(this.hashToken(token), nowIso()) as { user_id: string } | undefined
     if (!row) return null
-    return this.getUserById(row.user_id)
+    const user = this.getUserById(row.user_id)
+    if (!user || user.status === 'disabled') return null
+    return user
   }
 
   deleteSession(token: string): void {
@@ -589,9 +845,9 @@ export class MotifStore {
         .prepare(`UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND status = 'queued'`)
         .run(id)
       if (res.changes === 0) return { found: true, canceled: false, refund: 0 }
-      this.db
-        .prepare(`UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?`)
-        .run(row.requested_count, nowIso(), userId)
+      // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式
+      // 在「用户取消排队任务」这一条路径上破掉（而这条路径原本没有任何测试覆盖）
+      this.addCredits(userId, row.requested_count, { source: 'generation_refund', refId: id, note: '取消排队中的生成' })
       this.db
         .prepare(`UPDATE topics SET active_message_id = NULL, active_prompt = NULL, status = 'idle', updated_at = ? WHERE id = ?`)
         .run(nowIso(), row.topic_id)
@@ -830,10 +1086,170 @@ export class MotifStore {
     return row.c
   }
 
+  // ---------- 生成日志（管理端跨用户视图）与清理 ----------
+
+  /**
+   * 跨用户生成轮次列表。含 `prompt` 原文与 `finalPrompt`（实际发往网关的提示词）——
+   * 排障必须同时看到「用户说了什么」和「系统实际发了什么」。
+   *
+   * 排序用 `rowid DESC` 而不是 `created_at DESC`：同一毫秒内创建的多条记录无法靠时间区分，
+   * 而 `id` 是随机 hex 前缀，按其倒序等于随机顺序（测试与页面都会看到不稳定的「最新一条」）。
+   */
+  listAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string; limit?: number; offset?: number }): AdminLogRow[] {
+    const { where, params } = messageWhere(filter)
+    const rows = this.db
+      .prepare(
+        `SELECT m.*, COALESCE(g.c, 0) AS generated_count
+           FROM messages m
+           LEFT JOIN (SELECT message_id, COUNT(*) AS c FROM canvas_images WHERE message_id IS NOT NULL GROUP BY message_id) g ON g.message_id = m.id
+           ${where} ORDER BY m.rowid DESC LIMIT ? OFFSET ?`
+      )
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<MessageRow & { generated_count: number }>
+    return rows.map((r) => ({
+      id: r.id,
+      topicId: r.topic_id,
+      userId: r.user_id,
+      prompt: r.prompt,
+      finalPrompt: r.final_prompt,
+      size: r.size,
+      requestedCount: r.requested_count,
+      status: r.status as MessageStatus,
+      attempts: r.attempts,
+      error: r.error,
+      generatedCount: r.generated_count,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): number {
+    const { where, params } = messageWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${where}`).get(...params) as { c: number }).c
+  }
+
+  /**
+   * 清理超期的**已终态**生成轮次，返回删除条数。
+   *
+   * 为什么必须是终态：messages 是「扣费 / 交付 / 退额」的唯一对账依据；非终态轮次的账还没结清，
+   * 删掉就等于销毁未结清的账目。
+   * 为什么不动 canvas_images：那是用户画布资产，且 `message_id` 不是外键，删 messages 只会留下
+   * 悬空引用 —— 不删不会报错，但会永久丢失用户资产。
+   * 同样不动 credit_ledger：流水是账目本身，与「日志保留期」是两件事。
+   */
+  cleanupMessagesBefore(before: string): number {
+    const tx = this.db.transaction((): number => {
+      return this.db
+        .prepare("DELETE FROM messages WHERE created_at < ? AND status IN ('completed','failed','canceled')")
+        .run(before).changes
+    })
+    return tx()
+  }
+
   // ---------- feedback ----------
 
   insertFeedback(userId: string, content: string): void {
     this.db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)').run(userId, content, nowIso())
+  }
+
+  /** 反馈列表（管理端） */
+  listFeedback(filter: { status?: 'pending' | 'resolved'; limit?: number; offset?: number }): FeedbackRow[] {
+    const { where, params } = feedbackWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM feedback ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as FeedbackDbRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      content: r.content,
+      status: r.status,
+      resolvedAt: r.resolved_at,
+      resolvedBy: r.resolved_by,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countFeedback(filter: { status?: 'pending' | 'resolved' }): number {
+    const { where, params } = feedbackWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM feedback ${where}`).get(...params) as { c: number }).c
+  }
+
+  /** 精确取一条反馈。作废/标记的前置存在性检查必须用它，不能用分页列表的 `some(...)` */
+  getFeedback(id: number): FeedbackRow | null {
+    const r = this.db.prepare('SELECT * FROM feedback WHERE id = ?').get(id) as FeedbackDbRow | undefined
+    if (!r) return null
+    return { id: r.id, userId: r.user_id, content: r.content, status: r.status, resolvedAt: r.resolved_at, resolvedBy: r.resolved_by, createdAt: r.created_at }
+  }
+
+  /** 标记已处理。条件 UPDATE 保证只有仍是 pending 时才写入 —— 不覆盖首个处理人（幂等拒绝） */
+  resolveFeedback(id: number, actorId: string): boolean {
+    const res = this.db
+      .prepare("UPDATE feedback SET status = 'resolved', resolved_at = ?, resolved_by = ? WHERE id = ? AND status = 'pending'")
+      .run(nowIso(), actorId, id)
+    return res.changes === 1
+  }
+
+  // ---------- 概览指标 ----------
+
+  overviewStats(now: string = nowIso()): AdminOverview {
+    const one = <T>(sql: string, ...params: unknown[]): T => this.db.prepare(sql).get(...params) as T
+    const n = (sql: string, ...params: unknown[]): number => one<{ c: number }>(sql, ...params).c
+    const sevenDaysAgo = new Date(new Date(now).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const balance = one<{ s: number | null }>('SELECT SUM(credits) AS s FROM users').s ?? 0
+    const sumLedger = (where: string, ...params: unknown[]): number =>
+      one<{ s: number | null }>(`SELECT SUM(delta) AS s FROM credit_ledger WHERE ${where}`, ...params).s ?? 0
+
+    const ledgerSum = sumLedger('1 = 1')
+    // ⚠️ 取负的三处都要 `|| 0`：空表时 SUM 返回 NULL → `-0`，而 vitest 的 toBe 用 Object.is（`-0 !== 0`）
+    const generatedCharged = -sumLedger("source = 'generation_charge'") || 0
+    const refunded = sumLedger("source = 'generation_refund'") || 0
+    const netSpent = generatedCharged - refunded || 0
+    const granted = sumLedger("delta > 0 AND source NOT IN ('generation_refund', 'opening_balance', 'admin_adjust')")
+    const openingBalance = sumLedger("source = 'opening_balance'")
+    const adjustedIn = sumLedger("delta > 0 AND source = 'admin_adjust'")
+    const adjustedOut = -sumLedger("delta < 0 AND source = 'admin_adjust'") || 0
+    const bySource = this.db
+      .prepare(
+        `SELECT source,
+                SUM(delta) AS net,
+                SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END) AS inflow,
+                SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END) AS outflow
+           FROM credit_ledger GROUP BY source ORDER BY net DESC, source ASC`
+      )
+      .all() as Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
+
+    const terminal = n("SELECT COUNT(*) AS c FROM messages WHERE status IN ('completed','failed','canceled')")
+    const succeeded = n("SELECT COUNT(*) AS c FROM messages WHERE status = 'completed'")
+
+    return {
+      users: {
+        total: n('SELECT COUNT(*) AS c FROM users'),
+        newLast7d: n('SELECT COUNT(*) AS c FROM users WHERE created_at >= ?', sevenDaysAgo),
+      },
+      credits: { balance, ledgerSum, granted, openingBalance, adjustedIn, adjustedOut, generatedCharged, refunded, netSpent, bySource },
+      generations: {
+        total: n('SELECT COUNT(*) AS c FROM messages'),
+        terminal,
+        succeeded,
+        // 0/0 必须给 0：NaN 会被 JSON 序列化成 null，前端直接显示 "null%"
+        successRate: terminal === 0 ? 0 : succeeded / terminal,
+        topErrors: this.db
+          .prepare(
+            "SELECT error, COUNT(*) AS count FROM messages WHERE status = 'failed' AND error IS NOT NULL AND error <> '' GROUP BY error ORDER BY count DESC, error ASC LIMIT 3"
+          )
+          .all() as Array<{ error: string; count: number }>,
+      },
+      orders: {
+        pending: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'"),
+        paid: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'paid'"),
+        amountTotal: one<{ s: number | null }>("SELECT SUM(amount_total) AS s FROM orders WHERE status = 'paid'").s ?? 0,
+      },
+      cdks: {
+        unredeemed: n('SELECT COUNT(*) AS c FROM cdks WHERE redeemed_by IS NULL AND revoked_at IS NULL'),
+        redeemed: n('SELECT COUNT(*) AS c FROM cdks WHERE redeemed_by IS NOT NULL'),
+        revoked: n('SELECT COUNT(*) AS c FROM cdks WHERE revoked_at IS NOT NULL'),
+      },
+      feedback: { pending: n("SELECT COUNT(*) AS c FROM feedback WHERE status = 'pending'") },
+    }
   }
 
   // ---------- admin audit ----------
@@ -873,6 +1289,31 @@ export class MotifStore {
       detail: r.detail,
       createdAt: r.created_at,
     }))
+  }
+
+  /**
+   * 审计流水的管理端分页视图。**刻意与 `listAudit` 并存**：后者返回裸数组且被多处既有测试断言依赖，
+   * 改它的返回值形状的代价大于新增一个方法。
+   */
+  listAuditPaged(filter: { actorId?: string; action?: string; from?: string; to?: string; limit?: number; offset?: number }): AuditLogRow[] {
+    const { where, params } = auditWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM admin_audit ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as AuditRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      actorId: r.actor_id,
+      action: r.action,
+      targetType: r.target_type,
+      targetId: r.target_id,
+      detail: r.detail,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countAudit(filter: { actorId?: string; action?: string; from?: string; to?: string }): number {
+    const { where, params } = auditWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM admin_audit ${where}`).get(...params) as { c: number }).c
   }
 }
 

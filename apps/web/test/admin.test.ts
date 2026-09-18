@@ -81,10 +81,14 @@ describe('管理面守卫', () => {
     expect(requireRoot(reqWithSession(r.token)).role).toBe('root')
   })
 
-  it('被禁用的管理员即使角色够也拿不到权限', () => {
+  it('被禁用的管理员即使角色够也拿不到权限（401 —— 会话已不可解析）', () => {
     const a = actor('admin', 'a3@b.co')
     store.setUserStatus(a.user.id, 'disabled')
-    expectStatus(() => requireAdmin(reqWithSession(a.token)), 403)
+    // 期望是 401 而不是 403：getUserBySession 现在会把被禁用用户解析为 null，
+    // 于是「会话有效但被禁用」这个分支不可达，禁用与「没登录」对外表现一致。
+    // 这是有意的对外语义变更（禁用不再单独回一个可区分的 403）。
+    expectStatus(() => requireAdmin(reqWithSession(a.token)), 401)
+    expect(store.getUserBySession(a.token)).toBeNull()
   })
 
   it('无效 token 得 401', () => {

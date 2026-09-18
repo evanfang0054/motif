@@ -20,9 +20,20 @@ function resolveUser(req: NextRequest): User | null {
 export function requireRole(req: NextRequest, required: UserRole): User {
   const user = resolveUser(req)
   if (!user) throw new ServiceError(401, '请先登录。')
+  // 纵深防御：getUserBySession 已把被禁用用户解析为 null，故这一分支当前不可达。
+  // 保留它是为了万一将来有人改动会话解析逻辑，禁用校验不会无声消失。
   if (user.status === 'disabled') throw new ServiceError(403, '账号已被禁用。')
   if (!roleAtLeast(user.role, required)) throw new ServiceError(403, '无权限执行该操作。')
   return user
+}
+
+/**
+ * 额度调整的保护规则：不得调整自己的额度（否则「谁改的」会退化成「他自己」，失去可追责性），
+ * 管理员也不得改动超级管理员的额度。
+ */
+export function assertCanAdjustCredits(actor: User, target: User): void {
+  if (actor.id === target.id) throw new ServiceError(403, '不可调整自己的额度。')
+  if (actor.role === 'admin' && target.role === 'root') throw new ServiceError(403, '管理员不可调整超级管理员的额度。')
 }
 
 export function requireAdmin(req: NextRequest): User {

@@ -28,6 +28,19 @@ describe('管理后台菜单的角色可见性', () => {
 
   it('已交付页面的 href 与实际路由目录一一对应，未交付的不可导航', () => {
     const delivered = ADMIN_NAV.filter((i) => !i.pending)
-    expect(delivered.map((i) => i.href)).toEqual(['/admin/cdks', '/admin/orders'])
+    expect(delivered.map((i) => i.href)).toEqual([
+      '/admin',
+      '/admin/cdks',
+      '/admin/orders',
+      '/admin/feedback',
+      '/admin/logs',
+      '/admin/users',
+      '/admin/audit',
+    ])
+  })
+
+  it('本轮该翻的 pending 都翻了，且只翻了该翻的（系统设置留给后续迭代）', () => {
+    // 不要写成「不应再有任何 pending」——系统设置属后续迭代，刻意保持占位
+    expect(ADMIN_NAV.filter((i) => i.pending).map((i) => i.href)).toEqual(['/admin/settings'])
   })
 })

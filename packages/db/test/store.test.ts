@@ -51,15 +51,15 @@ describe('users & sessions', () => {
 
   it('额度原子扣减：不足则失败且余额不变', () => {
     const u = seedUser() // 10
-    expect(store.deductCredits(u.id, 4)?.credits).toBe(6)
-    expect(store.deductCredits(u.id, 100)).toBeNull()
+    expect(store.deductCredits(u.id, 4, { source: 'generation_charge' })?.credits).toBe(6)
+    expect(store.deductCredits(u.id, 100, { source: 'generation_charge' })).toBeNull()
     expect(store.getUserById(u.id)?.credits).toBe(6)
   })
 
   it('加额度与邀请计数', () => {
     const u = seedUser()
-    store.addCredits(u.id, 5)
-    store.recordInvite(u.id, 3)
+    store.addCredits(u.id, 5, { source: 'signup_bonus' })
+    store.recordInvite(u.id, 3, 'usr_invitee')
     const fresh = store.getUserById(u.id)!
     expect(fresh.credits).toBe(18)
     expect(fresh.invitedCount).toBe(1)
@@ -96,7 +96,7 @@ describe('topics & messages & canvas images', () => {
   it('生成消息租约与取消退额闭环', () => {
     const u = seedUser()
     const t = store.createTopic(u.id, 'T')
-    store.deductCredits(u.id, 8)
+    store.deductCredits(u.id, 8, { source: 'generation_charge' })
     const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: '1024x1024', requestedCount: 8, enhancePrompt: false })
     store.setTopicActive(t.id, m.id, 'p', 'pending')
     expect(store.getTopic(t.id)?.status).toBe('pending')
@@ -113,7 +113,7 @@ describe('topics & messages & canvas images', () => {
     }
     expect(store.countGeneratedInMessage(m.id)).toBe(3)
     store.setMessageStatus(m.id, 'canceled')
-    store.addCredits(u.id, 8 - 3)
+    store.addCredits(u.id, 8 - 3, { source: 'generation_refund' })
     store.setTopicActive(t.id, null, null, 'idle')
 
     expect(store.getUserById(u.id)?.credits).toBe(7) // seed 10 → 扣 8 → 退 5 = 7
@@ -465,6 +465,356 @@ describe('CDK 批量发放、列表与作废', () => {
     expect(row.redeemedBy).toBeNull()
     expect(row.revokedAt).toBeNull()
     expect(row.createdAt).toBeTruthy()
+    s.close()
+  })
+})
+
+describe('额度流水（credit_ledger）', () => {
+  it('每次额度变动都留下带来源的流水，且全库账目与余额一致', () => {
+    const s = new MotifStore(join(dir, 'led1.db'))
+    const u = s.createUser({ email: 'led@b.co', passwordHash: 'h', name: '甲', credits: 5 }) // 建档初始额度 → opening_balance
+    s.addCredits(u.id, 3, { source: 'signup_bonus' })
+    s.deductCredits(u.id, 2, { source: 'generation_charge', refId: 'msg_x' })
+    s.addCredits(u.id, 1, { source: 'generation_refund', refId: 'msg_x' })
+    s.addCredits(u.id, 10, { source: 'admin_adjust', refId: 'usr_admin', note: '渠道补偿' })
+    s.addCredits(u.id, 20, { source: 'order_paid', refId: 'ord_x' })
+    s.addCredits(u.id, 7, { source: 'cdk_redeem', refId: 'MOTIF-XYZ' })
+
+    const rows = s.listLedger({ userId: u.id })
+    expect(rows.map((r) => r.source)).toEqual([
+      'cdk_redeem', 'order_paid', 'admin_adjust', 'generation_refund', 'generation_charge', 'signup_bonus', 'opening_balance',
+    ])
+    // 倒序由 id 保证（created_at 可能同毫秒并列，不能拿它断言顺序）
+    expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort((a, b) => b - a))
+    expect(rows[0].refId).toBe('MOTIF-XYZ') // 最近一条是 cdk_redeem，带 refId
+    expect(rows[rows.length - 1].refId).toBeNull() // 最早一条是建档的 opening_balance，没有 refId
+
+    // 【关键不变式】逐用户与全库都要成立
+    const perUser = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger WHERE user_id = ?').get(u.id) as { s: number }).s
+    expect(perUser).toBe(s.getUserById(u.id)!.credits)
+    const allLedger = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
+    const allUsers = (s.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
+    expect(allLedger).toBe(allUsers)
+
+    // 来源可精确归集
+    expect(s.countLedger({ source: 'generation_charge' })).toBe(1)
+    expect(s.listLedger({ source: 'admin_adjust' })[0].note).toBe('渠道补偿')
+    s.close()
+  })
+
+  it('扣减余额不足返回 null，且绝不留下「只有流水没有余额变动」的残迹', () => {
+    const s = new MotifStore(join(dir, 'led2.db'))
+    const u = s.createUser({ email: 'led3@b.co', passwordHash: 'h', name: '丙', credits: 2 })
+    expect(s.deductCredits(u.id, 99, { source: 'generation_charge' })).toBeNull()
+    expect(s.getUserById(u.id)!.credits).toBe(2)
+    expect(s.countLedger({ userId: u.id })).toBe(1) // 只有建档那一条，失败那次没写进去
+    s.close()
+  })
+
+  it('【迁移】老库（无 credit_ledger 表、有余额）升级后自动补期初结存，且重复构造不重复补', () => {
+    const file = join(dir, 'led3.db')
+    // ⚠️ 必须用**裸 better-sqlite3 造一个真的不含 credit_ledger 的老库**，
+    // 不能用 `DELETE FROM credit_ledger` 模拟 —— 那样表是存在的，恰好会被「表里没有行」这个
+    // 错误判据接受，于是实现写错、测试也绿。
+    const raw = new Database(file)
+    raw.exec(`CREATE TABLE users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL,
+      avatar_url TEXT, role TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'active',
+      must_change_password INTEGER NOT NULL DEFAULT 0, disabled_at TEXT, credits INTEGER NOT NULL DEFAULT 0,
+      invite_code TEXT NOT NULL UNIQUE, invited_by TEXT, invited_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`)
+    raw
+      .prepare("INSERT INTO users (id,email,password_hash,name,credits,invite_code,created_at,updated_at) VALUES ('usr_legacy','legacy@b.co','scrypt$a$b','老用户',42,'LEGACY0001','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')")
+      .run()
+    expect(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'credit_ledger'").get()).toBeUndefined()
+    raw.close()
+
+    const s2 = new MotifStore(file) // 触发 applySchema
+    const rows = s2.listLedger({ userId: 'usr_legacy' })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].source).toBe('opening_balance')
+    expect(rows[0].delta).toBe(42)
+    expect((s2.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(42)
+    s2.close()
+
+    const s3 = new MotifStore(file)
+    expect(s3.listLedger({ userId: 'usr_legacy' })).toHaveLength(1) // 幂等
+    s3.close()
+  })
+
+  it('【迁移的反向判据】表已存在但为空时不得补期初结存（否则会把账目缺口洗白）', () => {
+    const file = join(dir, 'led4.db')
+    const s1 = new MotifStore(file)
+    const u = s1.createUser({ email: 'led5@b.co', passwordHash: 'h', name: '戊', credits: 0 })
+    s1.db.prepare('UPDATE users SET credits = 42 WHERE id = ?').run(u.id) // 手工制造「账目缺口」
+    s1.db.prepare('DELETE FROM credit_ledger').run() // 表还在，只是空了
+    s1.close()
+
+    const s2 = new MotifStore(file) // 表已存在 → 走「不补」分支
+    expect(s2.listLedger({ userId: u.id })).toHaveLength(0) // ← 旧判据（表为空）在这里会补一条，必红
+    expect(s2.getUserById(u.id)!.credits).toBe(42) // 余额不动，缺口如实保留（可被巡检发现）
+    s2.close()
+  })
+})
+
+describe('概览指标（六组，与等价查询逐项对账）', () => {
+  it('六组指标与对同一库的等价查询逐项相等', () => {
+    const s = new MotifStore(join(dir, 'ov1.db'))
+    const old = s.createUser({ email: 'ov-old@b.co', passwordHash: 'h', name: '老王', credits: 10 })
+    const fresh = s.createUser({ email: 'ov-new@b.co', passwordHash: 'h', name: '新人', credits: 5 })
+    // 把其中一个用户挪到 30 天前，制造「7 日新增」的差异
+    s.db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run('2026-08-01T00:00:00.000Z', old.id)
+
+    const t = s.createTopic(fresh.id, '概览 fixture')
+    const mk = (n: number) =>
+      s.createMessage({ topicId: t.id, userId: fresh.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: n, enhancePrompt: false, referenceIds: [] })
+    const m1 = mk(3)
+    const m2 = mk(2)
+    mk(4) // 保持排队中，用来验证成功率的分母不含非终态
+    s.setMessageStatus(m1.id, 'completed')
+    s.setMessageStatus(m2.id, 'failed', '网关 502：上游拒绝')
+
+    // 让额度指标有内容：显式制造几笔不同来源的额度变动（流水是额度指标的唯一来源）
+    s.addCredits(fresh.id, 3, { source: 'signup_bonus' })
+    s.addCredits(fresh.id, 50, { source: 'order_paid', refId: 'ord_fixture' })
+    s.addCredits(fresh.id, 20, { source: 'cdk_redeem', refId: 'OV-CDK-1' })
+    s.deductCredits(fresh.id, 2, { source: 'generation_charge', refId: m1.id })
+    s.addCredits(fresh.id, 1, { source: 'generation_refund', refId: m2.id })
+
+    // 订单：造一张已支付（金额单位是分）
+    const oid = s.createOrder(fresh.id, { id: 'credits_50', label: '50 张', credits: 50, amountTotal: 868, currency: 'hkd' })
+    s.db.prepare("UPDATE orders SET status='paid', paid_at=? WHERE id=?").run('2026-09-01T00:00:00.000Z', oid)
+    // CDK：一张已兑换、一张已作废、一张未兑换
+    s.createCdk('ov-cdk-1', 20)
+    s.createCdk('ov-cdk-2', 20)
+    s.createCdk('ov-cdk-3', 20)
+    s.redeemCdk('OV-CDK-1', fresh.id)
+    s.revokeCdk('OV-CDK-3')
+    s.insertFeedback(fresh.id, '概览用反馈')
+
+    const o = s.overviewStats('2026-09-18T00:00:00.000Z')
+    const q = <T>(sql: string, ...p: unknown[]) => s.db.prepare(sql).get(...p) as T
+    const qc = (sql: string, ...p: unknown[]) => (s.db.prepare(sql).get(...p) as { c: number }).c
+
+    // 用户
+    expect(o.users.total).toBe(qc('SELECT COUNT(*) AS c FROM users'))
+    expect(o.users.total).toBe(2)
+    expect(o.users.newLast7d).toBe(1) // old 被挪到 8 月，只剩 fresh 落在 7 日窗口内
+
+    // 额度：手算的精确期望值（opening 10+5=15；granted=3+50+20=73，退款不计入发放）
+    expect(o.credits.openingBalance).toBe(15)
+    expect(o.credits.granted).toBe(73)
+    expect(o.credits.adjustedIn).toBe(0)
+    expect(o.credits.adjustedOut).toBe(0)
+    expect(o.credits.generatedCharged).toBe(2)
+    expect(o.credits.refunded).toBe(1)
+    expect(o.credits.netSpent).toBe(1)
+    expect(o.credits.balance).toBe(87)
+    expect(o.credits.ledgerSum).toBe(87)
+
+    // 【闭合恒等式】这些数字必须能自己加回来 —— 它就是概览卡片脚注要展示的式子
+    expect(o.credits.balance).toBe(
+      o.credits.granted + o.credits.openingBalance + o.credits.adjustedIn + o.credits.refunded - o.credits.adjustedOut - o.credits.generatedCharged
+    )
+
+    // bySource 走**另一条代码路径**交叉验证（公开 API + JS 归约），不要再抄一遍 SQL
+    const bySourceFromApi = s.listLedger({}).reduce<Record<string, number>>((acc, r) => {
+      acc[r.source] = (acc[r.source] ?? 0) + r.delta
+      return acc
+    }, {})
+    expect(Object.fromEntries(o.credits.bySource.map((x) => [x.source, x.net]))).toEqual(bySourceFromApi)
+    expect(o.credits.bySource.reduce((a, x) => a + x.net, 0)).toBe(o.credits.balance) // 没有一分钱落在口径外
+
+    // 生成轮次：成功率的分母必须是终态
+    expect(o.generations.total).toBe(3)
+    expect(o.generations.terminal).toBe(2)
+    expect(o.generations.succeeded).toBe(1)
+    expect(o.generations.successRate).toBeCloseTo(0.5, 6)
+    expect(o.generations.topErrors[0]).toEqual({ error: '网关 502：上游拒绝', count: 1 })
+
+    // 订单 / CDK / 反馈
+    expect(o.orders.paid).toBe(1)
+    expect(o.orders.pending).toBe(0)
+    expect(o.orders.amountTotal).toBe(868)
+    expect(o.cdks.unredeemed).toBe(1)
+    expect(o.cdks.redeemed).toBe(1)
+    expect(o.cdks.revoked).toBe(1)
+    expect(o.feedback.pending).toBe(1)
+    s.close()
+  })
+
+  it('成功率分母不含排队中与生成中', () => {
+    const s = new MotifStore(join(dir, 'ov2.db'))
+    const u = s.createUser({ email: 'ov2@b.co', passwordHash: 'h', name: 'x' })
+    const t = s.createTopic(u.id, 't')
+    const mk = () => s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: 1, enhancePrompt: false, referenceIds: [] })
+    const a = mk()
+    const b = mk()
+    mk()
+    mk()
+    s.setMessageStatus(a.id, 'completed')
+    s.setMessageStatus(b.id, 'failed', 'e')
+    const o = s.overviewStats()
+    expect(o.generations.total).toBe(4)
+    expect(o.generations.terminal).toBe(2)
+    expect(o.generations.successRate).toBeCloseTo(0.5, 6) // 若把非终态算进分母会变成 0.25 → 必红
+    s.close()
+  })
+
+  it('空库不抛错，比率与取负项都不得产出 NaN 或 -0', () => {
+    const s = new MotifStore(join(dir, 'ov3.db'))
+    const o = s.overviewStats()
+    expect(o.users.total).toBe(0)
+    expect(o.generations.terminal).toBe(0)
+    expect(o.generations.successRate).toBe(0)
+    expect(o.credits.granted).toBe(0)
+    // 这三条专守 `-sumLedger(...)` 的 -0 陷阱（vitest 的 toBe 用 Object.is，-0 与 0 不等）
+    expect(o.credits.generatedCharged).toBe(0)
+    expect(o.credits.netSpent).toBe(0)
+    expect(o.credits.adjustedOut).toBe(0)
+    expect(o.credits.ledgerSum).toBe(0)
+    s.close()
+  })
+})
+
+describe('用户列表（管理端）', () => {
+  it('按关键词搜索邮箱与昵称，按角色/状态筛选，分页生效', () => {
+    const s = new MotifStore(join(dir, 'usr1.db'))
+    s.createUser({ email: 'alice@b.co', passwordHash: 'h', name: '爱丽丝' })
+    s.createUser({ email: 'bob@b.co', passwordHash: 'h', name: '鲍勃' })
+    const disabled = s.createUser({ email: 'carol@b.co', passwordHash: 'h', name: '卡罗尔' })
+    s.setUserStatus(disabled.id, 'disabled')
+    const root = s.createUser({ email: 'root@b.co', passwordHash: 'h', name: '超管', role: 'root' })
+
+    expect(s.countUsers({})).toBe(4)
+    expect(s.listUsers({ limit: 2, offset: 0 })).toHaveLength(2)
+    expect(s.listUsers({ limit: 2, offset: 2 })).toHaveLength(2)
+    expect(s.listUsers({ q: 'alice' })).toHaveLength(1) // 邮箱命中
+    expect(s.listUsers({ q: 'ALICE' })).toHaveLength(1) // 大小写不敏感（邮箱统一小写存储）
+    expect(s.listUsers({ q: '鲍勃' })).toHaveLength(1) // 昵称命中
+    expect(s.listUsers({ role: 'root' })).toHaveLength(1)
+    expect(s.listUsers({ status: 'disabled' })).toHaveLength(1)
+    expect(s.countUsers({ status: 'disabled' })).toBe(1)
+    // 返回的是完整 User（复用同一条行映射），不是裸行
+    const one = s.listUsers({ q: 'carol' })[0]
+    expect(one.status).toBe('disabled')
+    expect(one.mustChangePassword).toBe(false)
+    expect(s.listUsers({ q: root.email })[0].role).toBe('root')
+    s.close()
+  })
+})
+
+describe('反馈处理', () => {
+  it('列表可按状态筛选与分页；标记后 status/resolved_at/resolved_by 齐备；重复标记幂等拒绝', () => {
+    const s = new MotifStore(join(dir, 'fb1.db'))
+    const u = s.createUser({ email: 'fb@b.co', passwordHash: 'h', name: '反馈者' })
+    const admin = s.createUser({ email: 'fbadmin@b.co', passwordHash: 'h', name: '处理人', role: 'admin' })
+    s.insertFeedback(u.id, '第一条')
+    s.insertFeedback(u.id, '第二条')
+    s.insertFeedback(u.id, '第三条')
+
+    expect(s.countFeedback({ status: 'pending' })).toBe(3)
+    expect(s.listFeedback({ limit: 2 })).toHaveLength(2)
+    expect(s.listFeedback({ limit: 2, offset: 2 })).toHaveLength(1)
+
+    const first = s.listFeedback({})[0] // 倒序：最后插入的在前
+    expect(first.content).toBe('第三条')
+    expect(first.resolvedBy).toBeNull()
+    expect(s.resolveFeedback(first.id, admin.id)).toBe(true)
+
+    const row = s.db.prepare('SELECT status, resolved_at, resolved_by FROM feedback WHERE id = ?').get(first.id) as {
+      status: string
+      resolved_at: string | null
+      resolved_by: string | null
+    }
+    expect(row.status).toBe('resolved')
+    expect(row.resolved_at).toBeTruthy()
+    expect(row.resolved_by).toBe(admin.id)
+
+    expect(s.countFeedback({ status: 'pending' })).toBe(2)
+    expect(s.countFeedback({ status: 'resolved' })).toBe(1)
+    expect(s.listFeedback({ status: 'resolved' })[0].id).toBe(first.id)
+
+    // 重复标记返回 false（条件 UPDATE 未命中），且不覆盖首个处理人
+    expect(s.resolveFeedback(first.id, admin.id)).toBe(false)
+    expect((s.db.prepare('SELECT resolved_by FROM feedback WHERE id = ?').get(first.id) as { resolved_by: string }).resolved_by).toBe(admin.id)
+    expect(s.resolveFeedback(99999, admin.id)).toBe(false)
+    s.close()
+  })
+})
+
+describe('生成日志（跨用户）与清理', () => {
+  it('跨用户返回、含 prompt/finalPrompt 原文、倒序且分页生效', () => {
+    const s = new MotifStore(join(dir, 'log1.db'))
+    const u1 = s.createUser({ email: 'l1@b.co', passwordHash: 'h', name: '甲' })
+    const u2 = s.createUser({ email: 'l2@b.co', passwordHash: 'h', name: '乙' })
+    const t1 = s.createTopic(u1.id, 't1')
+    const t2 = s.createTopic(u2.id, 't2')
+    s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '甲的提示词', finalPrompt: '甲增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    s.createMessage({ topicId: t2.id, userId: u2.id, prompt: '乙的提示词', finalPrompt: '乙增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    const third = s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '第三轮', finalPrompt: '第三增强', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    s.setMessageStatus(third.id, 'failed', '网关 502')
+
+    const all = s.listAllMessages({})
+    expect(all).toHaveLength(3)
+    expect(new Set(all.map((r) => r.userId)).size).toBe(2) // 确实是跨用户
+    expect(all[0].prompt).toBe('第三轮') // 倒序
+    expect(all[0].finalPrompt).toBe('第三增强')
+    expect(all[0].error).toBe('网关 502')
+    expect(all[0].status).toBe('failed')
+
+    expect(s.listAllMessages({ userId: u2.id })).toHaveLength(1)
+    expect(s.listAllMessages({ status: 'failed' })).toHaveLength(1)
+    expect(s.listAllMessages({ limit: 2 })).toHaveLength(2)
+    expect(s.listAllMessages({ limit: 2, offset: 2 })).toHaveLength(1)
+    expect(s.countAllMessages({ userId: u1.id })).toBe(2)
+    expect(s.countAllMessages({})).toBe(3)
+    s.close()
+  })
+
+  it('清理只删终态且超期，不删画布资产、不动额度与流水，且幂等', () => {
+    const s = new MotifStore(join(dir, 'log2.db'))
+    const u = s.createUser({ email: 'l3@b.co', passwordHash: 'h', name: '丙', credits: 40 })
+    const t = s.createTopic(u.id, 't')
+    const mk = (rc: number) =>
+      s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: rc, enhancePrompt: false, referenceIds: [] })
+    const oldDone = mk(2)
+    const oldFailed = mk(3)
+    const oldQueued = mk(2) // 非终态 + 超期 → 不能删（未结清账目）
+    const freshDone = mk(1)
+    s.setMessageStatus(oldDone.id, 'completed')
+    s.setMessageStatus(oldFailed.id, 'failed', 'e')
+    s.setMessageStatus(freshDone.id, 'completed')
+    s.db.prepare("UPDATE messages SET created_at = '2026-01-01T00:00:00.000Z' WHERE id IN (?, ?, ?)").run(oldDone.id, oldFailed.id, oldQueued.id)
+    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldDone.id, origin: 'generated', name: 'a.png', imageKey: 'k/a.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
+    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldFailed.id, origin: 'generated', name: 'b.png', imageKey: 'k/b.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
+
+    const before = {
+      credits: s.getUserById(u.id)!.credits,
+      images: (s.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c,
+      ledgerRows: (s.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c,
+      ledgerSum: (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s,
+    }
+
+    expect(s.cleanupMessagesBefore('2026-06-01T00:00:00.000Z')).toBe(2)
+
+    const left = s.listAllMessages({})
+    expect(left.map((r) => r.id).sort()).toEqual([oldQueued.id, freshDone.id].sort())
+    // 【守恒的实质】清理只删日志：余额、画布资产、以及流水都必须一动不动
+    expect(s.getUserById(u.id)!.credits).toBe(before.credits)
+    expect((s.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c).toBe(before.images)
+    expect((s.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(before.ledgerRows)
+    expect((s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(before.ledgerSum)
+    // 存活的两轮各自精确对得上
+    const queued = left.find((r) => r.id === oldQueued.id)!
+    expect(queued.status).toBe('queued')
+    expect(queued.requestedCount).toBe(2)
+    expect(queued.generatedCount).toBe(0)
+    const done = left.find((r) => r.id === freshDone.id)!
+    expect(done.status).toBe('completed')
+    expect(done.requestedCount).toBe(1)
+    // 幂等：再清一次没有可删的
+    expect(s.cleanupMessagesBefore('2026-06-01T00:00:00.000Z')).toBe(0)
     s.close()
   })
 })

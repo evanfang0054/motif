@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminCdk } from '@/lib/client'
 import { buildCdkCsv } from '@/lib/admin-csv'
+import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
 
 type StatusFilter = '' | 'unredeemed' | 'redeemed' | 'revoked'
+
+const PAGE_SIZE = 20
 
 const STATUS_LABEL: Record<Exclude<StatusFilter, ''>, string> = {
   unredeemed: '未兑换',
@@ -26,6 +29,8 @@ export default function AdminCdksPage() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
 
   // 批量生成表单
   const [count, setCount] = useState(10)
@@ -33,15 +38,18 @@ export default function AdminCdksPage() {
   const [prefix, setPrefix] = useState('')
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
-      const r = await api.adminListCdks({ status: status || undefined, q: q || undefined, pageSize: 100 })
+      const r = await api.adminListCdks({ status: status || undefined, q: q || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : '加载失败')
+    } finally {
+      setLoading(false)
     }
-  }, [status, q])
+  }, [status, q, page])
 
   useEffect(() => {
     void load()
@@ -119,16 +127,16 @@ export default function AdminCdksPage() {
       </div>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1) }}>
           <option value="">全部状态</option>
           <option value="unredeemed">未兑换</option>
           <option value="redeemed">已兑换</option>
           <option value="revoked">已作废</option>
         </select>
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索码" />
+        <input type="search" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="搜索码" />
         <button onClick={() => void copyCodes()} disabled={items.length === 0}>复制列表</button>
         <button onClick={exportCsv} disabled={items.length === 0}>导出 CSV</button>
-        <span className="admin-muted">共 {total} 个</span>
+        <ListCount loading={loading} total={total} unit="个" />
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
@@ -160,11 +168,15 @@ export default function AdminCdksPage() {
               </tr>
             )
           })}
-          {items.length === 0 && (
-            <tr><td colSpan={6} className="admin-muted">（无匹配的 CDK）</td></tr>
+          {loading ? (
+            <ListLoadingRow colSpan={6} />
+          ) : (
+            items.length === 0 && <ListEmptyRow colSpan={6} text="（无匹配的 CDK）" />
           )}
         </tbody>
       </table>
+
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>
   )
 }

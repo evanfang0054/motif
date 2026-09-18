@@ -42,6 +42,72 @@ export interface AdminOrder {
   paidAt: string | null
 }
 
+/** 管理后台：概览指标。字段必须与 `packages/db` 的 `AdminOverview` 逐一对齐 */
+export interface AdminOverview {
+  users: { total: number; newLast7d: number }
+  credits: {
+    balance: number
+    ledgerSum: number
+    granted: number
+    openingBalance: number
+    adjustedIn: number
+    adjustedOut: number
+    generatedCharged: number
+    refunded: number
+    netSpent: number
+    bySource: Array<{ source: string; net: number; inflow: number; outflow: number }>
+  }
+  generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
+  orders: { pending: number; paid: number; amountTotal: number }
+  cdks: { unredeemed: number; redeemed: number; revoked: number }
+  feedback: { pending: number }
+}
+
+export interface AdminFeedbackRow {
+  id: number
+  userId: string
+  content: string
+  status: string
+  resolvedAt: string | null
+  resolvedBy: string | null
+  createdAt: string
+}
+
+export interface AdminLogRow {
+  id: string
+  topicId: string
+  userId: string
+  prompt: string
+  finalPrompt: string
+  size: string
+  requestedCount: number
+  status: string
+  attempts: number
+  error: string | null
+  generatedCount: number
+  createdAt: string
+}
+
+export interface AdminAuditRow {
+  id: number
+  actorId: string
+  action: string
+  targetType: string | null
+  targetId: string | null
+  detail: string | null
+  createdAt: string
+}
+
+/** 只带上真正有值的查询参数，避免 `?status=` 这类空串污染服务端筛选 */
+function toQuery(params: Record<string, string | number | undefined>): string {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '') qs.set(k, String(v))
+  }
+  const q = qs.toString()
+  return q ? `?${q}` : ''
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -131,4 +197,26 @@ export const api = {
     const q = qs.toString()
     return call<{ items: AdminOrder[]; total: number; page: number; pageSize: number }>(`/api/admin/orders${q ? `?${q}` : ''}`)
   },
+  adminOverview: () => call<AdminOverview>('/api/admin/overview'),
+  adminListUsers: (params: { q?: string; role?: string; status?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ items: User[]; total: number; page: number; pageSize: number }>(`/api/admin/users${toQuery(params)}`),
+  adminAdjustCredits: (input: { userId: string; delta: number; reason: string }) =>
+    call<{ user: User }>('/api/admin/users/credits', { method: 'POST', body: JSON.stringify(input) }),
+  adminSetUserStatus: (userId: string, status: 'active' | 'disabled') =>
+    call<{ user: User }>('/api/admin/users/status', { method: 'POST', body: JSON.stringify({ userId, status }) }),
+  adminSetUserRole: (userId: string, role: string) =>
+    call<{ user: User }>('/api/admin/users/role', { method: 'POST', body: JSON.stringify({ userId, role }) }),
+  /** 一次性重置密码：返回的明文只此一次，不要缓存到任何持久化位置 */
+  adminResetPassword: (userId: string) =>
+    call<{ user: User; password: string }>('/api/admin/users/password', { method: 'POST', body: JSON.stringify({ userId }) }),
+  adminListFeedback: (params: { status?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ items: AdminFeedbackRow[]; total: number; page: number; pageSize: number }>(`/api/admin/feedback${toQuery(params)}`),
+  adminResolveFeedback: (id: number) =>
+    call<{ ok: true; feedback: AdminFeedbackRow }>('/api/admin/feedback/resolve', { method: 'POST', body: JSON.stringify({ id }) }),
+  adminListLogs: (params: { status?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ items: AdminLogRow[]; total: number; page: number; pageSize: number }>(`/api/admin/logs${toQuery(params)}`),
+  adminCleanupLogs: (days: number) =>
+    call<{ ok: true; deleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
+  adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }>(`/api/admin/audit${toQuery(params)}`),
 }
