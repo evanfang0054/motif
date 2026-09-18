@@ -216,7 +216,7 @@ function validateValue(def: SettingDef, value: string): string | null {
  * 两处刻意的非对称语义：
  * 1. **非字符串值直接拒绝**（而不是 `String(v)` 强转）。请求体来自 JSON，`{"SMTP_PORT":465}`
  *    传成数字是极常见的写法；强转会悄悄把 465 写成 "465" 而让人以为「我明明传了数字也能存」，
- *    拒绝则立刻暴露「配置项的值一律是字符串」这条契约。
+ *    拒绝则立刻暴露「配置项的值一律按字符串处理」这条规则。
  * 2. **非必填键的「清空」是删除该行，不是写入空串**。写空串会让 resolveSetting 永远返回 ''，
  *    把 env 回退永久遮蔽，还会让读取视图报出 source: 'db' 配 isSet: false 这种自相矛盾的一对。
  *    删除之后 source / isSet / value 三者自然一致。

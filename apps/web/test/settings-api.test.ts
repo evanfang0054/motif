@@ -75,7 +75,7 @@ describe('GET /api/admin/settings（root 独占）', () => {
     expect(body.health.find((h) => h.group === 'generation')!.ready).toBe(false)
   })
 
-  it('数据位置项以只读形式返回（契约要求页面只读展示）', async () => {
+  it('数据位置项以只读形式返回（页面据此渲染为不可编辑）', async () => {
     const body = (await (await settingsGET(reqWith(sessionFor('root', 'r6@b.co')))).json()) as {
       items: Array<{ key: string; readOnly: boolean }>
     }
