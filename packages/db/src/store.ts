@@ -153,6 +153,34 @@ interface LedgerDbRow {
   created_at: string
 }
 
+/**
+ * 概览看板的六组指标。
+ *
+ * 额度口径：`granted` **不含**退款（否则会与 `netSpent` 的减项重复计数）、不含期初结存（那是迁移前的
+ * 历史存量）、不含管理调整（它有自己的正/负一对数字）。它们之间满足闭合恒等式：
+ *   `balance === granted + openingBalance + adjustedIn + refunded - adjustedOut - generatedCharged`
+ * 而 `ledgerSum === balance` 由全局不变式保证 —— 把两者都返回，是为了让差值成为可巡检的观测量。
+ */
+export interface AdminOverview {
+  users: { total: number; newLast7d: number }
+  credits: {
+    balance: number
+    ledgerSum: number
+    granted: number
+    openingBalance: number
+    adjustedIn: number
+    adjustedOut: number
+    generatedCharged: number
+    refunded: number
+    netSpent: number
+    bySource: Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
+  }
+  generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
+  orders: { pending: number; paid: number; amountTotal: number }
+  cdks: { unredeemed: number; redeemed: number; revoked: number }
+  feedback: { pending: number }
+}
+
 interface MessageRow {
   id: string
   topic_id: string
@@ -918,6 +946,71 @@ export class MotifStore {
 
   insertFeedback(userId: string, content: string): void {
     this.db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)').run(userId, content, nowIso())
+  }
+
+  // ---------- 概览指标 ----------
+
+  overviewStats(now: string = nowIso()): AdminOverview {
+    const one = <T>(sql: string, ...params: unknown[]): T => this.db.prepare(sql).get(...params) as T
+    const n = (sql: string, ...params: unknown[]): number => one<{ c: number }>(sql, ...params).c
+    const sevenDaysAgo = new Date(new Date(now).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+    const balance = one<{ s: number | null }>('SELECT SUM(credits) AS s FROM users').s ?? 0
+    const sumLedger = (where: string, ...params: unknown[]): number =>
+      one<{ s: number | null }>(`SELECT SUM(delta) AS s FROM credit_ledger WHERE ${where}`, ...params).s ?? 0
+
+    const ledgerSum = sumLedger('1 = 1')
+    // ⚠️ 取负的三处都要 `|| 0`：空表时 SUM 返回 NULL → `-0`，而 vitest 的 toBe 用 Object.is（`-0 !== 0`）
+    const generatedCharged = -sumLedger("source = 'generation_charge'") || 0
+    const refunded = sumLedger("source = 'generation_refund'") || 0
+    const netSpent = generatedCharged - refunded || 0
+    const granted = sumLedger("delta > 0 AND source NOT IN ('generation_refund', 'opening_balance', 'admin_adjust')")
+    const openingBalance = sumLedger("source = 'opening_balance'")
+    const adjustedIn = sumLedger("delta > 0 AND source = 'admin_adjust'")
+    const adjustedOut = -sumLedger("delta < 0 AND source = 'admin_adjust'") || 0
+    const bySource = this.db
+      .prepare(
+        `SELECT source,
+                SUM(delta) AS net,
+                SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END) AS inflow,
+                SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END) AS outflow
+           FROM credit_ledger GROUP BY source ORDER BY net DESC, source ASC`
+      )
+      .all() as Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
+
+    const terminal = n("SELECT COUNT(*) AS c FROM messages WHERE status IN ('completed','failed','canceled')")
+    const succeeded = n("SELECT COUNT(*) AS c FROM messages WHERE status = 'completed'")
+
+    return {
+      users: {
+        total: n('SELECT COUNT(*) AS c FROM users'),
+        newLast7d: n('SELECT COUNT(*) AS c FROM users WHERE created_at >= ?', sevenDaysAgo),
+      },
+      credits: { balance, ledgerSum, granted, openingBalance, adjustedIn, adjustedOut, generatedCharged, refunded, netSpent, bySource },
+      generations: {
+        total: n('SELECT COUNT(*) AS c FROM messages'),
+        terminal,
+        succeeded,
+        // 0/0 必须给 0：NaN 会被 JSON 序列化成 null，前端直接显示 "null%"
+        successRate: terminal === 0 ? 0 : succeeded / terminal,
+        topErrors: this.db
+          .prepare(
+            "SELECT error, COUNT(*) AS count FROM messages WHERE status = 'failed' AND error IS NOT NULL AND error <> '' GROUP BY error ORDER BY count DESC, error ASC LIMIT 3"
+          )
+          .all() as Array<{ error: string; count: number }>,
+      },
+      orders: {
+        pending: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'"),
+        paid: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'paid'"),
+        amountTotal: one<{ s: number | null }>("SELECT SUM(amount_total) AS s FROM orders WHERE status = 'paid'").s ?? 0,
+      },
+      cdks: {
+        unredeemed: n('SELECT COUNT(*) AS c FROM cdks WHERE redeemed_by IS NULL AND revoked_at IS NULL'),
+        redeemed: n('SELECT COUNT(*) AS c FROM cdks WHERE redeemed_by IS NOT NULL'),
+        revoked: n('SELECT COUNT(*) AS c FROM cdks WHERE revoked_at IS NOT NULL'),
+      },
+      feedback: { pending: n("SELECT COUNT(*) AS c FROM feedback WHERE status = 'pending'") },
+    }
   }
 
   // ---------- admin audit ----------

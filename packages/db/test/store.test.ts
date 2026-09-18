@@ -556,3 +556,123 @@ describe('额度流水（credit_ledger）', () => {
     s2.close()
   })
 })
+
+describe('概览指标（六组，与等价查询逐项对账）', () => {
+  it('六组指标与对同一库的等价查询逐项相等', () => {
+    const s = new MotifStore(join(dir, 'ov1.db'))
+    const old = s.createUser({ email: 'ov-old@b.co', passwordHash: 'h', name: '老王', credits: 10 })
+    const fresh = s.createUser({ email: 'ov-new@b.co', passwordHash: 'h', name: '新人', credits: 5 })
+    // 把其中一个用户挪到 30 天前，制造「7 日新增」的差异
+    s.db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run('2026-08-01T00:00:00.000Z', old.id)
+
+    const t = s.createTopic(fresh.id, '概览 fixture')
+    const mk = (n: number) =>
+      s.createMessage({ topicId: t.id, userId: fresh.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: n, enhancePrompt: false, referenceIds: [] })
+    const m1 = mk(3)
+    const m2 = mk(2)
+    mk(4) // 保持排队中，用来验证成功率的分母不含非终态
+    s.setMessageStatus(m1.id, 'completed')
+    s.setMessageStatus(m2.id, 'failed', '网关 502：上游拒绝')
+
+    // 让额度指标有内容：显式制造几笔不同来源的额度变动（流水是额度指标的唯一来源）
+    s.addCredits(fresh.id, 3, { source: 'signup_bonus' })
+    s.addCredits(fresh.id, 50, { source: 'order_paid', refId: 'ord_fixture' })
+    s.addCredits(fresh.id, 20, { source: 'cdk_redeem', refId: 'OV-CDK-1' })
+    s.deductCredits(fresh.id, 2, { source: 'generation_charge', refId: m1.id })
+    s.addCredits(fresh.id, 1, { source: 'generation_refund', refId: m2.id })
+
+    // 订单：造一张已支付（金额单位是分）
+    const oid = s.createOrder(fresh.id, { id: 'credits_50', label: '50 张', credits: 50, amountTotal: 868, currency: 'hkd' })
+    s.db.prepare("UPDATE orders SET status='paid', paid_at=? WHERE id=?").run('2026-09-01T00:00:00.000Z', oid)
+    // CDK：一张已兑换、一张已作废、一张未兑换
+    s.createCdk('ov-cdk-1', 20)
+    s.createCdk('ov-cdk-2', 20)
+    s.createCdk('ov-cdk-3', 20)
+    s.redeemCdk('OV-CDK-1', fresh.id)
+    s.revokeCdk('OV-CDK-3')
+    s.insertFeedback(fresh.id, '概览用反馈')
+
+    const o = s.overviewStats('2026-09-18T00:00:00.000Z')
+    const q = <T>(sql: string, ...p: unknown[]) => s.db.prepare(sql).get(...p) as T
+    const qc = (sql: string, ...p: unknown[]) => (s.db.prepare(sql).get(...p) as { c: number }).c
+
+    // 用户
+    expect(o.users.total).toBe(qc('SELECT COUNT(*) AS c FROM users'))
+    expect(o.users.total).toBe(2)
+    expect(o.users.newLast7d).toBe(1) // old 被挪到 8 月，只剩 fresh 落在 7 日窗口内
+
+    // 额度：手算的精确期望值（opening 10+5=15；granted=3+50+20=73，退款不计入发放）
+    expect(o.credits.openingBalance).toBe(15)
+    expect(o.credits.granted).toBe(73)
+    expect(o.credits.adjustedIn).toBe(0)
+    expect(o.credits.adjustedOut).toBe(0)
+    expect(o.credits.generatedCharged).toBe(2)
+    expect(o.credits.refunded).toBe(1)
+    expect(o.credits.netSpent).toBe(1)
+    expect(o.credits.balance).toBe(87)
+    expect(o.credits.ledgerSum).toBe(87)
+
+    // 【闭合恒等式】这些数字必须能自己加回来 —— 它就是概览卡片脚注要展示的式子
+    expect(o.credits.balance).toBe(
+      o.credits.granted + o.credits.openingBalance + o.credits.adjustedIn + o.credits.refunded - o.credits.adjustedOut - o.credits.generatedCharged
+    )
+
+    // bySource 走**另一条代码路径**交叉验证（公开 API + JS 归约），不要再抄一遍 SQL
+    const bySourceFromApi = s.listLedger({}).reduce<Record<string, number>>((acc, r) => {
+      acc[r.source] = (acc[r.source] ?? 0) + r.delta
+      return acc
+    }, {})
+    expect(Object.fromEntries(o.credits.bySource.map((x) => [x.source, x.net]))).toEqual(bySourceFromApi)
+    expect(o.credits.bySource.reduce((a, x) => a + x.net, 0)).toBe(o.credits.balance) // 没有一分钱落在口径外
+
+    // 生成轮次：成功率的分母必须是终态
+    expect(o.generations.total).toBe(3)
+    expect(o.generations.terminal).toBe(2)
+    expect(o.generations.succeeded).toBe(1)
+    expect(o.generations.successRate).toBeCloseTo(0.5, 6)
+    expect(o.generations.topErrors[0]).toEqual({ error: '网关 502：上游拒绝', count: 1 })
+
+    // 订单 / CDK / 反馈
+    expect(o.orders.paid).toBe(1)
+    expect(o.orders.pending).toBe(0)
+    expect(o.orders.amountTotal).toBe(868)
+    expect(o.cdks.unredeemed).toBe(1)
+    expect(o.cdks.redeemed).toBe(1)
+    expect(o.cdks.revoked).toBe(1)
+    expect(o.feedback.pending).toBe(1)
+    s.close()
+  })
+
+  it('成功率分母不含排队中与生成中', () => {
+    const s = new MotifStore(join(dir, 'ov2.db'))
+    const u = s.createUser({ email: 'ov2@b.co', passwordHash: 'h', name: 'x' })
+    const t = s.createTopic(u.id, 't')
+    const mk = () => s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: 1, enhancePrompt: false, referenceIds: [] })
+    const a = mk()
+    const b = mk()
+    mk()
+    mk()
+    s.setMessageStatus(a.id, 'completed')
+    s.setMessageStatus(b.id, 'failed', 'e')
+    const o = s.overviewStats()
+    expect(o.generations.total).toBe(4)
+    expect(o.generations.terminal).toBe(2)
+    expect(o.generations.successRate).toBeCloseTo(0.5, 6) // 若把非终态算进分母会变成 0.25 → 必红
+    s.close()
+  })
+
+  it('空库不抛错，比率与取负项都不得产出 NaN 或 -0', () => {
+    const s = new MotifStore(join(dir, 'ov3.db'))
+    const o = s.overviewStats()
+    expect(o.users.total).toBe(0)
+    expect(o.generations.terminal).toBe(0)
+    expect(o.generations.successRate).toBe(0)
+    expect(o.credits.granted).toBe(0)
+    // 这三条专守 `-sumLedger(...)` 的 -0 陷阱（vitest 的 toBe 用 Object.is，-0 与 0 不等）
+    expect(o.credits.generatedCharged).toBe(0)
+    expect(o.credits.netSpent).toBe(0)
+    expect(o.credits.adjustedOut).toBe(0)
+    expect(o.credits.ledgerSum).toBe(0)
+    s.close()
+  })
+})
