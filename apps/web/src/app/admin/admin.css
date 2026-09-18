@@ -310,3 +310,78 @@
     color: var(--muted-strong);
   }
 }
+
+/* ---------- 概览卡片 ---------- */
+
+.admin-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.admin-card {
+  background: var(--surface-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.admin-card-label {
+  font-size: 13px;
+  color: var(--muted-strong);
+}
+
+.admin-card-value {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.admin-card-sub {
+  font-size: 12px;
+  color: var(--muted-strong);
+  margin-top: 2px;
+}
+
+.admin-card-detail {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.admin-card-detail summary {
+  cursor: pointer;
+  color: var(--muted-strong);
+}
+
+.admin-card-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.admin-card-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.admin-neg {
+  color: var(--danger);
+}
+
+.admin-detail {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

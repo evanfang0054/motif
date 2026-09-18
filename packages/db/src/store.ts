@@ -39,6 +39,40 @@ function safeParseIds(raw: string | null | undefined): string[] {
   }
 }
 
+/** 按操作者/动作/时间构造审计查询条件（供 list / count 共用）。action 用**精确匹配** —— 前缀匹配会让 credit.adjust 与 credit.adjust.rollback 互相污染 */
+function auditWhere(filter: { actorId?: string; action?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.actorId) {
+    clauses.push('actor_id = ?')
+    params.push(filter.actorId)
+  }
+  if (filter.action) {
+    clauses.push('action = ?')
+    params.push(filter.action)
+  }
+  if (filter.from) {
+    clauses.push('created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
+/** 审计流水行（管理端分页视图） */
+export interface AuditLogRow {
+  id: number
+  actorId: string
+  action: string
+  targetType: string | null
+  targetId: string | null
+  detail: string | null
+  createdAt: string
+}
+
 /** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
 function messageWhere(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
@@ -1255,6 +1289,31 @@ export class MotifStore {
       detail: r.detail,
       createdAt: r.created_at,
     }))
+  }
+
+  /**
+   * 审计流水的管理端分页视图。**刻意与 `listAudit` 并存**：后者返回裸数组且被多处既有测试断言依赖，
+   * 改它的返回值形状的代价大于新增一个方法。
+   */
+  listAuditPaged(filter: { actorId?: string; action?: string; from?: string; to?: string; limit?: number; offset?: number }): AuditLogRow[] {
+    const { where, params } = auditWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM admin_audit ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as AuditRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      actorId: r.actor_id,
+      action: r.action,
+      targetType: r.target_type,
+      targetId: r.target_id,
+      detail: r.detail,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countAudit(filter: { actorId?: string; action?: string; from?: string; to?: string }): number {
+    const { where, params } = auditWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM admin_audit ${where}`).get(...params) as { c: number }).c
   }
 }
 

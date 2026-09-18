@@ -28,6 +28,6 @@ describe('管理后台菜单的角色可见性', () => {
 
   it('已交付页面的 href 与实际路由目录一一对应，未交付的不可导航', () => {
     const delivered = ADMIN_NAV.filter((i) => !i.pending)
-    expect(delivered.map((i) => i.href)).toEqual(['/admin/cdks', '/admin/orders'])
+    expect(delivered.map((i) => i.href)).toEqual(['/admin', '/admin/cdks', '/admin/orders', '/admin/feedback', '/admin/audit'])
   })
 })
