@@ -38,6 +38,28 @@ function safeParseIds(raw: string | null | undefined): string[] {
   }
 }
 
+/** 按关键词/角色/状态构造用户查询条件（供 list / count 共用，避免两处口径漂移） */
+function userWhere(filter: { q?: string; role?: UserRole; status?: UserStatus }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.q && filter.q.trim()) {
+    // 邮箱与昵称都搜。邮箱统一小写存储，故用小写的 like 参数即可覆盖大小写；
+    // 昵称保持大小写敏感（不为此引入 LOWER() 全表扫描），中文昵称不受影响
+    clauses.push('(email LIKE ? OR name LIKE ?)')
+    const like = `%${filter.q.trim().toLowerCase()}%`
+    params.push(like, like)
+  }
+  if (filter.role) {
+    clauses.push('role = ?')
+    params.push(filter.role)
+  }
+  if (filter.status) {
+    clauses.push('status = ?')
+    params.push(filter.status)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
 /** 按状态与关键词构造 CDK 查询条件（供 list / count 共用，避免两处口径漂移） */
 function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
@@ -448,6 +470,20 @@ export class MotifStore {
     return row.c
   }
 
+  /** 管理端用户列表。复用 rowToUser 同一条行映射，避免两处字段漂移 */
+  listUsers(filter: { q?: string; role?: UserRole; status?: UserStatus; limit?: number; offset?: number }): User[] {
+    const { where, params } = userWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM users ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as UserRow[]
+    return rows.map(rowToUser)
+  }
+
+  countUsers(filter: { q?: string; role?: UserRole; status?: UserStatus }): number {
+    const { where, params } = userWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM users ${where}`).get(...params) as { c: number }).c
+  }
+
   /**
    * 更新角色。**不加保护** —— 「管理员不可操作超级管理员」「最后一个超级管理员不可降级」
    * 是服务层契约（apps/web/src/server/admin.ts 的 assertCanModifyRole），调用方必须先过断言。
@@ -483,12 +519,19 @@ export class MotifStore {
     return token
   }
 
+  /**
+   * 按会话 token 解析用户。**被禁用的用户一律解析为 null** —— 这是契约要求的：
+   * 禁用后既有会话必须失效，否则「禁用」只是把会话删掉，用户重新登录即可拿回全部权限。
+   * 放在这一层是因为它是所有会话态鉴权的唯一收口（页面守卫、requireUser、requireRole 都经过它）。
+   */
   getUserBySession(token: string): User | null {
     const row = this.db
       .prepare('SELECT user_id FROM sessions WHERE token = ? AND expires_at > ?')
       .get(this.hashToken(token), nowIso()) as { user_id: string } | undefined
     if (!row) return null
-    return this.getUserById(row.user_id)
+    const user = this.getUserById(row.user_id)
+    if (!user || user.status === 'disabled') return null
+    return user
   }
 
   deleteSession(token: string): void {

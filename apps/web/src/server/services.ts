@@ -108,6 +108,9 @@ export function login(store: MotifStore, email: string, password: string): User 
   if (!user) throw new ServiceError(401, '邮箱或密码不正确。')
   const stored = store.getPasswordHash(user.id)
   if (!stored || !verifyPassword(password, stored)) throw new ServiceError(401, '邮箱或密码不正确。')
+  // 禁用校验必须放在**验密之后**：先验密才不会向不知道密码的人泄露「这个账号存在且被禁了」。
+  // 少了这一步，「禁用用户」就是假的 —— 被禁者拿密码即可重新登录并拿回全部权限。
+  if (user.status === 'disabled') throw new ServiceError(401, '账号已被禁用，请联系管理员。')
   return user
 }
 

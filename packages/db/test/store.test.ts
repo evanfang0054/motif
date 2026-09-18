@@ -676,3 +676,30 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     s.close()
   })
 })
+
+describe('用户列表（管理端）', () => {
+  it('按关键词搜索邮箱与昵称，按角色/状态筛选，分页生效', () => {
+    const s = new MotifStore(join(dir, 'usr1.db'))
+    s.createUser({ email: 'alice@b.co', passwordHash: 'h', name: '爱丽丝' })
+    s.createUser({ email: 'bob@b.co', passwordHash: 'h', name: '鲍勃' })
+    const disabled = s.createUser({ email: 'carol@b.co', passwordHash: 'h', name: '卡罗尔' })
+    s.setUserStatus(disabled.id, 'disabled')
+    const root = s.createUser({ email: 'root@b.co', passwordHash: 'h', name: '超管', role: 'root' })
+
+    expect(s.countUsers({})).toBe(4)
+    expect(s.listUsers({ limit: 2, offset: 0 })).toHaveLength(2)
+    expect(s.listUsers({ limit: 2, offset: 2 })).toHaveLength(2)
+    expect(s.listUsers({ q: 'alice' })).toHaveLength(1) // 邮箱命中
+    expect(s.listUsers({ q: 'ALICE' })).toHaveLength(1) // 大小写不敏感（邮箱统一小写存储）
+    expect(s.listUsers({ q: '鲍勃' })).toHaveLength(1) // 昵称命中
+    expect(s.listUsers({ role: 'root' })).toHaveLength(1)
+    expect(s.listUsers({ status: 'disabled' })).toHaveLength(1)
+    expect(s.countUsers({ status: 'disabled' })).toBe(1)
+    // 返回的是完整 User（复用同一条行映射），不是裸行
+    const one = s.listUsers({ q: 'carol' })[0]
+    expect(one.status).toBe('disabled')
+    expect(one.mustChangePassword).toBe(false)
+    expect(s.listUsers({ q: root.email })[0].role).toBe('root')
+    s.close()
+  })
+})
