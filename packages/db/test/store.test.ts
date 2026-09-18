@@ -703,3 +703,42 @@ describe('用户列表（管理端）', () => {
     s.close()
   })
 })
+
+describe('反馈处理', () => {
+  it('列表可按状态筛选与分页；标记后 status/resolved_at/resolved_by 齐备；重复标记幂等拒绝', () => {
+    const s = new MotifStore(join(dir, 'fb1.db'))
+    const u = s.createUser({ email: 'fb@b.co', passwordHash: 'h', name: '反馈者' })
+    const admin = s.createUser({ email: 'fbadmin@b.co', passwordHash: 'h', name: '处理人', role: 'admin' })
+    s.insertFeedback(u.id, '第一条')
+    s.insertFeedback(u.id, '第二条')
+    s.insertFeedback(u.id, '第三条')
+
+    expect(s.countFeedback({ status: 'pending' })).toBe(3)
+    expect(s.listFeedback({ limit: 2 })).toHaveLength(2)
+    expect(s.listFeedback({ limit: 2, offset: 2 })).toHaveLength(1)
+
+    const first = s.listFeedback({})[0] // 倒序：最后插入的在前
+    expect(first.content).toBe('第三条')
+    expect(first.resolvedBy).toBeNull()
+    expect(s.resolveFeedback(first.id, admin.id)).toBe(true)
+
+    const row = s.db.prepare('SELECT status, resolved_at, resolved_by FROM feedback WHERE id = ?').get(first.id) as {
+      status: string
+      resolved_at: string | null
+      resolved_by: string | null
+    }
+    expect(row.status).toBe('resolved')
+    expect(row.resolved_at).toBeTruthy()
+    expect(row.resolved_by).toBe(admin.id)
+
+    expect(s.countFeedback({ status: 'pending' })).toBe(2)
+    expect(s.countFeedback({ status: 'resolved' })).toBe(1)
+    expect(s.listFeedback({ status: 'resolved' })[0].id).toBe(first.id)
+
+    // 重复标记返回 false（条件 UPDATE 未命中），且不覆盖首个处理人
+    expect(s.resolveFeedback(first.id, admin.id)).toBe(false)
+    expect((s.db.prepare('SELECT resolved_by FROM feedback WHERE id = ?').get(first.id) as { resolved_by: string }).resolved_by).toBe(admin.id)
+    expect(s.resolveFeedback(99999, admin.id)).toBe(false)
+    s.close()
+  })
+})

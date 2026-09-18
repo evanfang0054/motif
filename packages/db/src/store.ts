@@ -38,6 +38,33 @@ function safeParseIds(raw: string | null | undefined): string[] {
   }
 }
 
+/** 按状态构造反馈查询条件（供 list / count 共用，避免两处口径漂移） */
+function feedbackWhere(filter: { status?: 'pending' | 'resolved' }): { where: string; params: string[] } {
+  if (!filter.status) return { where: '', params: [] }
+  return { where: 'WHERE status = ?', params: [filter.status] }
+}
+
+interface FeedbackDbRow {
+  id: number
+  user_id: string
+  content: string
+  status: string
+  resolved_at: string | null
+  resolved_by: string | null
+  created_at: string
+}
+
+/** 反馈列表行（管理端视图） */
+export interface FeedbackRow {
+  id: number
+  userId: string
+  content: string
+  status: string
+  resolvedAt: string | null
+  resolvedBy: string | null
+  createdAt: string
+}
+
 /** 按关键词/角色/状态构造用户查询条件（供 list / count 共用，避免两处口径漂移） */
 function userWhere(filter: { q?: string; role?: UserRole; status?: UserStatus }): { where: string; params: string[] } {
   const clauses: string[] = []
@@ -989,6 +1016,43 @@ export class MotifStore {
 
   insertFeedback(userId: string, content: string): void {
     this.db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)').run(userId, content, nowIso())
+  }
+
+  /** 反馈列表（管理端） */
+  listFeedback(filter: { status?: 'pending' | 'resolved'; limit?: number; offset?: number }): FeedbackRow[] {
+    const { where, params } = feedbackWhere(filter)
+    const rows = this.db
+      .prepare(`SELECT * FROM feedback ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, filter.limit ?? 50, filter.offset ?? 0) as FeedbackDbRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      content: r.content,
+      status: r.status,
+      resolvedAt: r.resolved_at,
+      resolvedBy: r.resolved_by,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countFeedback(filter: { status?: 'pending' | 'resolved' }): number {
+    const { where, params } = feedbackWhere(filter)
+    return (this.db.prepare(`SELECT COUNT(*) AS c FROM feedback ${where}`).get(...params) as { c: number }).c
+  }
+
+  /** 精确取一条反馈。作废/标记的前置存在性检查必须用它，不能用分页列表的 `some(...)` */
+  getFeedback(id: number): FeedbackRow | null {
+    const r = this.db.prepare('SELECT * FROM feedback WHERE id = ?').get(id) as FeedbackDbRow | undefined
+    if (!r) return null
+    return { id: r.id, userId: r.user_id, content: r.content, status: r.status, resolvedAt: r.resolved_at, resolvedBy: r.resolved_by, createdAt: r.created_at }
+  }
+
+  /** 标记已处理。条件 UPDATE 保证只有仍是 pending 时才写入 —— 不覆盖首个处理人（幂等拒绝） */
+  resolveFeedback(id: number, actorId: string): boolean {
+    const res = this.db
+      .prepare("UPDATE feedback SET status = 'resolved', resolved_at = ?, resolved_by = ? WHERE id = ? AND status = 'pending'")
+      .run(nowIso(), actorId, id)
+    return res.changes === 1
   }
 
   // ---------- 概览指标 ----------
