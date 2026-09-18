@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { roleAtLeast } from '@motif/core'
 import { SESSION_COOKIE } from '@/server/auth'
@@ -27,7 +28,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <span className="admin-brand">Motif 管理后台</span>
+        <div className="admin-header-left">
+          {/* 管理后台只能从工作台进入（守卫要求已登录），故返回目标固定为工作台；
+              用固定链接而非 history.back()，这样直接输入地址进来时也不会走空 */}
+          <Link href="/" className="admin-back" title="返回工作台">
+            ← 返回工作台
+          </Link>
+          <span className="admin-brand">Motif 管理后台</span>
+        </div>
         <span className="admin-identity">
           {user.name}
           {showRole ? `（${roleLabel}）` : ''}

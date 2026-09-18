@@ -15,6 +15,32 @@
   background: var(--surface-primary);
 }
 
+.admin-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.admin-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.admin-back:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
 .admin-brand {
   font-weight: 600;
 }
