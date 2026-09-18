@@ -26,16 +26,18 @@ motif/
 ├── apps/web/                  # Next.js 全栈应用（UI + API）
 │   ├── src/app/               # 页面与 API 路由
 │   │   ├── page.tsx           # / ：未登录落地页 / 已登录工作台
+│   │   ├── admin/             # 管理后台（服务端角色守卫；运营页陆续接入）
 │   │   ├── billing/mock-pay/  # 模拟收银台（待接真实支付）
 │   │   └── api/               # auth · topics(+watch) · generate-images · canvas-images
-│   │                          #   · billing · redeem · feedback · messages/cancel
+│   │                          #   · billing · redeem · feedback · messages/cancel · admin
 │   ├── src/components/        # landing / workspace 组件（含交互画布）
 │   ├── src/server/            # 会话、业务服务、队列 worker、Mailer
 │   └── src/lib/               # 模板定义（原创文案）· API client
 ├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 校验
-├── packages/db/               # SQLite 存储层（9 张表 + 仓储）
+├── packages/db/               # SQLite 存储层（11 张表 + 仓储）
 ├── packages/image-provider/   # 生图 Provider（OpenAI 兼容网关）
 ├── scripts/cdk.mjs            # CDK 发放 CLI
+├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
 ├── Dockerfile                 # 多阶段构建（builder 构建 + slim 运行时）
 ├── docker-compose.yml         # 一键部署：端口/数据卷/环境变量/健康检查
 └── e2e/                       # ego-browser 测试：run.sh（主流程 5 轮）+ acceptance.sh（验收 A–F）
@@ -69,8 +71,20 @@ motif/
 - 反馈：提交反馈入库（真实）
 - 参考图：上传 PNG/JPG/WebP ≤10MB 作为生成依据
 
+### 管理后台（地基已就绪，运营页迭代中）
+- **三级角色**：普通用户 / 管理员 / 超级管理员，角色比较收敛在 `packages/core/src/roles.ts`
+- **管理员账号自动引导**：服务启动时若库中尚无超级管理员，自动创建并生成**随机强密码**，
+  写入 `dataDir/admin-credentials.txt`（权限 600）并打印到启动日志。
+  幂等依据是**数据库而非凭据文件** —— 重复启动不会重建账号，也不会覆盖你已改过的密码
+- **管理面守卫**：`/admin` 对未登录 / 被禁用 / 角色不足一律返回 404（不泄露管理面存在性）；
+  `/api/admin/*` 区分 401（未登录）与 403（权限不足）
+- **角色保护**：管理员不可修改或授予超级管理员角色；系统不允许失去最后一个超级管理员
+- **审计地基**：`admin_audit` 表与写入封装（审计写入失败只告警，不影响主操作）
+- **强制改密软提示**：引导创建的账号在工作台顶部提示改密，可关闭、不拦截任何操作
+- ⚠️ 运营页面（CDK 发放 / 订单 / 用户 / 反馈 / 生成日志 / 系统设置）尚在迭代中，见 [#16](https://github.com/evanfang0054/motif/issues/16)
+
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · 54 个单元测试
+- pnpm monorepo · TypeScript strict · 123 个单元测试
 - ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
 - Docker 多阶段构建一键部署，数据卷持久化，健康检查
 
@@ -93,6 +107,9 @@ motif/
 | `SMTP_SECURE` | 按端口推断 | 465 默认 SSL；非 465 端口如需关闭可设 `false` |
 | `RESEND_API_KEY` / `SENDGRID_API_KEY` | 对应 API 渠道 |
 | `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` | 数据位置（默认 `apps/web/.data/motif.db`） |
+| `MOTIF_ADMIN_EMAIL` | 自动创建的管理员邮箱，默认 `admin@motif.local` |
+| `MOTIF_ADMIN_PASSWORD` | 指定管理员初始密码（不设则生成 20 位随机强密码） |
+| `MOTIF_SKIP_ADMIN_BOOTSTRAP` | `1` = 跳过管理员账号自动创建（本地开发常用） |
 | `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开） |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
 | `MOTIF_BILLING_MODE` | `mock` | `mock`=演示收银台；`live`=关闭模拟支付（真实渠道接入位） |
@@ -104,7 +121,12 @@ motif/
 # 2. 启动
 docker compose up -d --build
 # → http://localhost:3100，数据持久化在 ./data/
+# 3. 首次启动会自动创建超级管理员，从容器日志取初始密码：
+docker compose logs motif | grep -A4 '已自动创建超级管理员账号'
+#    同一份凭据也会写入 ./data/admin-credentials.txt（权限 600）
 ```
+
+> 部署后请尽快用该账号登录 `/admin` 并修改密码。忘记密码时用 `pnpm admin:reset`（见下）。
 
 ### 方式 B：本地开发
 
@@ -120,7 +142,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 54 个单元测试（core 14 · db 15 · provider 8 · 服务层 9 · mailer 8）
+pnpm test             # 123 个单元测试（core 22 · db 26 · provider 8 · web 67）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布
@@ -132,6 +154,20 @@ bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · �
 pnpm cdk MY-CODE-10 10   # 发放一张 10 额度的 CDK
 pnpm cdk --list          # 查看全部 CDK 与兑换状态
 ```
+
+### 管理员账号
+
+首次启动会自动创建一个超级管理员账号（见「管理后台」一节），密码在**启动日志**与
+`dataDir/admin-credentials.txt`（默认 `apps/web/.data/admin-credentials.txt`，权限 600）两处交付。
+
+默认邮箱 `admin@motif.local` 不可达，因此「忘记密码」自助流程对管理员无效，请用 CLI 恢复：
+
+```bash
+pnpm admin:reset         # 重置超级管理员密码为新的随机强密码，并吊销其全部会话
+pnpm admin:list          # 查看现有管理员账号
+```
+
+登录后访问 `/admin` 进入管理后台；工作台顶栏也会为管理员显示「管理后台」入口。
 
 ## 快速开始（本地开发）
 
