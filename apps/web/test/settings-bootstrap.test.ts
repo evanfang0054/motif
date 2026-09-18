@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { bootstrapConfig } from '@/instrumentation'
+import { bootstrapConfig } from '@/server/bootstrap-config'
 import { getRuntime } from '@/server/context'
 
 let dir: string
