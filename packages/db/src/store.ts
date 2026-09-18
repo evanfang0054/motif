@@ -73,6 +73,16 @@ export interface AuditLogRow {
   createdAt: string
 }
 
+/**
+ * 一条配置项。value 一律以字符串存储 —— 存储层**不解释语义**，
+ * 类型化解析（布尔 / 枚举 / URL / 密钥）集中在 apps/web/src/server/settings.ts。
+ */
+export interface SettingRow {
+  key: string
+  value: string
+  updatedAt: string
+}
+
 /** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
 function messageWhere(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
@@ -1314,6 +1324,69 @@ export class MotifStore {
   countAudit(filter: { actorId?: string; action?: string; from?: string; to?: string }): number {
     const { where, params } = auditWhere(filter)
     return (this.db.prepare(`SELECT COUNT(*) AS c FROM admin_audit ${where}`).get(...params) as { c: number }).c
+  }
+
+  // ---------- 配置（settings 键值表）----------
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    // 显式返回 null 而不是 ''：空串与「未设置」必须是两个状态，播种与 env 回退都依赖这个区分
+    return row ? row.value : null
+  }
+
+  listSettings(): SettingRow[] {
+    const rows = this.db
+      .prepare('SELECT key, value, updated_at FROM settings ORDER BY key')
+      .all() as Array<{ key: string; value: string; updated_at: string }>
+    return rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at }))
+  }
+
+  /**
+   * 播种：**仅在键不存在时**写入。返回 true 表示本次真的写了。
+   *
+   * 用 `ON CONFLICT DO NOTHING` 而不是「先 SELECT 再 INSERT」：后者在并发启动
+   * （多进程同时拉起）时会双写，且多一次往返。
+   */
+  seedSetting(key: string, value: string): boolean {
+    const info = this.db
+      .prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING')
+      .run(key, value, nowIso())
+    return info.changes > 0
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(key, value, nowIso())
+  }
+
+  /** 批量写入：一个事务，要么全成要么全不成 —— 避免「一半配置已生效」这种无法解释的状态 */
+  setSettings(entries: Array<{ key: string; value: string }>): void {
+    const stmt = this.db.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    const tx = this.db.transaction(() => {
+      const t = nowIso()
+      for (const e of entries) stmt.run(e.key, e.value, t)
+    })
+    tx()
+  }
+
+  /**
+   * 删除配置行。用于「清空一个可选键」——
+   * 清空必须是删除而不是写入空串，否则 env 回退会被一条空记录永久遮蔽。
+   */
+  deleteSettings(keys: string[]): void {
+    if (keys.length === 0) return
+    const stmt = this.db.prepare('DELETE FROM settings WHERE key = ?')
+    const tx = this.db.transaction(() => {
+      for (const k of keys) stmt.run(k)
+    })
+    tx()
   }
 }
 
