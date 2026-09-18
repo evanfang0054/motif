@@ -385,3 +385,74 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ---------- 用户 / 日志页的小控件 ---------- */
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-actions button,
+.admin-actions select {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.admin-actions button:disabled,
+.admin-actions select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: #00000066;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.admin-modal {
+  width: 100%;
+  max-width: 460px;
+  background: var(--surface-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: var(--shadow-soft);
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--muted-strong);
+}
+
+.admin-field input {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.admin-prompt {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-word;
+}
