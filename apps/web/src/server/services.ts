@@ -76,7 +76,12 @@ export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ 
   if (!checkRate(`testmail:to1h:${to.toLowerCase()}`, 3_600_000, 10)) {
     throw new ServiceError(429, '该邮箱测试发送次数已达上限，请稍后再试。')
   }
-  await mailer.mailer.sendTest(to)
+  try {
+    await mailer.mailer.sendTest(to)
+  } catch (e) {
+    // 底层原因（SMTP 535 / Resend 401…）必须透传到页面：普通 Error 会被 jsonError 归一成 500 通用文案
+    throw new ServiceError(502, `测试发送失败：${e instanceof Error ? e.message : String(e)}`)
+  }
   return { ok: true, via: mailer.mailer.name }
 }
 

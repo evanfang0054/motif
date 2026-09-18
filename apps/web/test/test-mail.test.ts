@@ -30,6 +30,20 @@ describe('sendTestMail', () => {
     await expect(sendTestMail(fakeConfig({ name: 'smtp', sendTest: boom }), 'boom@example.com')).rejects.toThrow('535')
   })
 
+  it('发送失败包装为 ServiceError(502)——HTTP 层经 jsonError 直达页面而非 500 通用文案', async () => {
+    const boom = async () => {
+      throw new Error('SMTP 535 授权码错误')
+    }
+    try {
+      await sendTestMail(fakeConfig({ name: 'smtp', sendTest: boom }), 'wrap@example.com')
+      expect.unreachable('应当抛出 ServiceError')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ServiceError)
+      expect((e as ServiceError).status).toBe(502)
+      expect((e as ServiceError).message).toContain('535')
+    }
+  })
+
   it('MisconfiguredMailer 抛错 → ServiceError 400', async () => {
     const bad = new MisconfiguredMailer('发信渠道未配置')
     await expect(sendTestMail(fakeConfig(bad), 'misconfig@example.com')).rejects.toThrow('未配置')

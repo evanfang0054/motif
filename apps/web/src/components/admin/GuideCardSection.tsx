@@ -15,9 +15,13 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
   useEffect(() => {
     if (!open) return
     let alive = true
-    void Promise.all(cards.map((c) => QRCode.toDataURL(c.linkUrl, { width: 320, margin: 2 }))).then((urls) => {
-      if (alive) setQr(Object.fromEntries(cards.map((c, i) => [c.id, urls[i]])))
-    })
+    void Promise.all(cards.map((c) => QRCode.toDataURL(c.linkUrl, { width: 320, margin: 2 })))
+      .then((urls) => {
+        if (alive) setQr(Object.fromEntries(cards.map((c, i) => [c.id, urls[i]])))
+      })
+      .catch(() => {
+        // QR 生成失败静默：引导卡的链接点击路径不受影响
+      })
     return () => {
       alive = false
     }
