@@ -63,6 +63,23 @@ export async function sendCode(
   return { sent: true, ...(expose ? { devCode: code } : {}), via: mailer.mailer.name }
 }
 
+/**
+ * 管理后台测试发送：用当前生效渠道真实投递一封，失败透传底层原因（如 SMTP 535 授权码错误）。
+ * 频控与 sendCode 对齐：每邮箱 60s/1 封、每小时 10 封——防 root 会话被劫持后滥用为轰炸跳板。
+ */
+export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ ok: true; via: string }> {
+  const err = validateEmail(to)
+  if (err) throw new ServiceError(400, err)
+  if (!checkRate(`testmail:to:${to.toLowerCase()}`, 60_000, 1)) {
+    throw new ServiceError(429, '发送过于频繁，请 1 分钟后再试。')
+  }
+  if (!checkRate(`testmail:to1h:${to.toLowerCase()}`, 3_600_000, 10)) {
+    throw new ServiceError(429, '该邮箱测试发送次数已达上限，请稍后再试。')
+  }
+  await mailer.mailer.sendTest(to)
+  return { ok: true, via: mailer.mailer.name }
+}
+
 export function register(
   store: MotifStore,
   input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string }

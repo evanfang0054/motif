@@ -10,7 +10,11 @@ export type MailPurpose = 'register' | 'password-reset'
 export interface Mailer {
   readonly name: string
   sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void>
+  /** 管理后台测试发送：发一封纯文本测试邮件，失败原样抛底层错误（如 SMTP 535 授权码错误） */
+  sendTest(to: string): Promise<void>
 }
+
+const TEST_EMAIL_TEXT = '这是一封来自 Motif 管理后台的测试邮件。收到即说明发信配置正确。'
 
 const PURPOSE_TEXT: Record<MailPurpose, string> = {
   register: '注册 Motif 账号',
@@ -32,6 +36,10 @@ export class ConsoleMailer implements Mailer {
 
   async sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void> {
     console.log(`[motif] ${purpose} 验证码已生成 → ${to}: ${code}`)
+  }
+
+  async sendTest(to: string): Promise<void> {
+    console.log(`[mailer:test] 测试邮件已发往 ${to}（console 渠道仅打日志）`)
   }
 }
 
@@ -62,6 +70,15 @@ export class SmtpMailer implements Mailer {
       text: `你正在${PURPOSE_TEXT[purpose]}，验证码 ${code}，10 分钟内有效。`,
     })
   }
+
+  async sendTest(to: string): Promise<void> {
+    await this.transporter.sendMail({
+      from: `"Motif" <${this.config.from}>`,
+      to,
+      subject: 'Motif 测试邮件',
+      text: TEST_EMAIL_TEXT,
+    })
+  }
 }
 
 /** Resend（https://resend.com，HTTP API） */
@@ -83,6 +100,24 @@ export class ResendMailer implements Mailer {
         to: [to],
         subject: `Motif 验证码：${code}`,
         html: codeEmailHtml(code, purpose),
+      }),
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Resend 发信失败（${res.status}）：${text.slice(0, 200)}`)
+    }
+  }
+
+  async sendTest(to: string): Promise<void> {
+    const res = await this.fetchFn('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: this.from,
+        to: [to],
+        subject: 'Motif 测试邮件',
+        text: TEST_EMAIL_TEXT,
       }),
       signal: AbortSignal.timeout(30_000),
     })
@@ -120,6 +155,24 @@ export class SendGridMailer implements Mailer {
       throw new Error(`SendGrid 发信失败（${res.status}）：${text.slice(0, 200)}`)
     }
   }
+
+  async sendTest(to: string): Promise<void> {
+    const res = await this.fetchFn('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: this.from },
+        subject: 'Motif 测试邮件',
+        content: [{ type: 'text/plain', value: TEST_EMAIL_TEXT }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`SendGrid 发信失败（${res.status}）：${text.slice(0, 200)}`)
+    }
+  }
 }
 
 /**
@@ -135,6 +188,10 @@ export class MisconfiguredMailer implements Mailer {
   constructor(private readonly reason: string) {}
 
   async sendVerificationCode(): Promise<never> {
+    throw new Error(this.reason)
+  }
+
+  async sendTest(): Promise<never> {
     throw new Error(this.reason)
   }
 }
