@@ -545,3 +545,107 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---------- 系统设置页 ---------- */
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 14px 0;
+  max-width: 560px;
+}
+
+.admin-field > label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.admin-field input,
+.admin-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-primary);
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.admin-field input:disabled {
+  background: var(--surface-secondary);
+  color: var(--muted-strong);
+  cursor: not-allowed;
+}
+
+.admin-field-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-strong);
+  line-height: 1.5;
+}
+
+.admin-field-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-strong);
+}
+
+.admin-badge-readonly {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: var(--surface-secondary);
+  color: var(--muted-strong);
+  border: 1px solid var(--border);
+}
+
+.admin-health {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+
+.admin-health-item {
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.admin-danger {
+  border-color: var(--danger);
+}
+
+.admin-danger .admin-title {
+  color: var(--danger-text);
+}
+
+.admin-confirm-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.admin-danger-btn {
+  background: var(--danger);
+  color: var(--button-text);
+  border-color: var(--danger);
+}
+
+.admin-danger-btn:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.admin-danger-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

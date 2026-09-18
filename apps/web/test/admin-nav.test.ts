@@ -36,11 +36,12 @@ describe('管理后台菜单的角色可见性', () => {
       '/admin/logs',
       '/admin/users',
       '/admin/audit',
+      '/admin/settings',
     ])
   })
 
-  it('本轮该翻的 pending 都翻了，且只翻了该翻的（系统设置留给后续迭代）', () => {
-    // 不要写成「不应再有任何 pending」——系统设置属后续迭代，刻意保持占位
-    expect(ADMIN_NAV.filter((i) => i.pending).map((i) => i.href)).toEqual(['/admin/settings'])
+  it('全部菜单项都已交付，不再有占位项', () => {
+    // 占位机制保留在 AdminNavItem.pending 上，供后续新增页面时使用
+    expect(ADMIN_NAV.filter((i) => i.pending)).toEqual([])
   })
 })
