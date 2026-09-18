@@ -90,7 +90,9 @@
 
 .admin-body {
   display: flex;
-  align-items: flex-start;
+  /* ⚠️ 不要加 align-items: flex-start —— 那会让侧栏按内容高度收缩，
+     栏目少时只覆盖局部高度（背景与右边框都会断在半空）。默认的 stretch 才是要的效果 */
+  align-items: stretch;
   gap: 0;
   flex: 1;
   min-height: 0;
