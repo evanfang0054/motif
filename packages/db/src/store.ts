@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   newCanvasImageId,
+  newCdkCode,
   newMessageId,
   newTopicId,
   newUserId,
@@ -34,6 +35,43 @@ function safeParseIds(raw: string | null | undefined): string[] {
   } catch {
     return []
   }
+}
+
+/** 按状态与关键词构造 CDK 查询条件（供 list / count 共用，避免两处口径漂移） */
+function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.status === 'unredeemed') clauses.push('redeemed_by IS NULL AND revoked_at IS NULL')
+  if (filter.status === 'redeemed') clauses.push('redeemed_by IS NOT NULL')
+  if (filter.status === 'revoked') clauses.push('revoked_at IS NOT NULL')
+  if (filter.q && filter.q.trim()) {
+    clauses.push('code LIKE ?')
+    params.push(`%${filter.q.trim().toUpperCase()}%`)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
+}
+
+/** 按用户/状态/时间范围构造订单查询条件（供 list / count 共用，避免两处口径漂移） */
+function orderWhere(filter: { userId?: string; status?: string; from?: string; to?: string }): { where: string; params: string[] } {
+  const clauses: string[] = []
+  const params: string[] = []
+  if (filter.userId) {
+    clauses.push('user_id = ?')
+    params.push(filter.userId)
+  }
+  if (filter.status) {
+    clauses.push('status = ?')
+    params.push(filter.status)
+  }
+  if (filter.from) {
+    clauses.push('created_at >= ?')
+    params.push(filter.from)
+  }
+  if (filter.to) {
+    clauses.push('created_at <= ?')
+    params.push(filter.to)
+  }
+  return { where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params }
 }
 
 interface UserRow {
@@ -73,6 +111,18 @@ interface TopicRow {
   active_prompt: string | null
   created_at: string
   updated_at: string
+}
+
+interface OrderRow {
+  id: string
+  user_id: string
+  package_id: string
+  credits: number
+  amount_total: number
+  currency: string
+  status: string
+  created_at: string
+  paid_at: string | null
 }
 
 interface MessageRow {
@@ -614,11 +664,111 @@ export class MotifStore {
     this.db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?, ?, ?)').run(code.toUpperCase(), credits, nowIso())
   }
 
+  /**
+   * 批量生成 CDK：单事务插入，码冲突时换码重试。
+   * 任一步失败整批回滚，不留部分写入（调用方据此可安全重试）。
+   */
+  createCdkBatch(input: {
+    count: number
+    credits: number
+    prefix?: string
+    maxRetries?: number
+    /** 仅测试注入用；生产走 newCdkCode */
+    codeFactory?: () => string
+  }): string[] {
+    const count = input.count
+    if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error('批量生成数量需在 1–100 之间。')
+    if (!Number.isInteger(input.credits) || input.credits < 1) throw new Error('面额需为正整数。')
+    const maxRetries = input.maxRetries ?? 5
+    const factory = input.codeFactory ?? (() => newCdkCode(input.prefix))
+
+    const tx = this.db.transaction((): string[] => {
+      const created: string[] = []
+      const insert = this.db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?, ?, ?)')
+      for (let i = 0; i < count; i++) {
+        let placed = false
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const code = factory().toUpperCase()
+          // 批内重复与主键冲突**都消耗 attempt 预算**，语义一致：这一次没放成
+          if (created.includes(code)) continue
+          try {
+            insert.run(code, input.credits, nowIso())
+            created.push(code)
+            placed = true
+            break
+          } catch {
+            // 主键冲突：换码重试
+          }
+        }
+        if (!placed) throw new Error('CDK 码生成冲突次数过多，请重试。')
+      }
+      return created
+    })
+    return tx()
+  }
+
+  listCdks(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string; limit?: number; offset?: number }): Array<{
+    code: string
+    credits: number
+    redeemedBy: string | null
+    redeemedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+  }> {
+    const { where, params } = cdkWhere(filter)
+    const limit = filter.limit ?? 50
+    const offset = filter.offset ?? 0
+    const rows = this.db
+      .prepare(`SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks ${where} ORDER BY created_at DESC, code DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as Array<{ code: string; credits: number; redeemed_by: string | null; redeemed_at: string | null; revoked_at: string | null; created_at: string }>
+    return rows.map((r) => ({
+      code: r.code,
+      credits: r.credits,
+      redeemedBy: r.redeemed_by,
+      redeemedAt: r.redeemed_at,
+      revokedAt: r.revoked_at,
+      createdAt: r.created_at,
+    }))
+  }
+
+  countCdks(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string }): number {
+    const { where, params } = cdkWhere(filter)
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM cdks ${where}`).get(...params) as { c: number }
+    return row.c
+  }
+
+  /** 精确取一张码。作废/详情的前置检查必须用它 —— 不能用 `listCdks({q})`（LIKE + LIMIT 1 会漏判） */
+  getCdk(code: string): { code: string; credits: number; redeemedBy: string | null; redeemedAt: string | null; revokedAt: string | null; createdAt: string } | null {
+    const r = this.db
+      .prepare('SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks WHERE code = ?')
+      .get(code.toUpperCase()) as { code: string; credits: number; redeemed_by: string | null; redeemed_at: string | null; revoked_at: string | null; created_at: string } | undefined
+    if (!r) return null
+    return { code: r.code, credits: r.credits, redeemedBy: r.redeemed_by, redeemedAt: r.redeemed_at, revokedAt: r.revoked_at, createdAt: r.created_at }
+  }
+
+  /**
+   * 作废一张未兑换的码。已兑换或已作废返回 false（幂等拒绝，不覆盖 revoked_at）。
+   * 条件 UPDATE 保证与并发兑换互斥：只有仍是「未兑换未作废」时才写入。
+   */
+  revokeCdk(code: string): boolean {
+    const res = this.db
+      .prepare('UPDATE cdks SET revoked_at = ? WHERE code = ? AND redeemed_by IS NULL AND revoked_at IS NULL')
+      .run(nowIso(), code.toUpperCase())
+    return res.changes === 1
+  }
+
   redeemCdk(code: string, userId: string): number | null {
     const tx = this.db.transaction((): number | null => {
-      const row = this.db.prepare('SELECT * FROM cdks WHERE code = ?').get(code.toUpperCase()) as { credits: number; redeemed_by: string | null } | undefined
-      if (!row || row.redeemed_by) return null
-      this.db.prepare('UPDATE cdks SET redeemed_by = ?, redeemed_at = ? WHERE code = ?').run(userId, nowIso(), code.toUpperCase())
+      const row = this.db
+        .prepare('SELECT credits, redeemed_by, revoked_at FROM cdks WHERE code = ?')
+        .get(code.toUpperCase()) as { credits: number; redeemed_by: string | null; revoked_at: string | null } | undefined
+      // 已作废的码不可兑换：修复前只判断 redeemed_by、忽略 revoked_at，导致作废形同虚设
+      if (!row || row.redeemed_by || row.revoked_at) return null
+      // 条件 UPDATE：并发下只有一个请求能把 redeemed_by 从 NULL 写成自己
+      const res = this.db
+        .prepare('UPDATE cdks SET redeemed_by = ?, redeemed_at = ? WHERE code = ? AND redeemed_by IS NULL AND revoked_at IS NULL')
+        .run(userId, nowIso(), code.toUpperCase())
+      if (res.changes !== 1) return null
       return row.credits
     })
     return tx()
@@ -642,6 +792,42 @@ export class MotifStore {
       return row.credits
     })
     return tx()
+  }
+
+  listOrders(filter: { userId?: string; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
+    id: string
+    userId: string
+    packageId: string
+    credits: number
+    amountTotal: number
+    currency: string
+    status: string
+    createdAt: string
+    paidAt: string | null
+  }> {
+    const { where, params } = orderWhere(filter)
+    const limit = filter.limit ?? 50
+    const offset = filter.offset ?? 0
+    const rows = this.db
+      .prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as OrderRow[]
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      packageId: r.package_id,
+      credits: r.credits,
+      amountTotal: r.amount_total,
+      currency: r.currency,
+      status: r.status,
+      createdAt: r.created_at,
+      paidAt: r.paid_at,
+    }))
+  }
+
+  countOrders(filter: { userId?: string; status?: string; from?: string; to?: string }): number {
+    const { where, params } = orderWhere(filter)
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM orders ${where}`).get(...params) as { c: number }
+    return row.c
   }
 
   // ---------- feedback ----------

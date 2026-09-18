@@ -43,7 +43,8 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
       <div className="flex items-center gap-2">
         <span className="ws-badge xl:hidden" title="剩余额度">{user.credits} 张</span>
         <span className="ws-badge hidden xl:flex">余额 {user.credits} 张</span>
-        {/* 完整操作区只在 ≥xl（1280）展示；平板档保留「充值」主操作，其余收进菜单 */}
+        {/* 完整操作区只在 ≥xl（1280）展示；平板档保留「充值」主操作，其余收进菜单。
+            顺序与 <xl 的汉堡菜单保持一致：管理后台 / 主题 / 充值 / 用户名 / 退出 */}
         <div className="hidden items-center gap-2 xl:flex">
           {isAdmin && (
             <Link href="/admin" className="ws-btn" title="进入管理后台">
@@ -51,6 +52,10 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
             </Link>
           )}
           <ThemeToggle />
+          {/* ⚠️ 不要给这个按钮加 xl:hidden：≥xl 时平板档那个充值按钮与 ⋯ 菜单都已隐藏，
+              这里再藏掉就成了「桌面宽度下没有任何充值入口」——用户既买不了额度，
+              也打不开充值弹窗里的 CDK 兑换入口 */}
+          <button className="ws-btn ws-btn-primary" onClick={onOpenBilling}>充值</button>
           <button className="ws-btn" onClick={onOpenProfile} title="个人资料">{user.name}</button>
           <button className="ws-btn" onClick={onLogout} title={user.email}>退出</button>
         </div>

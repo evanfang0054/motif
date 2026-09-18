@@ -19,6 +19,29 @@ export class ApiError extends Error {
   }
 }
 
+/** 管理后台：CDK 行（状态由 redeemedBy / revokedAt 推导，接口不额外给 status 字段） */
+export interface AdminCdk {
+  code: string
+  credits: number
+  redeemedBy: string | null
+  redeemedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+/** 管理后台：订单行。amountTotal 单位为「分」 */
+export interface AdminOrder {
+  id: string
+  userId: string
+  packageId: string
+  credits: number
+  amountTotal: number
+  currency: string
+  status: string
+  createdAt: string
+  paidAt: string | null
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -86,4 +109,26 @@ export const api = {
     }),
   redeem: (code: string) => call<{ user: User }>('/api/redeem', { method: 'POST', body: JSON.stringify({ code }) }),
   feedback: (content: string) => call<{ ok: true }>('/api/feedback', { method: 'POST', body: JSON.stringify({ content }) }),
+  adminListCdks: (params: { status?: string; q?: string; page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.status) qs.set('status', params.status)
+    if (params.q) qs.set('q', params.q)
+    if (params.page) qs.set('page', String(params.page))
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize))
+    const q = qs.toString()
+    return call<{ items: AdminCdk[]; total: number; page: number; pageSize: number }>(`/api/admin/cdks${q ? `?${q}` : ''}`)
+  },
+  adminCreateCdks: (input: { count: number; credits: number; prefix?: string }) =>
+    call<{ codes: string[]; credits: number }>('/api/admin/cdks', { method: 'POST', body: JSON.stringify(input) }),
+  adminRevokeCdk: (code: string) =>
+    call<{ ok: true }>('/api/admin/cdks/revoke', { method: 'POST', body: JSON.stringify({ code }) }),
+  adminListOrders: (params: { status?: string; userId?: string; page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.status) qs.set('status', params.status)
+    if (params.userId) qs.set('userId', params.userId)
+    if (params.page) qs.set('page', String(params.page))
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize))
+    const q = qs.toString()
+    return call<{ items: AdminOrder[]; total: number; page: number; pageSize: number }>(`/api/admin/orders${q ? `?${q}` : ''}`)
+  },
 }

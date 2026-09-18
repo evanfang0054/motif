@@ -341,10 +341,24 @@ export const CREDIT_PACKAGES = [
   { id: 'credits_500', label: '500 张额度', credits: 500, amountTotal: 8680, currency: 'hkd' },
 ]
 
+/**
+ * 校验 CDK 并到账。失败原因分三类给文案，让用户能分清「输错了 / 被作废了 / 已用过了」。
+ *
+ * 注意：这里的前置查询**只负责文案**。真正的裁决永远是 `store.redeemCdk` 内的条件 UPDATE，
+ * 并发下仍只有一个请求能把 redeemed_by 从 NULL 写成自己 —— 前置查询与写入之间不存在
+ * 「先查后写」的竞态漏洞（最坏情况是文案退化为「已被使用」，不会重复到账）。
+ */
 export function redeem(store: MotifStore, user: User, code: string): User {
   if (!code || !code.trim()) throw new ServiceError(400, '请输入 CDK。')
-  const credits = store.redeemCdk(code.trim(), user.id)
-  if (credits === null) throw new ServiceError(400, 'CDK 无效或已被使用。')
+  const target = code.trim().toUpperCase()
+  const cdk = store.getCdk(target)
+  if (!cdk) throw new ServiceError(400, 'CDK 无效，请检查是否输入有误。')
+  if (cdk.revokedAt) throw new ServiceError(400, '该 CDK 已失效，请联系发放方。')
+  if (cdk.redeemedBy) throw new ServiceError(400, '该 CDK 已被使用。')
+
+  const credits = store.redeemCdk(target, user.id)
+  // 走到这里仍可能拿到 null：并发下另一个请求刚刚抢先兑换了同一张码
+  if (credits === null) throw new ServiceError(400, '该 CDK 已被使用。')
   return store.addCredits(user.id, credits)
 }
 
