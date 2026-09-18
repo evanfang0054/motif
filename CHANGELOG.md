@@ -4,7 +4,10 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.0] - 2026-09-18
+
+v0.2.0 以来的第三轮迭代：6 个 PR、55 个提交、104 个文件变更（+8426 / −146）。
+主线是**管理后台从地基到全面上线**（#24–#28），并完成品牌视觉升级。
 
 ### Added
 
@@ -25,6 +28,10 @@
   密钥类键只写不读、界面回显掩码；数据位置只读展示；危险区开关（验证码直出、Cookie Secure 等）
   二次确认并留痕；保存后 provider / mailer 热重载，无需重启
 - 管理后台响应式（#27）：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
+- **品牌视觉「Motif 印章」**：新 Logo 替换旧渐变方块（暖米纸底 + 珊瑚手绘母题 M + 印刷打样对位角标），
+  呼应「Motif = 母题、参考图成套出图」；按画幅分层——favicon 与顶栏用减法版保证 16px 清晰，
+  落地页 CTA 收尾章等大画幅用完整纹样版（含墨色小 m 变奏）；新增 1200×630 OG 分享图；
+  品牌概念与用色规范沉淀至 `docs/brand/`
 
 ### Fixed
 
@@ -91,6 +98,7 @@
 - Docker 一键部署（多阶段构建 + 数据卷持久化 + 健康检查）
 - 质量保障：54 个单元测试、ego-browser 端到端（5 轮）与验收套件（A–F）
 
-[Unreleased]: https://github.com/evanfang0054/motif/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/evanfang0054/motif/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/evanfang0054/motif/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/evanfang0054/motif/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/evanfang0054/motif/releases/tag/v0.1.0
