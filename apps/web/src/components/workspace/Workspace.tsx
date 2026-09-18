@@ -12,6 +12,7 @@ import { deleteImageConfirmText } from './canvas-geometry'
 import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
+import { PasswordHintBanner } from './PasswordHintBanner'
 
 export interface PanelState {
   prompt: string
@@ -48,6 +49,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
     | null
   >(null)
   const [toast, setToast] = useState<string | null>(null)
+  // 强制改密软提示仅本次会话可关闭；下次登录仍会提醒（标记仍在库里）
+  const [passwordHintDismissed, setPasswordHintDismissed] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
@@ -337,6 +340,13 @@ function Workspace({ initialUser }: { initialUser: User }) {
         onOpenBilling={() => setDialog('billing')}
         onOpenProfile={() => setDialog('profile')}
         onLogout={() => void logout()}
+      />
+
+      {/* 改密入口即既有的个人资料弹窗（ProfileDialog 内含改密表单） */}
+      <PasswordHintBanner
+        show={!!user?.mustChangePassword && !passwordHintDismissed}
+        onChangePassword={() => setDialog('profile')}
+        onDismiss={() => setPasswordHintDismissed(true)}
       />
 
       <div className="ws-grid">

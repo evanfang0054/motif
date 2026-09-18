@@ -17,6 +17,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     store.updateUserPassword(user.id, hashPassword(newPassword))
     // 凭证变更即吊销其他会话（保留当前会话，避免把自己踢下线）
     store.revokeUserSessions(user.id, req.cookies.get(SESSION_COOKIE)?.value)
+    // 密码已由用户自行设定，强制改密软提示随之解除
+    store.setMustChangePassword(user.id, false)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)
