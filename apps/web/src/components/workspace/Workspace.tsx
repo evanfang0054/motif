@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, Topic, TopicDetail, User } from '@motif/core'
 import { api } from '@/lib/client'
@@ -168,20 +168,62 @@ function Workspace({ initialUser }: { initialUser: User }) {
         referenceIds: p.referenceIds,
       }))
       showToast(`已套用「${tpl.title}」模板`)
+      // 额度预警前置：新用户余额往往小于模板张数，别等提交时才发现
+      if (user.credits < tpl.count) {
+        showToast(`注意：「${tpl.title}」需 ${tpl.count} 张额度，当前余额 ${user.credits} 张；可调小张数或点击「充值」`, 5200)
+      }
     },
-    [showToast]
+    [showToast, user.credits]
   )
+
+  const creatingRef = useRef(false)
+  /** 确保存在活动任务：已有则直接复用 id；没有才向服务端创建/复用未使用任务（不动面板内容） */
+  const ensureTopic = useCallback(async (): Promise<string | null> => {
+    if (activeId) return activeId
+    if (creatingRef.current) return null
+    creatingRef.current = true
+    try {
+      const { topic, reused } = await fetch('/api/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '新任务' }),
+      }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
+      setActiveId(topic.id)
+      await refreshTopics()
+      if (reused) showToast('已自动新建任务')
+      return topic.id
+    } finally {
+      creatingRef.current = false
+    }
+  }, [activeId, refreshTopics, showToast])
+
+  /** 顶栏/抽屉「＋ 新任务」：切到全新任务并重置面板 */
+  const createTopic = useCallback(() => {
+    setPanel(IDLE_PANEL)
+    void ensureTopic()
+    setDrawerOpen(false)
+  }, [ensureTopic])
 
   const busy = detail?.topic.status === 'pending' || detail?.topic.status === 'running' || detail?.topic.status === 'canceling'
 
+  // 最近一次生成失败的信息（含退额说明）：持久展示在面板上，直到下次提交
+  const lastError = useMemo(() => {
+    if (!detail) return null
+    const active = detail.messages.find((m) => m.id === detail.topic.activeMessageId) ?? detail.messages[detail.messages.length - 1]
+    if (!active || active.status !== 'failed') return null
+    return `上次生成失败：${active.error ?? '未知原因'}`
+  }, [detail])
+
   const submitGenerate = useCallback(async () => {
     try {
+      // 保证在明确的活动任务下提交（没有则自动创建），避免依赖服务端对空 topicId 的隐式处理
+      const tid = await ensureTopic()
       const res = await api.generate({
         prompt: panel.prompt,
         count: panel.count,
         size: panel.size === 'custom' ? `${panel.customW}x${panel.customH}` : panel.size,
         enhance: false,
-        topicId: activeId,
+        topicId: tid,
         referenceCanvasImageIds: panel.referenceIds,
       } satisfies GenerateImagesInput)
       setUser(res.user)
@@ -190,9 +232,14 @@ function Workspace({ initialUser }: { initialUser: User }) {
       await refreshDetail(res.topic.id)
       showToast('任务已加入队列，后台生成中。')
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '提交失败，请重试。', 4000)
+      const msg = e instanceof Error ? e.message : '提交失败，请重试。'
+      showToast(msg, 4000)
+      // 额度不足：光提示不够，直接把充值入口送到用户面前
+      if (msg.includes('额度不足')) {
+        setDialog('billing')
+      }
     }
-  }, [panel, activeId, refreshTopics, refreshDetail, showToast])
+  }, [panel, activeId, ensureTopic, refreshTopics, refreshDetail, showToast])
 
   const cancelRunning = useCallback(async () => {
     if (!detail) return
@@ -206,26 +253,6 @@ function Workspace({ initialUser }: { initialUser: User }) {
       showToast(e instanceof Error ? e.message : '取消失败')
     }
   }, [detail, refreshDetail, showToast])
-
-  const creatingRef = useRef(false)
-  const createTopic = useCallback(async () => {
-    if (creatingRef.current) return // 防连点：进行中忽略后续点击
-    creatingRef.current = true
-    try {
-      const { topic, reused } = await fetch('/api/topics', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: '新任务' }),
-      }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
-      setPanel(IDLE_PANEL)
-      setActiveId(topic.id)
-      await refreshTopics()
-      setDrawerOpen(false)
-      showToast(reused ? '已回到未使用的任务' : '已新建任务')
-    } finally {
-      creatingRef.current = false
-    }
-  }, [refreshTopics, showToast])
 
   const renameTopic = useCallback(
     async (id: string, title: string) => {
@@ -268,20 +295,22 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   const uploadReference = useCallback(
     async (file: File) => {
-      if (!activeId) {
+      // 自动建任务：用户不必理解「任务」概念，上传动作本身就该可用
+      const tid = await ensureTopic()
+      if (!tid) {
         showToast('请先新建一个任务')
         return
       }
       try {
-        const { canvasImage } = await api.uploadReference(activeId, file)
+        const { canvasImage } = await api.uploadReference(tid, file)
         setPanel((p) => ({ ...p, referenceIds: [...p.referenceIds, canvasImage.id] }))
-        await refreshDetail(activeId)
+        await refreshDetail(tid)
         showToast('参考图已上传')
       } catch (e) {
         showToast(e instanceof Error ? e.message : '上传失败')
       }
     },
-    [activeId, refreshDetail, showToast]
+    [ensureTopic, refreshDetail, showToast]
   )
 
   const logout = useCallback(async () => {
@@ -322,6 +351,44 @@ function Workspace({ initialUser }: { initialUser: User }) {
           ) : (
             <TemplateGallery onSelect={selectTemplate} />
           )}
+          {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
+          {busy && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 20,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                borderRadius: 999,
+                border: '1px solid var(--border)',
+                background: 'color-mix(in srgb, var(--surface-primary) 92%, transparent)',
+                boxShadow: 'var(--shadow-soft)',
+                fontSize: 13,
+                color: 'var(--foreground)',
+                pointerEvents: 'none',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  border: '2px solid var(--border-strong)',
+                  borderTopColor: 'var(--brand-warm)',
+                  animation: 'ws-spin 0.9s linear infinite',
+                }}
+              />
+              云端生成中，完成后图片会自动出现在画布
+            </div>
+          )}
         </section>
 
         {panelOpen ? (
@@ -334,6 +401,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
             customH={panel.customH}
             referenceCount={panel.referenceIds.length}
             busy={!!busy}
+            credits={user.credits}
+            lastError={lastError}
             onPromptChange={(prompt) => setPanel((p) => ({ ...p, prompt }))}
             onCountChange={(count) => setPanel((p) => ({ ...p, count }))}
             onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}

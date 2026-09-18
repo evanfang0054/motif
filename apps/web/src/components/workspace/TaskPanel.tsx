@@ -13,6 +13,10 @@ interface Props {
   customH: number
   referenceCount: number
   busy: boolean
+  /** 当前余额：用于生成前的消耗提示与不足预警 */
+  credits?: number
+  /** 最近一次生成失败的信息（含已退额提示）；重新提交后由父级自动清除 */
+  lastError?: string | null
   onPromptChange: (v: string) => void
   onCountChange: (v: number) => void
   onSizeChange: (v: string) => void
@@ -25,9 +29,11 @@ interface Props {
   onCollapse?: () => void
 }
 
-/** 右侧任务面板：状态、参考图、张数、尺寸、提示词、生成/取消 */
+/** 右侧任务面板：状态、失败提示、参考图、张数、尺寸、提示词、生成/取消 */
 function TaskPanel(p: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const credits = p.credits
+  const insufficient = typeof credits === 'number' && credits < p.count
 
   return (
     <section className="ws-panel">
@@ -40,6 +46,24 @@ function TaskPanel(p: Props) {
           <button className="ws-btn" onClick={p.onNewTask}>＋ 新任务</button>
         </div>
       </div>
+
+      {/* 上次生成失败：持久横幅（toast 转瞬即逝，失败必须留在界面上直到下次提交） */}
+      {p.lastError && !p.busy && (
+        <div
+          role="alert"
+          className="text-xs"
+          style={{
+            padding: '8px 12px',
+            borderRadius: 10,
+            border: '1px solid color-mix(in srgb, var(--status-failed, #b3402e) 45%, transparent)',
+            background: 'color-mix(in srgb, var(--status-failed, #b3402e) 10%, transparent)',
+            color: 'var(--status-failed, #b3402e)',
+            lineHeight: 1.6,
+          }}
+        >
+          {p.lastError}
+        </div>
+      )}
 
       <div>
         <div className="ws-panel-label mb-1.5">参考图</div>
@@ -132,6 +156,17 @@ function TaskPanel(p: Props) {
         />
       </div>
 
+      {/* 提交前的额度预期：本次消耗多少、余额是否够，都亮在按钮旁边而不是等服务端报错 */}
+      {!p.busy && (
+        <div className="text-xs" style={{ color: insufficient ? 'var(--status-failed, #b3402e)' : 'var(--muted)', minHeight: 16 }}>
+          {insufficient
+            ? `本次将消耗 ${p.count} 张，当前余额仅 ${credits} 张，请充值或调小张数`
+            : typeof credits === 'number'
+              ? `本次将消耗 ${p.count} 张，余额 ${credits} 张`
+              : null}
+        </div>
+      )}
+
       {p.busy ? (
         <button className="ws-btn" style={{ justifyContent: 'center', padding: '11px 0' }} onClick={p.onCancel}>
           取消生成
@@ -142,8 +177,9 @@ function TaskPanel(p: Props) {
           style={{ justifyContent: 'center', padding: '11px 0' }}
           onClick={p.onGenerate}
           disabled={!p.prompt.trim()}
+          title={!p.prompt.trim() ? '请先输入提示词，或点击上方模板快速开始' : undefined}
         >
-          生成
+          {p.prompt.trim() ? `生成（${p.count} 张）` : '生成'}
         </button>
       )}
     </section>
