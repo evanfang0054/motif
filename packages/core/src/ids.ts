@@ -55,3 +55,15 @@ export function newVerificationCode(): string {
   for (let i = 0; i < 6; i++) out += String(bytes[i] % 10)
   return out
 }
+
+// 剔除易混字符（I/O/L/0/1），便于人工转录与电话报码
+const CDK_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
+
+/** CDK 码：默认 MOTIF- 前缀 + 12 位随机体 */
+export function newCdkCode(prefix = 'MOTIF'): string {
+  const bytes = randomBytes(12)
+  let body = ''
+  for (let i = 0; i < 12; i++) body += CDK_ALPHABET[bytes[i] % CDK_ALPHABET.length]
+  const p = prefix.trim().toUpperCase()
+  return p ? `${p}-${body}` : body
+}

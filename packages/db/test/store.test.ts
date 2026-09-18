@@ -359,3 +359,112 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
     s2.close()
   })
 })
+
+describe('CDK 批量发放、列表与作废', () => {
+  it('批量生成 N 个码：行数与面额正确、码互不重复', () => {
+    const s = new MotifStore(join(dir, 'cdk1.db'))
+    const codes = s.createCdkBatch({ count: 20, credits: 30 })
+    expect(codes).toHaveLength(20)
+    expect(new Set(codes).size).toBe(20)
+    const rows = s.db.prepare('SELECT code, credits FROM cdks').all() as Array<{ code: string; credits: number }>
+    expect(rows).toHaveLength(20)
+    expect(rows.every((r) => r.credits === 30)).toBe(true)
+    s.close()
+  })
+
+  it('码冲突时重试，最终仍得到 count 个可用码', () => {
+    const s = new MotifStore(join(dir, 'cdk2.db'))
+    // 预置一个必然与生成器「同前缀同长度」的码位：直接占用大量候选不现实，
+    // 故用固定生成器注入的方式验证重试逻辑（见实现里的可选 codeFactory）
+    let n = 0
+    const factory = () => (n++ === 0 ? 'MOTIF-COLLIDE' : `MOTIF-OK${n}`)
+    s.createCdk('MOTIF-COLLIDE', 1) // 先占位
+    const codes = s.createCdkBatch({ count: 2, credits: 5, codeFactory: factory })
+    expect(codes).toHaveLength(2)
+    expect(codes).not.toContain('MOTIF-COLLIDE')
+    s.close()
+  })
+
+  it('批量生成是单事务：中途失败不留下部分写入', () => {
+    const s = new MotifStore(join(dir, 'cdk3.db'))
+    let n = 0
+    // ⚠️ 工厂必须把「重复码」吐够 3 次，否则会被批内重复的跳过分支消化掉而永不失败：
+    //   i=0 → 第 1 次调用拿到 MOTIF-DUP，落库成功
+    //   i=1 → attempt0 拿到 MOTIF-DUP（批内重复 → 跳过），attempt1 拿到 MOTIF-DUP（仍重复 → 跳过）
+    //         → placed 仍为 false → 抛出 → 事务回滚
+    const factory = () => (n++ < 3 ? 'MOTIF-DUP' : `MOTIF-X${n}`)
+
+    // 拆成显式 try/catch，避免 toThrow 失败时遮蔽「回滚」这条真正的断言
+    let err: unknown = null
+    try {
+      s.createCdkBatch({ count: 3, credits: 1, codeFactory: factory, maxRetries: 1 })
+    } catch (e) {
+      err = e
+    }
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toMatch(/冲突/)
+
+    // 这才是「单事务回滚」的证据：第一条曾成功写入，但整批回滚后一行不留
+    const cnt = s.db.prepare('SELECT COUNT(*) AS c FROM cdks').get() as { c: number }
+    expect(cnt.c).toBe(0)
+    s.close()
+  })
+
+  it('列表可按状态筛选与搜索', () => {
+    const s = new MotifStore(join(dir, 'cdk4.db'))
+    s.createCdkBatch({ count: 3, credits: 10, prefix: 'AAA' })
+    s.createCdkBatch({ count: 2, credits: 10, prefix: 'BBB' })
+    const u = s.createUser({ email: 'c@b.co', passwordHash: 'h', name: 'c' })
+    const all = s.listCdks({})
+    expect(all).toHaveLength(5)
+    // 兑换一个
+    s.redeemCdk(all[0].code, u.id)
+    expect(s.listCdks({ status: 'redeemed' })).toHaveLength(1)
+    expect(s.listCdks({ status: 'unredeemed' })).toHaveLength(4)
+    expect(s.listCdks({ q: 'AAA' })).toHaveLength(3)
+    expect(s.countCdks({ status: 'unredeemed' })).toBe(4)
+    s.close()
+  })
+
+  it('作废仅对未兑换的码生效；已兑换的码作废失败且 revoked_at 保持空', () => {
+    const s = new MotifStore(join(dir, 'cdk5.db'))
+    const [a, b] = s.createCdkBatch({ count: 2, credits: 7 })
+    const u = s.createUser({ email: 'd@b.co', passwordHash: 'h', name: 'd' })
+    expect(s.redeemCdk(b, u.id)).toBe(7)
+
+    expect(s.revokeCdk(a)).toBe(true)
+    const ra = s.db.prepare('SELECT revoked_at FROM cdks WHERE code = ?').get(a) as { revoked_at: string | null }
+    expect(ra.revoked_at).not.toBeNull()
+
+    expect(s.revokeCdk(b)).toBe(false)
+    const rb = s.db.prepare('SELECT revoked_at FROM cdks WHERE code = ?').get(b) as { revoked_at: string | null }
+    expect(rb.revoked_at).toBeNull()
+
+    // 重复作废同一张码返回 false（幂等拒绝）
+    expect(s.revokeCdk(a)).toBe(false)
+    s.close()
+  })
+
+  it('【F1 回归】已作废的码不能再被兑换', () => {
+    const s = new MotifStore(join(dir, 'cdk6.db'))
+    const [a] = s.createCdkBatch({ count: 1, credits: 9 })
+    const u = s.createUser({ email: 'e@b.co', passwordHash: 'h', name: 'e' })
+    expect(s.revokeCdk(a)).toBe(true)
+    expect(s.redeemCdk(a, u.id)).toBeNull() // ← 修复前这里会返回 9
+    const row = s.db.prepare('SELECT redeemed_by FROM cdks WHERE code = ?').get(a) as { redeemed_by: string | null }
+    expect(row.redeemed_by).toBeNull()
+    s.close()
+  })
+
+  it('列表字段包含状态判定所需的 redeemed_by / revoked_at', () => {
+    const s = new MotifStore(join(dir, 'cdk7.db'))
+    const [a] = s.createCdkBatch({ count: 1, credits: 3 })
+    const row = s.listCdks({})[0]
+    expect(row.code).toBe(a)
+    expect(row.credits).toBe(3)
+    expect(row.redeemedBy).toBeNull()
+    expect(row.revokedAt).toBeNull()
+    expect(row.createdAt).toBeTruthy()
+    s.close()
+  })
+})
