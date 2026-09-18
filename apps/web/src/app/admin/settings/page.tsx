@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
+import { GuideCardSection } from '@/components/admin/GuideCardSection'
+import { MAILER_GUIDES } from '@/lib/guide-cards'
+import { mailerFieldVisible } from '@/lib/setting-visibility'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
@@ -49,10 +52,16 @@ export default function AdminSettingsPage() {
 
   const setField = (key: string, value: string) => setDirty((d) => ({ ...d, [key]: value }))
 
-  /** 只提交本组里改动过的键 —— 密钥框初值恒为空，未输入就不会进 dirty */
+  /** 只提交本组里改动过且**当前可见**的键 —— 密钥框初值恒为空，未输入就不会进 dirty；
+   *  可见性过滤防止「切走渠道后，隐藏字段残留的 dirty 被一并提交」。 */
   function pickedFrom(group: AdminSettingItem['group']): Record<string, string> {
     const keys = new Set(items.filter((i) => i.group === group).map((i) => i.key))
-    return Object.fromEntries(Object.entries(dirty).filter(([k]) => keys.has(k)))
+    const visible = (key: string): boolean => {
+      if (group !== 'mailer') return true
+      const draft = dirty['MOTIF_MAILER'] ?? items.find((i) => i.key === 'MOTIF_MAILER')?.value ?? null
+      return mailerFieldVisible({ key }, draft)
+    }
+    return Object.fromEntries(Object.entries(dirty).filter(([k]) => keys.has(k) && visible(k)))
   }
 
   async function save(group: AdminSettingItem['group']) {
@@ -147,6 +156,12 @@ export default function AdminSettingsPage() {
   function renderGroup(group: AdminSettingItem['group']) {
     const groupItems = items.filter((i) => i.group === group)
     if (groupItems.length === 0) return null
+    // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
+    // 否则 console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通（评审 P0）
+    const savedChannel = items.find((i) => i.key === 'MOTIF_MAILER')?.value ?? null
+    const draftChannel = dirty['MOTIF_MAILER'] ?? savedChannel
+    const shownItems = group === 'mailer' ? groupItems.filter((i) => mailerFieldVisible(i, draftChannel)) : groupItems
+    const channelDirty = group === 'mailer' && !!dirty['MOTIF_MAILER'] && dirty['MOTIF_MAILER'] !== savedChannel
     return (
       <section className="admin-panel" key={group} id={`settings-${group}`}>
         <h2 className="admin-title">{GROUP_TITLE[group]}</h2>
@@ -155,7 +170,13 @@ export default function AdminSettingsPage() {
             这两项决定数据库自身的位置，属于先于数据库存在的引导参数，只能在部署的环境变量里修改。
           </p>
         )}
-        {groupItems.map((item) => (
+        {group === 'mailer' && <GuideCardSection cards={MAILER_GUIDES[(draftChannel ?? 'console') as keyof typeof MAILER_GUIDES] ?? []} />}
+        {channelDirty && (
+          <p className="admin-field-hint">
+            渠道已改为「{dirty['MOTIF_MAILER']}」尚未保存：下方字段与引导卡已按新渠道显示，填好后点「保存」生效。
+          </p>
+        )}
+        {shownItems.map((item) => (
           <div className="admin-field" key={item.key}>
             <label htmlFor={`setting-${item.key}`}>
               {item.label}
