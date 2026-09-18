@@ -61,8 +61,10 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'MOTIF_COOKIE_SECURE', group: 'security', label: '会话 Cookie 加 Secure 标记', kind: 'boolean', defaultHint: 'false', hint: 'HTTPS 部署时开启；本地 http 联调勿开，否则浏览器会拒收 cookie。' },
 
   // ---- 只读：决定数据库自身位置，入库会导致「改设置去找另一个库」----
-  { key: 'MOTIF_DATA_DIR', group: 'data', label: '数据目录', kind: 'string', readOnly: true, hint: '决定数据库位置，属于先于数据库存在的引导参数，只能在环境变量里修改。' },
-  { key: 'MOTIF_DB_FILE', group: 'data', label: '数据库文件', kind: 'string', readOnly: true, hint: '同上。' },
+  // defaultHint 在这里不是「兜底值」而是「没设时实际会落在哪」：只读项常常是空的（默认路径
+  // 由应用自己拼），页面若只显示空输入框，运维会以为「没配置」而不知道数据到底在哪。
+  { key: 'MOTIF_DATA_DIR', group: 'data', label: '数据目录', kind: 'string', readOnly: true, defaultHint: 'apps/web/.data', hint: '决定数据库位置，属于先于数据库存在的引导参数，只能在环境变量里修改。未设置时用相对应用工作目录的 .data。' },
+  { key: 'MOTIF_DB_FILE', group: 'data', label: '数据库文件', kind: 'string', readOnly: true, defaultHint: '<数据目录>/motif.db', hint: '同上。未设置时用数据目录下的 motif.db。' },
 ]
 
 const BY_KEY = new Map(SETTING_DEFS.map((d) => [d.key, d]))

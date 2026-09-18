@@ -83,7 +83,17 @@ export default function AdminSettingsPage() {
 
   function field(item: AdminSettingItem) {
     if (item.readOnly) {
-      return <input value={item.value ?? ''} readOnly disabled aria-label={item.label} />
+      // 未设置时给出「实际会落在哪」的提示：只读项常常是空的（默认路径由应用自己拼），
+      // 只显示空输入框会让运维以为没配置、不知道数据在哪
+      return (
+        <input
+          value={item.value ?? ''}
+          readOnly
+          disabled
+          aria-label={item.label}
+          placeholder={item.defaultHint ? `未设置，默认 ${item.defaultHint}` : '未设置'}
+        />
+      )
     }
     if (item.kind === 'enum') {
       return (
@@ -214,7 +224,10 @@ export default function AdminSettingsPage() {
             <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
             我已了解上述后果
           </label>
-          <button className="ws-btn admin-danger-btn" disabled={!confirmed || saving} onClick={() => void save('danger')}>
+          {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
+              不自定义填充红底 —— 填充底要挑一对在明暗两套主题下都够对比度的「底 + 字」，
+              容易在暗色主题下掉到 AA 以下。 */}
+          <button className="admin-btn-danger" disabled={!confirmed || saving} onClick={() => void save('danger')}>
             应用危险区开关
           </button>
         </section>

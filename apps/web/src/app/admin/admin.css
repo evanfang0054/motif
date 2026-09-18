@@ -277,7 +277,8 @@
 }
 
 .admin-toolbar button:disabled,
-.admin-btn-primary:disabled {
+.admin-btn-primary:disabled,
+.admin-btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -297,7 +298,10 @@
 
 .admin-alert-err {
   background: var(--danger-soft);
-  color: var(--danger-text);
+  /* 与 .admin-alert-ok 对称：底色用 -soft 淡彩、文字用语义色本身。
+     ⚠️ 不要写成 var(--danger-text) —— 那个令牌在两套主题下都是白色，是给「红底上的文字」
+     用的；打在 -soft 淡彩底上，亮色主题里等于白字白底（实测对比度 1.05，完全看不见）。 */
+  color: var(--danger);
 }
 
 .admin-table {
@@ -624,7 +628,9 @@
 }
 
 .admin-danger .admin-title {
-  color: var(--danger-text);
+  /* ⚠️ 用 --danger 而不是 --danger-text：后者两套主题下都是白色，只适合做「红底上的文字」，
+     当标题色会变成白字白底（亮色主题实测对比度 1.05，等于看不见）。 */
+  color: var(--danger);
 }
 
 .admin-confirm-line {
@@ -633,19 +639,4 @@
   gap: 8px;
   margin: 12px 0;
   font-size: 13px;
-}
-
-.admin-danger-btn {
-  background: var(--danger);
-  color: var(--button-text);
-  border-color: var(--danger);
-}
-
-.admin-danger-btn:hover:not(:disabled) {
-  background: var(--danger-hover);
-}
-
-.admin-danger-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
