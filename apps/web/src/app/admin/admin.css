@@ -1,5 +1,8 @@
 /* 管理后台基础样式：仅消费 globals.css 既有令牌，不新增主题色 */
+/* 布局用 flex 而非硬编码头部高度：`calc(100dvh - 53px)` 会在头部行高/字号变化时出现几像素滚动差 */
 .admin-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
   background: var(--background);
   color: var(--foreground);
@@ -52,6 +55,8 @@
 
 .admin-main {
   padding: 20px;
+  flex: 1;
+  min-width: 0;
 }
 
 .admin-panel {
@@ -78,5 +83,92 @@
   .admin-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ---------- 侧边导航 ---------- */
+
+.admin-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  width: 172px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface-secondary);
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.admin-nav-item:hover {
+  background: var(--surface-hover);
+}
+
+.admin-nav-item.is-active {
+  background: var(--surface-active);
+  font-weight: 600;
+}
+
+.admin-nav-item.is-pending {
+  color: var(--muted-strong);
+  cursor: default;
+}
+
+.admin-nav-item.is-pending em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--muted-strong);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.admin-nav-toggle {
+  display: none;
+}
+
+/* <1024：导航收进抽屉，由顶部按钮开关 */
+@media (max-width: 1023px) {
+  .admin-body {
+    display: block;
+  }
+  .admin-nav-toggle {
+    display: inline-flex;
+    margin: 10px 20px 0;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-secondary);
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .admin-nav {
+    display: none;
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    margin-top: 10px;
+  }
+  .admin-nav.is-open {
+    display: flex;
   }
 }

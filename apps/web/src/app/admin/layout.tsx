@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation'
 import { roleAtLeast } from '@motif/core'
 import { SESSION_COOKIE } from '@/server/auth'
 import { getRuntime } from '@/server/context'
+import { AdminSidebar } from '@/components/admin/AdminSidebar'
+import { ADMIN_NAV } from './nav'
 import './admin.css'
 
 /**
@@ -25,6 +27,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const roleLabel = user.role === 'root' ? '超级管理员' : '管理员'
   // 引导创建的账号 name 就是「超级管理员」，此时再拼角色会得到「超级管理员（超级管理员）」
   const showRole = user.name !== roleLabel
+  const items = ADMIN_NAV.filter((i) => roleAtLeast(user.role, i.minRole))
   return (
     <div className="admin-shell">
       <header className="admin-header">
@@ -41,7 +44,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {showRole ? `（${roleLabel}）` : ''}
         </span>
       </header>
-      <main className="admin-main">{children}</main>
+      <div className="admin-body">
+        <AdminSidebar items={items} />
+        <main className="admin-main">{children}</main>
+      </div>
     </div>
   )
 }
