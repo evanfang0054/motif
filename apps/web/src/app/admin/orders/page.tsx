@@ -2,8 +2,9 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
+import { SearchField, Select, ListBox, Table } from '@heroui/react'
 import { api, type AdminOrder } from '@/lib/client'
-import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
+import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 
 const PAGE_SIZE = 20
 
@@ -58,42 +59,67 @@ export default function AdminOrdersPage() {
       </p>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">全部状态</option>
-          <option value="pending">待支付</option>
-          <option value="paid">已支付</option>
-        </select>
-        <input type="search" value={userId} onChange={(e) => { setUserId(e.target.value); setPage(1) }} placeholder="按用户 ID 筛选" />
+        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as string) ?? ''); setPage(1) }}>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
+              <ListBox.Item key="status-pending" id="status-pending">待支付</ListBox.Item>
+              <ListBox.Item key="status-paid" id="status-paid">已支付</ListBox.Item>
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <SearchField aria-label="按用户 ID 筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="按用户 ID 筛选" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
         <ListCount loading={loading} total={total} unit="笔" />
       </div>
 
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>订单号</th><th>套餐</th><th>额度</th><th>金额</th><th>状态</th><th>创建时间</th><th>支付时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((o) => (
-            <tr key={o.id}>
-              <td className="admin-mono" data-label="订单号">{o.id}</td>
-              <td data-label="套餐">{o.packageId}</td>
-              <td data-label="额度">{o.credits}</td>
-              <td data-label="金额">{money(o.amountTotal, o.currency)}</td>
-              <td data-label="状态"><span className="admin-chip">{STATUS_LABEL[o.status] ?? o.status}</span></td>
-              <td data-label="创建时间">{formatDateTime(o.createdAt)}</td>
-              <td data-label="支付时间">{formatDateTime(o.paidAt)}</td>
-            </tr>
-          ))}
-          {loading ? (
-            <ListLoadingRow colSpan={7} />
-          ) : (
-            items.length === 0 && <ListEmptyRow colSpan={7} text="（无匹配的订单）" />
-          )}
-        </tbody>
-      </table>
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content aria-label="订单列表">
+            <Table.Header>
+              <Table.Column isRowHeader>订单号</Table.Column>
+              <Table.Column>套餐</Table.Column>
+              <Table.Column>额度</Table.Column>
+              <Table.Column>金额</Table.Column>
+              <Table.Column>状态</Table.Column>
+              <Table.Column>创建时间</Table.Column>
+              <Table.Column>支付时间</Table.Column>
+            </Table.Header>
+            <Table.Body
+              renderEmptyState={() =>
+                loading ? null : <ListEmptyContent text="（无匹配的订单）" />
+              }
+            >
+              {loading ? (
+                <ListLoadingRows cols={7} />
+              ) : (
+                items.map((o) => (
+                  <Table.Row key={o.id}>
+                    <Table.Cell className="admin-mono" data-label="订单号">{o.id}</Table.Cell>
+                    <Table.Cell data-label="套餐">{o.packageId}</Table.Cell>
+                    <Table.Cell data-label="额度">{o.credits}</Table.Cell>
+                    <Table.Cell data-label="金额">{money(o.amountTotal, o.currency)}</Table.Cell>
+                    <Table.Cell data-label="状态"><span className="admin-chip">{STATUS_LABEL[o.status] ?? o.status}</span></Table.Cell>
+                    <Table.Cell data-label="创建时间">{formatDateTime(o.createdAt)}</Table.Cell>
+                    <Table.Cell data-label="支付时间">{formatDateTime(o.paidAt)}</Table.Cell>
+                  </Table.Row>
+                ))
+              )}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
     </section>

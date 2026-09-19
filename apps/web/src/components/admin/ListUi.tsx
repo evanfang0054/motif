@@ -12,28 +12,6 @@
 
 import { EmptyState, Pagination, Skeleton, Table } from '@heroui/react'
 
-/** 旧形态：原生表格的加载占位行。用 role="status" 让读屏也能感知状态变化（未迁移页过渡用） */
-export function ListLoadingRow({ colSpan }: { colSpan: number }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="admin-muted" role="status">
-        加载中…
-      </td>
-    </tr>
-  )
-}
-
-/** 旧形态：原生表格的空态行。只在**加载完成后**才渲染，避免与加载态混淆（未迁移页过渡用） */
-export function ListEmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="admin-muted">
-        {text}
-      </td>
-    </tr>
-  )
-}
-
 /** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */
 export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   return (
