@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import { Alert, Button, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
 import { SIZE_PRESETS } from '@/lib/templates'
 import type { StagedReference } from '@motif/core'
 import { StatusBadge } from './TopNav'
@@ -47,36 +48,28 @@ function TaskPanel(p: Props) {
         <StatusBadge status={p.status} />
         <div className="flex items-center gap-2">
           {p.onCollapse && (
-            <button className="ws-btn lg:hidden" aria-label="收起生成面板" onClick={p.onCollapse}>收起</button>
+            <Button variant="secondary" className="lg:hidden" aria-label="收起生成面板" onPress={p.onCollapse}>收起</Button>
           )}
-          <button className="ws-btn" onClick={p.onNewTask}>＋ 新任务</button>
+          <Button variant="secondary" onPress={p.onNewTask}>＋ 新任务</Button>
         </div>
       </div>
 
       {/* 上次生成失败：持久横幅（toast 转瞬即逝，失败必须留在界面上直到下次提交） */}
       {p.lastError && !p.busy && (
-        <div
-          role="alert"
-          className="text-xs"
-          style={{
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: '1px solid color-mix(in srgb, var(--status-failed, #b3402e) 45%, transparent)',
-            background: 'color-mix(in srgb, var(--status-failed, #b3402e) 10%, transparent)',
-            color: 'var(--status-failed, #b3402e)',
-            lineHeight: 1.6,
-          }}
-        >
-          {p.lastError}
-        </div>
+        <Alert status="danger" role="alert">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{p.lastError}</Alert.Title>
+          </Alert.Content>
+        </Alert>
       )}
 
       <div>
         <div className="ws-panel-label mb-1.5">参考图</div>
         <div className="flex items-center gap-2">
-          <button className="ws-btn" onClick={() => fileRef.current?.click()}>
+          <Button variant="secondary" onPress={() => fileRef.current?.click()}>
             ⬆ 上传参考图{p.referenceCount > 0 ? `（${p.referenceCount}）` : ''}
-          </button>
+          </Button>
           <input
             ref={fileRef}
             type="file"
@@ -106,14 +99,14 @@ function TaskPanel(p: Props) {
                   </span>
                 )}
                 <span className="truncate" style={{ flex: 1, minWidth: 0 }}>{s.name}</span>
-                <button
-                  className="ws-btn"
-                  style={{ padding: '2px 8px' }}
+                <Button
+                  variant="secondary"
+                  size="sm"
                   aria-label={`移除暂存参考 ${s.name}`}
-                  onClick={() => p.onRemoveStaged(s.id)}
+                  onPress={() => p.onRemoveStaged(s.id)}
                 >
                   移除
-                </button>
+                </Button>
               </div>
             ))}
             <p className="text-xs" style={{ color: 'var(--muted)' }}>已暂存 {stagedOnly.length} 张：点「开始生成」后进入画布</p>
@@ -123,59 +116,61 @@ function TaskPanel(p: Props) {
 
       <div>
         <div className="ws-panel-label mb-1.5">张数</div>
-        <input
-          className="lp-input"
-          type="number"
-          min={1}
-          max={12}
-          value={p.count}
-          onChange={(e) => p.onCountChange(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
-          style={{ maxWidth: 120 }}
-        />
+        <NumberField aria-label="张数" minValue={1} maxValue={12} value={p.count} onChange={(v) => p.onCountChange(v ?? 1)} className="max-w-[120px]">
+          <NumberField.Group>
+            <NumberField.DecrementButton />
+            <NumberField.Input />
+            <NumberField.IncrementButton />
+          </NumberField.Group>
+        </NumberField>
       </div>
 
       <div>
         <div className="ws-panel-label mb-1.5">尺寸</div>
-        <div className="ws-size-row">
+        <ToggleButtonGroup
+          selectionMode="single"
+          selectedKeys={new Set([p.size])}
+          onSelectionChange={(keys) => {
+            const k = [...keys][0]
+            if (k) p.onSizeChange(String(k))
+          }}
+          className="ws-size-row"
+        >
           {SIZE_PRESETS.map((s) => (
-            <button key={s.key} className="ws-size-chip" data-active={p.size === s.key} onClick={() => p.onSizeChange(s.key)}>
+            <ToggleButton key={s.key} id={s.key}>
               {s.label}
               <br />
               <span style={{ color: 'var(--muted)' }}>{s.hint}</span>
-            </button>
+            </ToggleButton>
           ))}
-          <button className="ws-size-chip" data-active={p.size === 'auto'} onClick={() => p.onSizeChange('auto')}>
+          <ToggleButton id="auto">
             自动
             <br />
             <span style={{ color: 'var(--muted)' }}>auto</span>
-          </button>
-          <button className="ws-size-chip" data-active={p.size === 'custom'} onClick={() => p.onSizeChange('custom')}>
+          </ToggleButton>
+          <ToggleButton id="custom">
             自定义
             <br />
             <span style={{ color: 'var(--muted)' }}>输入宽高</span>
-          </button>
-        </div>
+          </ToggleButton>
+        </ToggleButtonGroup>
         {p.size === 'custom' && (
           <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-            <input
-              className="lp-input"
-              type="number"
-              min={256}
-              max={2048}
-              value={p.customW}
-              onChange={(e) => p.onCustomSizeChange(Number(e.target.value) || 256, p.customH)}
-              style={{ width: 90 }}
-            />
+            <NumberField aria-label="自定义宽度" minValue={256} maxValue={2048} value={p.customW} onChange={(v) => p.onCustomSizeChange(v ?? 256, p.customH)} className="w-[90px]">
+              <NumberField.Group>
+                <NumberField.DecrementButton />
+                <NumberField.Input />
+                <NumberField.IncrementButton />
+              </NumberField.Group>
+            </NumberField>
             ×
-            <input
-              className="lp-input"
-              type="number"
-              min={256}
-              max={2048}
-              value={p.customH}
-              onChange={(e) => p.onCustomSizeChange(p.customW, Number(e.target.value) || 256)}
-              style={{ width: 90 }}
-            />
+            <NumberField aria-label="自定义高度" minValue={256} maxValue={2048} value={p.customH} onChange={(v) => p.onCustomSizeChange(p.customW, v ?? 256)} className="w-[90px]">
+              <NumberField.Group>
+                <NumberField.DecrementButton />
+                <NumberField.Input />
+                <NumberField.IncrementButton />
+              </NumberField.Group>
+            </NumberField>
             <span>像素（256–2048）</span>
           </div>
         )}
@@ -183,12 +178,13 @@ function TaskPanel(p: Props) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="ws-panel-label mb-1.5">提示词</div>
-        <textarea
-          className="ws-textarea"
-          value={p.prompt}
-          onChange={(e) => p.onPromptChange(e.target.value)}
-          placeholder="描述你要生成的图片，或选择模板快速开始…"
-        />
+        <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
+          <TextArea
+            placeholder="描述你要生成的图片，或选择模板快速开始…"
+            rows={5}
+            className="w-full min-h-[120px] resize-y"
+          />
+        </TextField>
       </div>
 
       {/* 提交前的额度预期：本次消耗多少、余额是否够，都亮在按钮旁边而不是等服务端报错 */}
@@ -203,19 +199,13 @@ function TaskPanel(p: Props) {
       )}
 
       {p.busy ? (
-        <button className="ws-btn" style={{ justifyContent: 'center', padding: '11px 0' }} onClick={p.onCancel}>
+        <Button variant="secondary" className="w-full" onPress={p.onCancel}>
           取消生成
-        </button>
+        </Button>
       ) : (
-        <button
-          className="ws-btn ws-btn-primary"
-          style={{ justifyContent: 'center', padding: '11px 0' }}
-          onClick={p.onGenerate}
-          disabled={!p.prompt.trim()}
-          title={!p.prompt.trim() ? '请先输入提示词，或点击上方模板快速开始' : undefined}
-        >
+        <Button variant="primary" className="w-full" onPress={p.onGenerate} isDisabled={!p.prompt.trim()}>
           {p.prompt.trim() ? `生成（${p.count} 张）` : '生成'}
-        </button>
+        </Button>
       )}
     </section>
   )
