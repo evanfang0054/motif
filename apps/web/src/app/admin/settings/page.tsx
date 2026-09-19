@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Checkbox, Chip, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
+import { Checkbox, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { useConfirm } from '@/components/admin/confirm'
@@ -278,9 +278,7 @@ export default function AdminSettingsPage() {
   return (
     <section className="admin-panel" id="settings-root">
       <h1 className="admin-title">系统设置</h1>
-      <p className="admin-muted">
-        配置的真相在这张数据库表里：首次启动会把环境变量播种进来，此后一律以这里为准。
-      </p>
+      <p className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</p>
 
       {loading && <p className="admin-muted">加载中…</p>}
       {err && (
@@ -289,18 +287,6 @@ export default function AdminSettingsPage() {
         </div>
       )}
       {msg && <div className="admin-alert-ok">{msg}</div>}
-
-      <div className="admin-health" id="settings-health">
-        {health.map((h) => (
-          <Chip
-            key={h.group}
-            color={h.ready ? 'success' : 'warning'}
-            title={h.ready ? undefined : h.reason ?? '配置不完整'}
-          >
-            {HEALTH_LABEL[h.group] ?? h.group}：{h.ready ? '已就绪' : '未就绪'}
-          </Chip>
-        ))}
-      </div>
 
       {items.length > 0 && (
         <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(String(k))}>

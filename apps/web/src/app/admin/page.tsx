@@ -80,34 +80,7 @@ export default function AdminHomePage() {
         <div className="admin-card" id="ov-credits">
           <div className="admin-card-label">额度（张）</div>
           <div className="admin-card-value">{c.balance}</div>
-          <div className="admin-card-sub">
-            净消耗 {c.netSpent}（扣 {c.generatedCharged} / 退 {c.refunded}）
-          </div>
-          <div className="admin-card-sub">
-            发放 {c.granted} · 期初 {c.openingBalance} · 调整 +{c.adjustedIn}/-{c.adjustedOut}
-          </div>
-          {/* 对账口径常显：差额非 0 就是账目被旁路改过，不能藏在折叠区里 */}
-          <div className={ledgerDiff === 0 ? 'admin-card-sub' : 'admin-card-sub admin-neg'}>
-            对账：发放+期初+调整+退回−回收−扣费 = {closed}
-            {ledgerDiff === 0 ? `（与存量 ${c.balance} 一致）` : `（与存量 ${c.balance} 相差 ${ledgerDiff}，账目可能被旁路修改）`}
-          </div>
-          {onlyOpening && (
-            <div className="admin-card-sub">
-              本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存
-            </div>
-          )}
-          {c.bySource.map((s) => {
-            const w = Math.round((Math.abs(s.net) / srcMax) * 100)
-            return (
-              <div className="admin-source-row" key={s.source}>
-                <span className="admin-source-label">{SOURCE_LABEL[s.source] ?? s.source}</span>
-                <span className="admin-source-track">
-                  <span className={`admin-source-fill ${s.net < 0 ? 'is-neg' : 'is-pos'}`} style={{ width: `${w}%` }} />
-                </span>
-                <span className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</span>
-              </div>
-            )
-          })}
+          <div className="admin-card-sub">净消耗 {c.netSpent}（扣 {c.generatedCharged} / 退 {c.refunded}）</div>
         </div>
 
         <div className="admin-card" id="ov-generations">
@@ -191,6 +164,31 @@ export default function AdminHomePage() {
         </div>
       </div>
     </section>
+
+      <section className="admin-panel admin-ledger">
+        <h2 className="admin-title">额度账目</h2>
+        <div className={ledgerDiff === 0 ? 'admin-ledger-ok' : 'admin-ledger-bad'} role="status">
+          {ledgerDiff === 0
+            ? `✓ 对账一致：发放+期初+调整+退回−回收−扣费 = ${closed}，与存量 ${c.balance} 一致`
+            : `⚠ 对账差异 ${ledgerDiff}：恒等式合计 ${closed}，与存量 ${c.balance} 不符——账目可能被旁路修改`}
+        </div>
+        {onlyOpening && (
+          <p className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</p>
+        )}
+        <div className="admin-source-heading">来源构成</div>
+        {c.bySource.map((s) => {
+          const w = Math.round((Math.abs(s.net) / srcMax) * 100)
+          return (
+            <div className="admin-source-row" key={s.source}>
+              <span className="admin-source-label">{SOURCE_LABEL[s.source] ?? s.source}</span>
+              <span className="admin-source-track">
+                <span className={`admin-source-fill ${s.net < 0 ? 'is-neg' : 'is-pos'}`} style={{ width: `${w}%` }} />
+              </span>
+              <span className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</span>
+            </div>
+          )
+        })}
+      </section>
     </>
   )
 }

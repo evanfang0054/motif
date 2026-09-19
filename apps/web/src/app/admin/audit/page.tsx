@@ -2,11 +2,20 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { SearchField, Table } from '@heroui/react'
+import { Button, Drawer, SearchField, Table } from '@heroui/react'
 import { api, type AdminAuditRow } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 
 const PAGE_SIZE = 20
+
+/** detail 为 JSON 字符串：解析成功则缩进美化，失败原样展示 */
+function formatDetail(detail: string): string {
+  try {
+    return JSON.stringify(JSON.parse(detail), null, 2)
+  } catch {
+    return detail
+  }
+}
 
 export default function AdminAuditPage() {
   const [items, setItems] = useState<AdminAuditRow[]>([])
@@ -16,6 +25,8 @@ export default function AdminAuditPage() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  // 右侧抽屉查看的审计行（复查反馈：详情从行内 details 改为抽屉，保持列表上下文）
+  const [detail, setDetail] = useState<AdminAuditRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -84,9 +95,15 @@ export default function AdminAuditPage() {
                     <Table.Cell className="admin-mono" data-label="操作者">{r.actorId}</Table.Cell>
                     <Table.Cell className="admin-mono" data-label="动作">{r.action}</Table.Cell>
                     <Table.Cell className="admin-mono" data-label="目标">{r.targetType ? `${r.targetType}:${r.targetId ?? '—'}` : '—'}</Table.Cell>
-                    {/* detail 是 JSON 字符串，原样展示不美化 —— 它可能很长，折叠起来 */}
+                    {/* 详情抽屉（推荐的下钻模式：抽屉保持列表上下文） */}
                     <Table.Cell data-label="详情">
-                      {r.detail ? <details><summary>展开</summary><pre className="admin-detail">{r.detail}</pre></details> : '—'}
+                      {r.detail ? (
+                        <Button size="sm" variant="secondary" onPress={() => setDetail(r)}>
+                          查看详情
+                        </Button>
+                      ) : (
+                        '—'
+                      )}
                     </Table.Cell>
                   </Table.Row>
                 ))
@@ -97,6 +114,35 @@ export default function AdminAuditPage() {
       </Table>
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+
+      <Drawer.Backdrop isOpen={detail !== null} onOpenChange={(o) => { if (!o) setDetail(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>审计详情</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+            </Drawer.Header>
+            <Drawer.Body>
+              {detail && (
+                <>
+                  <dl className="audit-detail-meta">
+                    <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
+                    <div><dt>操作者</dt><dd className="admin-mono">{detail.actorId}</dd></div>
+                    <div><dt>动作</dt><dd className="admin-mono">{detail.action}</dd></div>
+                    <div><dt>目标</dt><dd className="admin-mono">{detail.targetType ? `${detail.targetType}:${detail.targetId ?? '—'}` : '—'}</dd></div>
+                  </dl>
+                  {detail.detail && (
+                    <>
+                      <div className="audit-detail-label">详情</div>
+                      <pre className="audit-detail-json">{formatDetail(detail.detail)}</pre>
+                    </>
+                  )}
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
     </section>
   )
 }
