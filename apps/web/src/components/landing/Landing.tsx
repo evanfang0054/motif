@@ -2,8 +2,20 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { Button, Card } from '@heroui/react'
 import { BrandMark } from '@/components/BrandMark'
 import { AuthCard, type Mode } from './AuthCard'
+
+/**
+ * HeroUI Button render 回调的 props 为按钮类型；锚点化时整体做一次按钮→锚点的类型矫正
+ * （运行时 ref 随 props 由 React 19 透传到 <a>，press/焦点接线完整保留，此处仅类型层面转换）
+ */
+const anchorRender =
+  <A extends { href: string }>(extra: A) =>
+  (p: React.ComponentPropsWithRef<'button'>) => {
+    const anchorProps = p as unknown as React.ComponentPropsWithRef<'a'> & A
+    return <a {...anchorProps} {...extra} />
+  }
 
 /** 未登录落地页：导航 + 主视觉 + 登录卡 + 案例 + 功能 + 页脚 */
 function Landing() {
@@ -40,7 +52,7 @@ function Landing() {
           <a href="#features">核心能力</a>
           <a href="#auth" onClick={goRegister}>注册送额度</a>
         </nav>
-        <a className="lp-btn lp-btn-primary" href="#auth" onClick={goLogin}>开始体验</a>
+        <Button variant="primary" render={anchorRender({ href: '#auth', onClick: goLogin })}>开始体验</Button>
       </header>
 
       <main className="lp-main">
@@ -57,8 +69,8 @@ function Landing() {
               生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
             </p>
             <div className="lp-actions">
-              <a className="lp-btn lp-btn-primary" href="#auth" onClick={goLogin}>立即开始</a>
-              <a className="lp-btn lp-btn-ghost" href="#showcase">先看效果</a>
+              <Button variant="primary" render={anchorRender({ href: '#auth', onClick: goLogin })}>立即开始</Button>
+              <Button variant="ghost" render={anchorRender({ href: '#showcase' })}>先看效果</Button>
             </div>
             <div className="lp-hero-points">
               <span>✓ 注册即送 3 张额度</span>
@@ -130,7 +142,7 @@ function Landing() {
         </section>
 
         <section className="lp-showcase" style={{ paddingBottom: 80 }}>
-          <div className="lp-card" style={{ textAlign: 'center' }}>
+          <Card className="p-6" style={{ textAlign: 'center' }}>
             {/* 完整纹样版印章（含墨色小 m 变奏）：只在 ≥64px 的大画幅出场，
                 顶栏/favicon 用减法版 BrandMark，分层约定见 docs/brand/README.md */}
             <img
@@ -142,8 +154,8 @@ function Landing() {
             />
             <h2 className="lp-section-title">准备好开始了吗？</h2>
             <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
-            <a className="lp-btn lp-btn-primary mt-5" href="#auth" onClick={goRegister}>免费注册</a>
-          </div>
+            <Button variant="primary" className="mt-5" render={anchorRender({ href: '#auth', onClick: goRegister })}>免费注册</Button>
+          </Card>
         </section>
       </main>
 
