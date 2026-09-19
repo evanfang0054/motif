@@ -47,7 +47,7 @@
   --status-completed: #16a34a;
   --status-failed: #dc2626;
   --status-canceled: #6b7280;
-  --overlay: #00000073;
+  --scrim: #00000073;
   --shadow-soft: 0 18px 45px #0f172a1f;
   --scrollbar-track: transparent;
   --scrollbar-thumb: #ddd5c8;
@@ -95,7 +95,7 @@ html[data-theme="dark"] {
     --status-completed: #16a34a;
     --status-failed: #dc2626;
     --status-canceled: #6b7280;
-    --overlay: #000000b3;
+    --scrim: #000000b3;
     --shadow-soft: 0 18px 45px #00000066;
     --scrollbar-track: transparent;
     --scrollbar-thumb: #45403a;
@@ -1031,7 +1031,7 @@ body {
 .ws-drawer-mask {
   position: fixed;
   inset: 0;
-  background: var(--overlay);
+  background: var(--scrim);
   z-index: 60;
 }
 
@@ -1053,7 +1053,7 @@ body {
 .ws-modal-mask {
   position: fixed;
   inset: 0;
-  background: var(--overlay);
+  background: var(--scrim);
   z-index: 70;
   display: grid;
   place-items: center;

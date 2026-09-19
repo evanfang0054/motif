@@ -1,20 +1,35 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Modal as HeroModal } from '@heroui/react'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  // HeroUI 无触发器上下文（本壳由调用方条件挂载），关闭后手动还原焦点到打开前的元素（GDD L4-2-G1-A1）
+  const restoreRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    restoreRef.current = document.activeElement as HTMLElement | null
+    return () => restoreRef.current?.focus?.()
+  }, [])
+
   return (
-    <div className="ws-modal-mask" onClick={onClose}>
-      <div className="ws-modal" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold">{title}</h2>
-          <button className="ws-btn" onClick={onClose} aria-label="关闭">✕</button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <HeroModal.Backdrop
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <HeroModal.Container>
+        <HeroModal.Dialog aria-label={title}>
+          <HeroModal.Header>
+            <HeroModal.Heading>{title}</HeroModal.Heading>
+            <HeroModal.CloseTrigger aria-label="关闭">✕</HeroModal.CloseTrigger>
+          </HeroModal.Header>
+          <HeroModal.Body>{children}</HeroModal.Body>
+        </HeroModal.Dialog>
+      </HeroModal.Container>
+    </HeroModal.Backdrop>
   )
 }
 

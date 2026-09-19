@@ -45,7 +45,7 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 
 - 新 UI 控件一律使用 `@heroui/react`（v3.2.6）；禁止再新增自研控件或往 globals.css 添加控件类。
 - 样式来源只有两层：HeroUI 语义令牌（经 `globals.css` 桥接段映射到 DESIGN.md）+ Tailwind 工具类排版；禁止覆盖 HeroUI 组件内部样式，主题调整只改桥接段。
-- 同名变量正向桥接：项目 `:root`/暗色块定义在后，值自动成为 HeroUI 组件取值；`--accent` 唯一在桥接段覆盖（珊瑚）；`--danger-quiet` 为表面危险文字角色（暗色 #eb6962 ≥4.5:1）。
+- 同名变量正向桥接：项目 `:root`/暗色块定义在后，值自动成为 HeroUI 组件取值；`--accent` 唯一在桥接段覆盖（珊瑚）；`--danger-quiet` 为表面危险文字角色（暗色 #eb6962 ≥4.5:1）。同名反义变量项目侧已改名让位：`--accent` 族→`--surface-accent` 族、`--overlay`（遮罩色）→`--scrim`；**新增同名 CSS 变量前必须对照 HeroUI 主题变量清单查重**（`.heroui-docs` 或 node_modules `@heroui/styles/dist/themes/`）。
 - 例外层（保留自定义，不套 HeroUI）：画布图像渲染与手势（CanvasBoard）、lightbox 手势内核、模板画廊横滑容器；`--canvas-background` 保持中性。
 - 组件文档：本地查 `.heroui-docs/react/`（下方索引）；线上 https://heroui.com/llms.txt 与官方 MCP（`npx -y @heroui/react-mcp@latest`）。
 
