@@ -85,7 +85,7 @@ export default function AdminOrdersPage() {
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
       <Table>
-        <Table.ScrollContainer>
+        <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="订单列表">
             <Table.Header>
               <Table.Column isRowHeader>订单号</Table.Column>

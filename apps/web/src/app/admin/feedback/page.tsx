@@ -80,7 +80,7 @@ export default function AdminFeedbackPage() {
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
       <Table>
-        <Table.ScrollContainer>
+        <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="反馈列表">
             <Table.Header>
               <Table.Column isRowHeader>内容</Table.Column>

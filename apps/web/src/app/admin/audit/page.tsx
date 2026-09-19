@@ -61,7 +61,7 @@ export default function AdminAuditPage() {
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
       <Table>
-        <Table.ScrollContainer>
+        <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="审计日志列表">
             <Table.Header>
               <Table.Column isRowHeader>时间</Table.Column>

@@ -175,7 +175,7 @@ export default function AdminUsersPage() {
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
       <Table>
-        <Table.ScrollContainer>
+        <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="用户列表">
             <Table.Header>
               <Table.Column isRowHeader>邮箱</Table.Column>

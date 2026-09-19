@@ -171,7 +171,7 @@ export default function AdminCdksPage() {
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
       <Table>
-        <Table.ScrollContainer>
+        <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="CDK 列表">
             <Table.Header>
               <Table.Column isRowHeader>码</Table.Column>
