@@ -22,9 +22,9 @@
   --border-strong: #d3c8b6;
   --muted: #6c6a64;
   --muted-strong: #3d3d3a;
-  --accent: #efe9de;
-  --accent-hover: #e8e0d2;
-  --accent-soft: #f5f0e8;
+  --surface-accent: #efe9de;
+  --surface-accent-hover: #e8e0d2;
+  --surface-accent-soft: #f5f0e8;
   --button: #efe9de;
   --button-hover: #e8e0d2;
   --button-text: #141413;
@@ -70,9 +70,9 @@ html[data-theme="dark"] {
     --border-strong: #4a453c;
     --muted: #a09d96;
     --muted-strong: #d8d4ca;
-    --accent: #2a2723;
-    --accent-hover: #332f2a;
-    --accent-soft: #252320;
+    --surface-accent: #2a2723;
+    --surface-accent-hover: #332f2a;
+    --surface-accent-soft: #252320;
     --button: #2a2723;
     --button-hover: #332f2a;
     --button-text: #faf9f5;
@@ -1176,7 +1176,7 @@ body {
   border-radius: 6px;
   padding: 4px 12px;
   cursor: pointer;
-  background: var(--accent);
+  background: var(--surface-accent);
   color: var(--button-text, #fff);
 }
 
