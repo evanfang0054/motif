@@ -2,9 +2,11 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Input, NumberField, SearchField, Select, ListBox, Table, TextField } from '@heroui/react'
 import { api, type AdminCdk } from '@/lib/client'
 import { buildCdkCsv } from '@/lib/admin-csv'
-import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
+import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
+import { useConfirm } from '@/components/admin/confirm'
 
 type StatusFilter = '' | 'unredeemed' | 'redeemed' | 'revoked'
 
@@ -32,6 +34,7 @@ export default function AdminCdksPage() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  const { confirm, confirmElement } = useConfirm()
 
   // 批量生成表单
   const [count, setCount] = useState(10)
@@ -72,7 +75,7 @@ export default function AdminCdksPage() {
   }
 
   async function revoke(code: string) {
-    if (!window.confirm(`确认作废 ${code}？作废后不可兑换，且不可撤销。`)) return
+    if (!(await confirm({ message: `确认作废 ${code}？作废后不可兑换，且不可撤销。`, confirmLabel: '作废' }))) return
     try {
       await api.adminRevokeCdk(code)
       setMsg(`已作废 ${code}`)
@@ -112,15 +115,25 @@ export default function AdminCdksPage() {
       <div className="admin-form">
         <label>
           数量
-          <input id="cdk-count" type="number" min={1} max={100} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+          <NumberField minValue={1} maxValue={100} className="w-full" value={count} onChange={(v) => setCount(v ?? 1)}>
+            <NumberField.Group>
+              <NumberField.Input />
+            </NumberField.Group>
+          </NumberField>
         </label>
         <label>
           面额（张）
-          <input id="cdk-credits" type="number" min={1} value={credits} onChange={(e) => setCredits(Number(e.target.value))} />
+          <NumberField minValue={1} className="w-full" value={credits} onChange={(v) => setCredits(v ?? 1)}>
+            <NumberField.Group>
+              <NumberField.Input />
+            </NumberField.Group>
+          </NumberField>
         </label>
         <label>
           码前缀（选填）
-          <input id="cdk-prefix" type="text" maxLength={16} value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="如 WX" />
+          <TextField className="w-full" value={prefix} onChange={(v) => setPrefix(v)} maxLength={16}>
+            <Input placeholder="如 WX" />
+          </TextField>
         </label>
         <button className="admin-btn-primary" onClick={() => void generate()} disabled={busy}>
           {busy ? '生成中…' : '批量生成'}
@@ -128,13 +141,27 @@ export default function AdminCdksPage() {
       </div>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(1) }}>
-          <option value="">全部状态</option>
-          <option value="unredeemed">未兑换</option>
-          <option value="redeemed">已兑换</option>
-          <option value="revoked">已作废</option>
-        </select>
-        <input type="search" value={q} onChange={(e) => { setQ(e.target.value); setPage(1) }} placeholder="搜索码" />
+        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as StatusFilter) ?? ''); setPage(1) }}>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
+              <ListBox.Item key="status-unredeemed" id="status-unredeemed">未兑换</ListBox.Item>
+              <ListBox.Item key="status-redeemed" id="status-redeemed">已兑换</ListBox.Item>
+              <ListBox.Item key="status-revoked" id="status-revoked">已作废</ListBox.Item>
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <SearchField aria-label="搜索码" value={q} onChange={(v) => { setQ(v); setPage(1) }}>
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="搜索码" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
         <button onClick={() => void copyCodes()} disabled={items.length === 0}>复制列表</button>
         <button onClick={exportCsv} disabled={items.length === 0}>导出 CSV</button>
         <ListCount loading={loading} total={total} unit="个" />
@@ -143,41 +170,53 @@ export default function AdminCdksPage() {
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>码</th><th>面额</th><th>状态</th><th>兑换者</th><th>创建时间</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((c) => {
-            const st = statusOf(c)
-            return (
-              <tr key={c.code}>
-                <td className="admin-mono" data-label="码">{c.code}</td>
-                <td data-label="面额">{c.credits}</td>
-                <td data-label="状态"><span className={`admin-chip is-${st}`}>{STATUS_LABEL[st]}</span></td>
-                <td className="admin-mono" data-label="兑换者">{c.redeemedBy ?? '—'}</td>
-                <td data-label="创建时间">{formatDateTime(c.createdAt)}</td>
-                <td data-label="操作">
-                  {st === 'unredeemed' ? (
-                    <button className="admin-btn-danger" onClick={() => void revoke(c.code)}>作废</button>
-                  ) : (
-                    <span className="admin-muted">—</span>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-          {loading ? (
-            <ListLoadingRow colSpan={6} />
-          ) : (
-            items.length === 0 && <ListEmptyRow colSpan={6} text="（无匹配的 CDK）" />
-          )}
-        </tbody>
-      </table>
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content aria-label="CDK 列表">
+            <Table.Header>
+              <Table.Column isRowHeader>码</Table.Column>
+              <Table.Column>面额</Table.Column>
+              <Table.Column>状态</Table.Column>
+              <Table.Column>兑换者</Table.Column>
+              <Table.Column>创建时间</Table.Column>
+              <Table.Column>操作</Table.Column>
+            </Table.Header>
+            <Table.Body
+              renderEmptyState={() =>
+                loading ? null : <ListEmptyContent text="（无匹配的 CDK）" />
+              }
+            >
+              {loading ? (
+                <ListLoadingRows cols={6} />
+              ) : (
+                items.map((c) => {
+                  const st = statusOf(c)
+                  return (
+                    <Table.Row key={c.code}>
+                      <Table.Cell className="admin-mono" data-label="码">{c.code}</Table.Cell>
+                      <Table.Cell data-label="面额">{c.credits}</Table.Cell>
+                      <Table.Cell data-label="状态"><span className={`admin-chip is-${st}`}>{STATUS_LABEL[st]}</span></Table.Cell>
+                      <Table.Cell className="admin-mono" data-label="兑换者">{c.redeemedBy ?? '—'}</Table.Cell>
+                      <Table.Cell data-label="创建时间">{formatDateTime(c.createdAt)}</Table.Cell>
+                      <Table.Cell data-label="操作">
+                        {st === 'unredeemed' ? (
+                          <button className="admin-btn-danger" onClick={() => void revoke(c.code)}>作废</button>
+                        ) : (
+                          <span className="admin-muted">—</span>
+                        )}
+                      </Table.Cell>
+                    </Table.Row>
+                  )
+                })
+              )}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+
+      {confirmElement}
     </section>
   )
 }
