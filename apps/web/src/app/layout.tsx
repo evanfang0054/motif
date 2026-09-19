@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { ToastProvider } from '@/components/ui/ToastProvider'
 
 export const metadata: Metadata = {
   title: 'Motif · AI 商业图片批量生成工作台',
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full antialiased">
         {/* 首帧主题解析：默认浅色；读取 localStorage 三态，防闪烁 */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <ToastProvider />
         {children}
       </body>
     </html>
