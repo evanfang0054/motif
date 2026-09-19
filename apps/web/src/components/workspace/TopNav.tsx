@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { Button, Popover } from '@heroui/react'
 import { anchorRender } from '@/components/ui/anchor-button'
 import { BrandMark } from '@/components/BrandMark'
@@ -22,6 +23,8 @@ interface Props {
 function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpenProfile, onLogout }: Props) {
   // 管理后台入口仅对管理员与超级管理员可见（普通用户看不到任何管理面线索）
   const isAdmin = roleAtLeast(user.role, 'admin')
+  // Popover 不支持 slot="close"（仅 Modal/AlertDialog/Drawer 支持，冒烟实证）→ 受控开合 + 菜单项显式关闭
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <header className="ws-nav">
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -62,19 +65,45 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
         {/* <1280：次要操作收进汉堡菜单；充值为主操作保留在顶栏 */}
         <Button variant="primary" className="hidden md:inline-flex xl:hidden" onPress={onOpenBilling}>充值</Button>
         <div className="relative xl:hidden">
-          <Popover>
+          <Popover isOpen={menuOpen} onOpenChange={setMenuOpen}>
             <Popover.Trigger>
               <Button variant="secondary" isIconOnly aria-label="更多操作">⋯</Button>
             </Popover.Trigger>
             <Popover.Content>
               <div className="flex min-w-[160px] flex-col gap-2 p-3">
                 {isAdmin && (
-                  <Button slot="close" variant="secondary" render={anchorRender({ href: '/admin' })}>管理后台</Button>
+                  <Button
+                    variant="secondary"
+                    render={anchorRender({ href: '/admin' })}
+                    onPress={() => setMenuOpen(false)}
+                  >管理后台</Button>
                 )}
-                <ThemeToggle />
-                <Button slot="close" variant="secondary" className="md:hidden" onPress={onOpenBilling}>充值</Button>
-                <Button slot="close" variant="secondary" onPress={onOpenProfile}>{user.name}</Button>
-                <Button slot="close" variant="secondary" onPress={onLogout}>退出</Button>
+                {/* 原实现点菜单内任意元素即收起：主题切换同样关菜单（点击冒泡捕获） */}
+                <div onClick={() => setMenuOpen(false)}>
+                  <ThemeToggle />
+                </div>
+                <Button
+                  variant="secondary"
+                  className="md:hidden"
+                  onPress={() => {
+                    setMenuOpen(false)
+                    onOpenBilling()
+                  }}
+                >充值</Button>
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    setMenuOpen(false)
+                    onOpenProfile()
+                  }}
+                >{user.name}</Button>
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    setMenuOpen(false)
+                    onLogout()
+                  }}
+                >退出</Button>
               </div>
             </Popover.Content>
           </Popover>

@@ -72,11 +72,15 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
   // 灯箱关闭后还原焦点（条件挂载、无触发器上下文，GDD L4-2-G1-A1 同语义）
   const lightboxRestoreRef = useRef<HTMLElement | null>(null)
 
-  // 灯箱打开时记录焦点来源，关闭（含 Esc/遮罩）后还原
+  // 灯箱打开时记录焦点来源；关闭（含 Esc/遮罩/✕）后还原——
+  // 还原需 setTimeout 让 Modal 先完成卸载，否则其焦点收尾会把焦点重置回 body（冒烟 P-1）
   useEffect(() => {
     if (preview) {
       lightboxRestoreRef.current = document.activeElement as HTMLElement | null
-      return () => lightboxRestoreRef.current?.focus?.()
+      return () => {
+        const el = lightboxRestoreRef.current
+        setTimeout(() => el?.focus?.(), 0)
+      }
     }
   }, [preview])
 
