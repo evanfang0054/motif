@@ -288,7 +288,7 @@ describe('配置健康检查', () => {
     expect(configHealth(store, { PAYMENT_CHANNEL: 'mock' }).find((h) => h.group === 'payment')!.ready).toBe(true)
     const p = configHealth(store, { PAYMENT_CHANNEL: 'epay' }).find((h) => h.group === 'payment')!
     expect(p.ready).toBe(false)
-    expect(p.reason).toContain('易支付渠道缺少')
+    expect(p.reason).toContain('缺少 EPAY_API_URL')
   })
 })
 

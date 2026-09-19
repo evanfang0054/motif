@@ -431,7 +431,8 @@ const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问�
  * 下单分流：mock → 站内收银台；epay/stripe → 网关收银页。
  * 订单先落 pending（记录创建渠道）；渠道配置错误/网关异常统一转用户友好 503
  * （内部键名走 payment 健康检查与审计，不透给充值用户）。
- * 渠道切换不影响已建订单：回调路由按订单渠道直接构造网关，不读当前 PAYMENT_CHANNEL。
+ * 渠道切换不影响已建订单：notify/webhook 路由按各自 URL 定渠道、用当前凭据现构造网关，
+ * 行为上对存量订单的回调依然友好（但凭据被替换后旧单回调会验签失败，换密钥需留意在途订单）。
  */
 export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
   const pkg = resolvePackages(store, env).find((p) => p.id === packageId)

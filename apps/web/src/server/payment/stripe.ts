@@ -27,10 +27,12 @@ export function createStripeGateway(values: Record<string, string | undefined>):
       return { redirectUrl: session.url }
     },
     async parseNotify(req) {
-      if (!webhookSecret) throw new Error('缺少 STRIPE_WEBHOOK_SECRET 配置')
       const raw = await req.text() // 必须是未解析的 raw body（官方 App Router 示例同款）
-      const sig = req.headers.get('stripe-signature') ?? ''
-      const event = client.webhooks.constructEvent(raw, sig, webhookSecret) // 验签失败抛错
+      return this.parseNotifyRaw!(raw, req.headers.get('stripe-signature') ?? '')
+    },
+    async parseNotifyRaw(raw, signature) {
+      if (!webhookSecret) throw new Error('缺少 STRIPE_WEBHOOK_SECRET 配置')
+      const event = client.webhooks.constructEvent(raw, signature, webhookSecret) // 验签失败抛错
       if (event.type !== 'checkout.session.completed') return null
       const session = event.data.object as Stripe.Checkout.Session
       if (session.payment_status !== 'paid') return null // 异步支付方式资金未确认，不入账

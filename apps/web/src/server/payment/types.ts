@@ -23,4 +23,6 @@ export interface PaymentGateway {
   createCheckout(order: CheckoutOrder, urls: CheckoutUrls): Promise<{ redirectUrl: string }>
   /** 验签并提取订单信息；null = 非入账事件（忽略）；验签失败抛错（路由转拒绝） */
   parseNotify(req: NextRequest): Promise<{ orderId: string; amountTotal: number } | null>
+  /** raw-body 形态（webhook 路由预读 body 一次，失败审计降噪要复用 raw 提取订单号）；实现了就优先走它 */
+  parseNotifyRaw?(raw: string, signature: string): Promise<{ orderId: string; amountTotal: number } | null>
 }

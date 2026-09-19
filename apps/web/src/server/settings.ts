@@ -1,6 +1,7 @@
 import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
+import { createPaymentGateway } from './payment'
 
 /**
  * 配置注册表与存取策略。
@@ -312,14 +313,14 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
     probe('generation', () => createImageProviderFromEnv(values)),
     probe('mailer', () => createMailerFromConfig(values)),
     probe('payment', () => {
-      // 判据与 createPaymentGateway 工厂对齐：渠道选中且凭据齐全才算就绪
+      // 判据复用 createPaymentGateway 工厂（必需字段清单不手写第二份，防漂移）；
+      // 对 stripe 额外要求 webhook 密钥——工厂能构造但收不到合法回调，运营上必须视为未就绪
       const channel = (values.PAYMENT_CHANNEL ?? 'mock').toLowerCase()
       if (channel === 'mock') return null
-      if (channel === 'epay' && (!values.EPAY_API_URL || !values.EPAY_PID || !values.EPAY_KEY)) {
-        throw new Error('易支付渠道缺少 网关地址 / 商户 ID / 商户密钥')
-      }
-      if (channel === 'stripe' && (!values.STRIPE_SECRET_KEY || !values.STRIPE_WEBHOOK_SECRET)) {
-        throw new Error('Stripe 渠道缺少 密钥 / Webhook 签名密钥')
+      if (channel !== 'epay' && channel !== 'stripe') return null
+      createPaymentGateway(channel, values)
+      if (channel === 'stripe' && !values.STRIPE_WEBHOOK_SECRET) {
+        throw new Error('Stripe 渠道还需配置 Webhook 签名密钥（whsec_…），否则支付回调无法验签入账')
       }
       return null
     }),
