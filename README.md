@@ -36,11 +36,11 @@ motif/
 │   ├── src/app/               # 页面与 API 路由
 │   │   ├── page.tsx           # / ：未登录落地页 / 已登录工作台
 │   │   ├── admin/             # 管理后台（服务端角色守卫）：概览 · 用户 · CDK · 订单 · 反馈 · 生成日志 · 审计 · 系统设置
-│   │   ├── billing/mock-pay/  # 模拟收银台（待接真实支付）
+│   │   ├── billing/            # 收银台与结果页：mock / epay / stripe 渠道分流，支付结果展示
 │   │   └── api/               # auth · topics(+watch) · generate-images · canvas-images
 │   │                          #   · billing · redeem · feedback · messages/cancel · admin
 │   ├── src/components/        # landing / workspace 组件（含交互画布）
-│   ├── src/server/            # 会话、业务服务、队列 worker、Mailer
+│   ├── src/server/            # 会话、业务服务、队列 worker、Mailer、支付渠道适配层
 │   └── src/lib/               # 模板定义（原创文案）· API client
 ├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 校验
 ├── packages/db/               # SQLite 存储层（12 张表 + 仓储）
@@ -58,7 +58,9 @@ motif/
 - 邮箱 + 6 位验证码注册（赠 3 张额度）、登录、退出
 - 修改密码（校验旧密码）、忘记密码（验证码重置）、昵称与头像资料修改
 - 会话 Cookie（httpOnly · 30 天）、scrypt 口令散列
-- ⚠️ 验证码发信取决于 Mailer 配置：`console` 直出（本地）；`smtp/resend/sendgrid` 真实发信
+- ⚠️ 验证码发信取决于 Mailer 配置：`console` 直出（本地）；`smtp/resend/sendgrid` 真实发信。
+  管理后台「邮件发信」组内嵌各渠道**申请引导卡**（分步指引 + 入口二维码）、字段按渠道显隐、
+  「发送测试邮件」一键验证（失败原因直接回显）
 
 ### 生图（真实，走你的网关）
 - 文生图：`POST /v1/images/generations`（gpt-image-2）
@@ -72,9 +74,11 @@ motif/
 - 画布：图片自由拖拽、缩放（±/100%/适应/滚轮）、整理布局吸附网格、多选、
   选中浮动工具栏（放大预览 / @引用 / 下载 / 删除确认）、双击灯箱
 
-### 运营与计费（部分真实）
+### 运营与计费（真实）
 - 额度：按张扣费、失败/取消退回、余额不足拦截；每笔额度变动写入 `credit_ledger` 流水表（账目与余额同事务一致）
-- 充值：套餐（50/100/200/500 张，港元定价 HK$68 起）→ ⚠️ 模拟收银台（真实支付待接入，见 [#14](https://github.com/evanfang0054/motif/issues/14)）
+- 充值：套餐币种与四档价格在管理后台可配；支付渠道 `PAYMENT_CHANNEL` 三选一——
+  `mock`（模拟收银台，本地演示）/ `epay`（易支付协议网关）/ `stripe`（托管收银台）；
+  回调验签 → 金额逐分核对 → 幂等入账（重复通知只到账一次）（见 [#14](https://github.com/evanfang0054/motif/issues/14)）
 - CDK：CLI 发码 + 管理后台「CDK 管理」页发放/查询 + 页面兑换（真实）
 - 邀请：专属邀请码/链接，好友经邀请链接注册自动带上邀请码，双方得利（+3 张/人，上限 3 人）（真实）
 - 反馈：提交入库 + 管理后台反馈处理（真实）
@@ -94,12 +98,15 @@ motif/
   （界面回显掩码）、数据位置只读展示；危险区开关需二次确认并留痕审计；
   保存后 provider / mailer **热重载**，无需重启进程
 - **角色保护**：管理员不可修改或授予超级管理员角色；系统不允许失去最后一个超级管理员
+- **渠道快速接入**（#14 / #15）：「支付与套餐」配置币种价格与渠道凭据（易支付三件套 /
+  Stripe 密钥），「邮件发信」内嵌申请引导卡（二维码直达）；发送测试邮件一键验证；
+  危险区切换支付渠道需二次确认，配置保存即热生效
 - **审计**：`admin_audit` 表与写入封装（审计写入失败只告警，不影响主操作）
 - **强制改密软提示**：引导创建的账号在工作台顶部提示改密，可关闭、不拦截任何操作
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · 285 个单元测试（core 27 · db 51 · provider 8 · web 199）
+- pnpm monorepo · TypeScript strict · 344 个单元测试（core 27 · db 51 · provider 8 · web 258）
 - ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
 - Docker 多阶段构建一键部署，数据卷持久化，健康检查
 
@@ -130,6 +137,19 @@ motif/
 | `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
 | `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
+
+### 渠道快速接入（发信 / 收款，管理后台操作）
+
+凭据到手后全部在管理后台完成，不碰代码、不重启（配置保存即热生效）：
+
+1. **邮件发信**：「系统设置 → 邮件发信」选渠道，按引导卡申请凭据（QQ 邮箱授权码 /
+   Resend / SendGrid 均有入口二维码）→ 粘贴保存 → 点「发送测试邮件」验证
+2. **支付渠道**：「系统设置 → 支付与套餐」配置站点地址（SITE_URL）、套餐币种与四档价格，
+   并粘贴渠道凭据——易支付填网关地址 / 商户 ID / 密钥三件套，或 Stripe 填
+   `sk_…` 密钥与 `whsec_…` webhook 签名密钥（Stripe Dashboard 需添加回调地址
+   `<SITE_URL>/api/billing/webhook/stripe`，事件选 `checkout.session.completed`）
+3. **切换渠道**：「危险区」把支付渠道切到 `epay` / `stripe`（二次确认 + 留痕）。
+   建议先用 Stripe test key 免费跑通全链路再换 live；切回 `mock` 随时恢复演示收银台
 
 ### 方式 A：Docker 一键部署（推荐）
 
