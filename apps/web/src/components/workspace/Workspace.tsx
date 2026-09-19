@@ -252,16 +252,23 @@ function Workspace({ initialUser }: { initialUser: User }) {
     try {
       // 保证在明确的活动任务下提交（没有则自动创建），避免依赖服务端对空 topicId 的隐式处理
       const tid = await ensureTopic()
+      const sentRefIds = [...panel.referenceIds]
       const res = await api.generate({
         prompt: panel.prompt,
         count: panel.count,
         size: panel.size === 'custom' ? `${panel.customW}x${panel.customH}` : panel.size,
         enhance: false,
         topicId: tid,
-        referenceCanvasImageIds: panel.referenceIds,
+        referenceCanvasImageIds: sentRefIds,
       } satisfies GenerateImagesInput)
       setUser(res.user)
       setActiveId(res.topic.id)
+      // 已提交的暂存参考被服务端转正为画布图：从面板暂存区移除（画布 @ 引用的 cimg_ 保留）
+      setPanel((p) => ({
+        ...p,
+        staged: p.staged.filter((s) => !sentRefIds.includes(s.id)),
+        referenceIds: p.referenceIds.filter((id) => !sentRefIds.includes(id)),
+      }))
       await refreshTopics()
       await refreshDetail(res.topic.id)
       showToast('任务已加入队列，后台生成中。')
