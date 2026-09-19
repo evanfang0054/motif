@@ -2,8 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { Alert, Button, Card } from '@heroui/react'
 import { api, ApiError } from '@/lib/client'
 import { BrandMark } from '@/components/BrandMark'
+import { anchorRender } from '@/components/ui/anchor-button'
 
 const MAX_POLLS = 100 // 100 × 3s ≈ 5 分钟上限，超时转终态文案（网关回调迟到不该让用户干等）
 
@@ -60,25 +62,40 @@ function Panel() {
   }, [state, orderId, query])
 
   return (
-    <div className="lp-card" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
+    <Card className="p-6" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
       <div className="flex items-center justify-center gap-2"><BrandMark /><b>支付结果</b></div>
       {state === 'pending' && (
         <p className="mt-3 text-sm" role="status" aria-live="polite">
           <span className="pay-pulse" /> 支付处理中，到账后本页自动更新…
         </p>
       )}
-      {state === 'paid' && <div className="lp-alert lp-alert-ok mt-4">支付成功，已充值 {credits ?? '—'} 张额度。</div>}
-      {state === 'canceled' && <div className="lp-alert mt-4">你已取消支付，未产生扣款。</div>}
-      {state === 'error' && (
-        <div className="lp-alert lp-alert-error mt-4" role="alert">
-          {errText}
-          <button className="lp-btn lp-btn-ghost mt-2" onClick={() => { setErrText(''); setState('pending') }}>
-            重新查询
-          </button>
-        </div>
+      {state === 'paid' && (
+        <Alert status="success" className="mt-4">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{`支付成功，已充值 ${credits ?? '—'} 张额度。`}</Alert.Title>
+          </Alert.Content>
+        </Alert>
       )}
-      <a className="lp-btn lp-btn-primary mt-4" href="/">返回工作台</a>
-    </div>
+      {state === 'canceled' && (
+        <Alert className="mt-4">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>你已取消支付，未产生扣款。</Alert.Title>
+          </Alert.Content>
+        </Alert>
+      )}
+      {state === 'error' && (
+        <Alert status="danger" role="alert" className="mt-4">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{errText}</Alert.Title>
+            <Button size="sm" variant="outline" className="mt-2" onPress={() => { setErrText(''); setState('pending') }}>重新查询</Button>
+          </Alert.Content>
+        </Alert>
+      )}
+      <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>返回工作台</Button>
+    </Card>
   )
 }
 

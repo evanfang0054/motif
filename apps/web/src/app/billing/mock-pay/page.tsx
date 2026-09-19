@@ -2,8 +2,10 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { Alert, Button, Card } from '@heroui/react'
 import { api } from '@/lib/client'
 import { BrandMark } from '@/components/BrandMark'
+import { anchorRender } from '@/components/ui/anchor-button'
 
 /** 模拟收银台页面（本地部署；线上版由 Stripe Checkout 承担） */
 
@@ -34,7 +36,7 @@ function PayPanel() {
   }
 
   return (
-    <div className="lp-card" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
+    <Card className="p-6" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
       <div className="flex items-center justify-center gap-2">
         <BrandMark />
         <b>Motif 模拟收银台</b>
@@ -46,19 +48,31 @@ function PayPanel() {
       </p>
       {state === 'done' ? (
         <>
-          <div className="lp-alert lp-alert-ok mt-4">{message}</div>
-          <a className="lp-btn lp-btn-primary mt-4" href="/">返回工作台</a>
+          <Alert status="success" className="mt-4">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{message}</Alert.Title>
+            </Alert.Content>
+          </Alert>
+          <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>返回工作台</Button>
         </>
       ) : (
         <>
-          {state === 'error' && <div className="lp-alert lp-alert-error mt-4">{message}</div>}
-          <button className="lp-btn lp-btn-primary mt-4 w-full" disabled={state !== 'ready' || !orderId} onClick={() => void pay()}>
+          {state === 'error' && (
+            <Alert status="danger" className="mt-4">
+              <Alert.Indicator />
+              <Alert.Content>
+                <Alert.Title>{message}</Alert.Title>
+              </Alert.Content>
+            </Alert>
+          )}
+          <Button variant="primary" className="mt-4 w-full" isDisabled={state !== 'ready' || !orderId} onPress={() => void pay()}>
             {state === 'paying' ? '支付中…' : '确认支付'}
-          </button>
-          <a className="lp-btn lp-btn-ghost mt-2 w-full" href="/">取消并返回</a>
+          </Button>
+          <Button variant="outline" className="mt-2 w-full" render={anchorRender({ href: '/' })}>取消并返回</Button>
         </>
       )}
-    </div>
+    </Card>
   )
 }
 
