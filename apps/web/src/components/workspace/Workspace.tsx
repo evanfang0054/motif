@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { CanvasImage, GenerateImagesInput, Topic, TopicDetail, User } from '@motif/core'
+import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
 import { api } from '@/lib/client'
 import { TEMPLATES } from '@/lib/templates'
 import { TopNav } from './TopNav'
@@ -21,6 +21,10 @@ export interface PanelState {
   customW: number
   customH: number
   referenceIds: string[]
+  /** 暂存参考图（上传后、生成前；不进画布） */
+  staged: StagedReference[]
+  /** 刚上传文件的本地预览地址（刷新后失效，仅剩名称） */
+  stagedPreviews: Record<string, string>
 }
 
 const IDLE_PANEL: PanelState = {
@@ -30,6 +34,8 @@ const IDLE_PANEL: PanelState = {
   customW: 1024,
   customH: 1024,
   referenceIds: [],
+  staged: [],
+  stagedPreviews: {},
 }
 
 /** 登录后工作台：顶栏 + 画布 + 右侧任务面板 + 任务抽屉 + 弹层 */
@@ -125,7 +131,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
       setDetail(null)
       return
     }
-    void refreshDetail(activeId).catch(() => setDetail(null))
+    void refreshDetail(activeId)
+      .then((fresh) => {
+        // 暂存参考以服务端为准同步进面板（本地预览 URL 不跨会话，只保留名称）
+        const staged = fresh.staged ?? []
+        setPanel((p) => ({
+          ...p,
+          staged,
+          referenceIds: staged.map((s) => s.id),
+          stagedPreviews: {},
+        }))
+      })
+      .catch(() => setDetail(null))
   }, [activeId, refreshDetail])
 
   // 长轮询 watch：任务状态变化时立即刷新（替代固定间隔轮询）
@@ -200,12 +217,26 @@ function Workspace({ initialUser }: { initialUser: User }) {
     }
   }, [activeId, refreshTopics, showToast])
 
-  /** 顶栏/抽屉「＋ 新任务」：切到全新任务并重置面板 */
-  const createTopic = useCallback(() => {
-    setPanel(IDLE_PANEL)
-    void ensureTopic()
-    setDrawerOpen(false)
-  }, [ensureTopic])
+  /** 顶栏/抽屉「＋ 新任务」：真正新建（或复用空闲空任务）并切换过去 */
+  const createTopic = useCallback(
+    async () => {
+      setDrawerOpen(false)
+      setPanel(IDLE_PANEL)
+      try {
+        const { topic, reused } = await fetch('/api/topics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: '新任务' }),
+        }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
+        setActiveId(topic.id)
+        await refreshTopics()
+        showToast(reused ? '已回到未使用的空任务' : '已创建新任务')
+      } catch {
+        showToast('新任务创建失败，请重试')
+      }
+    },
+    [refreshTopics, showToast]
+  )
 
   const busy = detail?.topic.status === 'pending' || detail?.topic.status === 'running' || detail?.topic.status === 'canceling'
 
@@ -305,15 +336,34 @@ function Workspace({ initialUser }: { initialUser: User }) {
         return
       }
       try {
-        const { canvasImage } = await api.uploadReference(tid, file)
-        setPanel((p) => ({ ...p, referenceIds: [...p.referenceIds, canvasImage.id] }))
-        await refreshDetail(tid)
-        showToast('参考图已上传')
+        const { reference } = await api.uploadReference(tid, file)
+        // 只暂存（不进画布）：画布保持空态，模板画廊仍可选；生成时才转正
+        const previewUrl = URL.createObjectURL(file)
+        setPanel((p) => ({
+          ...p,
+          referenceIds: [...p.referenceIds, reference.id],
+          staged: [...p.staged, reference],
+          stagedPreviews: { ...p.stagedPreviews, [reference.id]: previewUrl },
+        }))
+        showToast('参考图已暂存，点「开始生成」后进入画布')
       } catch (e) {
         showToast(e instanceof Error ? e.message : '上传失败')
       }
     },
-    [ensureTopic, refreshDetail, showToast]
+    [ensureTopic, showToast]
+  )
+
+  /** 移除暂存参考（服务端删除 + 面板同步） */
+  const removeStaged = useCallback(
+    (id: string) => {
+      setPanel((p) => ({
+        ...p,
+        referenceIds: p.referenceIds.filter((x) => x !== id),
+        staged: p.staged.filter((s) => s.id !== id),
+      }))
+      void api.removeStagedReference(id).catch(() => showToast('暂存参考删除失败'))
+    },
+    [showToast]
   )
 
   const logout = useCallback(async () => {
@@ -410,6 +460,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
             customW={panel.customW}
             customH={panel.customH}
             referenceCount={panel.referenceIds.length}
+            staged={panel.staged}
+            stagedPreviews={panel.stagedPreviews}
+            onRemoveStaged={removeStaged}
             busy={!!busy}
             credits={user.credits}
             lastError={lastError}

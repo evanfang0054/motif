@@ -6,6 +6,7 @@ import {
   newCanvasImageId,
   newCdkCode,
   newMessageId,
+  newReferenceUploadId,
   newTopicId,
   newUserId,
   newInviteCode,
@@ -17,6 +18,7 @@ import {
   type CreditSource,
   type Message,
   type MessageStatus,
+  type StagedReference,
   type Topic,
   type TopicDetail,
   type User,
@@ -904,6 +906,66 @@ export class MotifStore {
   listCanvasImages(topicId: string): CanvasImage[] {
     const rows = this.db.prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial').all(topicId) as CanvasImageRow[]
     return rows.map(rowToCanvasImage)
+  }
+
+  // ---------- 暂存参考图（上传后、生成前；开始生成时转正为画布图） ----------
+
+  insertReferenceUpload(input: {
+    topicId: string
+    userId: string
+    name: string
+    imageKey: string
+    mimeType: string
+    bytes: number
+  }): StagedReference {
+    const id = newReferenceUploadId()
+    this.db
+      .prepare(
+        'INSERT INTO reference_uploads (id, topic_id, user_id, name, image_key, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(id, input.topicId, input.userId, input.name, input.imageKey, input.mimeType, input.bytes, nowIso())
+    return this.getReferenceUpload(id)!
+  }
+
+  getReferenceUpload(id: string): StagedReference | null {
+    const r = this.db.prepare('SELECT * FROM reference_uploads WHERE id = ?').get(id) as
+      | { id: string; topic_id: string; name: string; image_key: string; mime_type: string; bytes: number; created_at: string }
+      | undefined
+    if (!r) return null
+    return {
+      id: r.id,
+      topicId: r.topic_id,
+      name: r.name,
+      imageKey: r.image_key,
+      mimeType: r.mime_type,
+      bytes: r.bytes,
+      createdAt: r.created_at,
+    }
+  }
+
+  deleteReferenceUpload(id: string): boolean {
+    return this.db.prepare('DELETE FROM reference_uploads WHERE id = ?').run(id).changes > 0
+  }
+
+  listReferenceUploads(topicId: string): StagedReference[] {
+    const rows = this.db.prepare('SELECT * FROM reference_uploads WHERE topic_id = ? ORDER BY created_at, id').all(topicId) as Array<{
+      id: string
+      topic_id: string
+      name: string
+      image_key: string
+      mime_type: string
+      bytes: number
+      created_at: string
+    }>
+    return rows.map((r) => ({
+      id: r.id,
+      topicId: r.topic_id,
+      name: r.name,
+      imageKey: r.image_key,
+      mimeType: r.mime_type,
+      bytes: r.bytes,
+      createdAt: r.created_at,
+    }))
   }
 
   countGeneratedInMessage(messageId: string): number {

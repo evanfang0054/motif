@@ -5,6 +5,7 @@ import type {
   CanvasImage,
   GenerateImagesInput,
   GenerateImagesResponse,
+  StagedReference,
   Topic,
   TopicDetail,
   User,
@@ -171,15 +172,17 @@ export const api = {
     call<GenerateImagesResponse>('/api/generate-images', { method: 'POST', body: JSON.stringify(input) }),
   cancelMessage: (messageId: string) =>
     call<{ ok: true; topic: Topic }>(`/api/messages/${messageId}/cancel`, { method: 'POST' }),
-  uploadReference: async (topicId: string, file: File): Promise<{ canvasImage: CanvasImage }> => {
+  uploadReference: async (topicId: string, file: File): Promise<{ reference: StagedReference }> => {
     const form = new FormData()
     form.set('topicId', topicId)
     form.set('file', file)
     const res = await fetch('/api/canvas-images', { method: 'POST', body: form })
-    const data = (await res.json()) as { canvasImage?: CanvasImage; error?: string }
+    const data = (await res.json()) as { reference?: StagedReference; error?: string }
     if (!res.ok) throw new ApiError(res.status, data.error || '上传失败')
-    return data as { canvasImage: CanvasImage }
+    return data as { reference: StagedReference }
   },
+  removeStagedReference: (refId: string) =>
+    call<{ ok: true }>(`/api/canvas-images?refId=${encodeURIComponent(refId)}`, { method: 'DELETE' }),
   deleteCanvasImage: (id: string) => call<{ ok: true }>(`/api/canvas-images/${id}`, { method: 'DELETE' }),
   deleteCanvasImages: (ids: string[]) =>
     call<{ ok: true; deleted: number }>('/api/canvas-images/delete-batch', {

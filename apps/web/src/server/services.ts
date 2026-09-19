@@ -14,6 +14,7 @@ import {
   type GenerateImagesInput,
   type GenerateImagesResponse,
   type Topic,
+  type StagedReference,
   type User,
 } from '@motif/core'
 import { buildImageKey, storagePathFor, type MotifStore } from '@motif/db'
@@ -193,14 +194,19 @@ export async function enqueueGeneration(
     throw new ServiceError(409, '当前任务仍在生成中，请稍候。')
   }
 
-  // 校验参考图归属：必须存在、属于当前用户与当前任务
-  const validRefs: string[] = []
+  // 参考图两源分流：refu_ = 暂存参考（生成时转正为画布图），cimg_ = 已在画布的图
+  const stagedIds: string[] = []
+  const canvasRefIds: string[] = []
   for (const id of Array.isArray(input.referenceCanvasImageIds) ? input.referenceCanvasImageIds : []) {
+    if (id.startsWith('refu_')) stagedIds.push(id)
+    else canvasRefIds.push(id)
+  }
+  // 画布参考：校验归属（必须存在、属于当前用户与当前任务）
+  for (const id of canvasRefIds) {
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id || img.topicId !== topic.id) {
       throw new ServiceError(400, '参考图不存在或不属于当前任务。')
     }
-    validRefs.push(id)
   }
 
   const cost = input.count
@@ -208,6 +214,10 @@ export async function enqueueGeneration(
   // 「额度不足时不建 topic/message」的既有语义）
   const updated = store.deductCredits(user.id, cost, { source: 'generation_charge', refId: null, note: '入队扣费' })
   if (!updated) throw new ServiceError(402, '额度不足，请先充值。')
+
+  // 扣费成功后才把暂存参考转正为画布图：画布只在生成真正发生时被触及
+  const stagedCanvasIds = resolveStagedReferences(store, user, topic.id, stagedIds)
+  const validRefs = [...canvasRefIds, ...stagedCanvasIds]
 
   const size = sizeCheck.value
   const message = store.createMessage({
@@ -336,15 +346,15 @@ export function finishCancel(store: MotifStore, msg: { id: string; topicId: stri
   store.setTopicActive(msg.topicId, null, null, 'idle')
 }
 
-// ---------- 参考图上传 ----------
+// ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------
 
 export function saveReferenceImage(
   store: MotifStore,
   dataDir: string,
   user: User,
   topicId: string,
-  file: { buffer: Buffer; mimeType: string }
-): CanvasImage {
+  file: { buffer: Buffer; mimeType: string; name?: string }
+): StagedReference {
   const topic = store.getTopic(topicId)
   if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
   const ext = file.mimeType.includes('png') ? 'png' : file.mimeType.includes('webp') ? 'webp' : 'jpg'
@@ -352,18 +362,56 @@ export function saveReferenceImage(
   const abs = storagePathFor(dataDir, imageKey)
   mkdirSync(dirname(abs), { recursive: true })
   writeFileSync(abs, file.buffer)
-  return store.insertCanvasImage({
+  // 只进暂存表，不写 canvas_images：画布保持空态（模板画廊可见），开始生成时才转正
+  return store.insertReferenceUpload({
     topicId,
     userId: user.id,
-    messageId: null,
-    origin: 'uploaded',
-    name: '参考图',
+    name: (file.name || '参考图').slice(0, 40),
     imageKey,
     mimeType: file.mimeType,
     bytes: file.buffer.length,
-    width: 0,
-    height: 0,
   })
+}
+
+/**
+ * 暂存参考转正：把 refu_ 暂存图逐张落为画布图（origin=uploaded），返回可用的画布参考 id 列表。
+ * 归属校验失败（不存在/非本人/非本任务）直接抛错，绝不静默跳过。
+ */
+export function resolveStagedReferences(
+  store: MotifStore,
+  user: User,
+  topicId: string,
+  stagedIds: string[]
+): string[] {
+  const out: string[] = []
+  for (const id of stagedIds) {
+    const ref = store.getReferenceUpload(id)
+    if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
+    const img = store.insertCanvasImage({
+      topicId,
+      userId: user.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: ref.name,
+      imageKey: ref.imageKey,
+      mimeType: ref.mimeType,
+      bytes: ref.bytes,
+      width: 0,
+      height: 0,
+    })
+    store.deleteReferenceUpload(id)
+    out.push(img.id)
+  }
+  return out
+}
+
+/** 删除暂存参考（上传后反悔用）：校验归属 */
+export function removeStagedReference(store: MotifStore, user: User, id: string): void {
+  const ref = store.getReferenceUpload(id)
+  if (!ref) return // 已不存在视为已删除（幂等）
+  const topic = store.getTopic(ref.topicId)
+  if (!topic || topic.userId !== user.id) throw new ServiceError(404, '参考图不存在。')
+  store.deleteReferenceUpload(id)
 }
 
 // ---------- billing / redeem ----------

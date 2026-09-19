@@ -92,6 +92,8 @@ export interface TopicDetail {
   messages: Message[]
   canvasImages: CanvasImage[]
   messageReferences: number[]
+  /** 暂存参考图（上传后未生成的） */
+  staged?: StagedReference[]
 }
 
 export interface CreditPackage {
@@ -107,6 +109,17 @@ export interface BillingPackagesResponse {
   configured: boolean
   /** 当前支付渠道：mock=模拟收银台；epay/stripe=真实渠道（客户端据此切文案） */
   channel?: 'mock' | 'epay' | 'stripe'
+}
+
+/** 暂存参考图：上传后先入暂存表（不进画布），点开始生成时才转正为画布图并参与生成 */
+export interface StagedReference {
+  id: string
+  topicId: string
+  name: string
+  imageKey: string
+  mimeType: string
+  bytes: number
+  createdAt: string
 }
 
 /** 生成请求（POST /api/generate-images） */

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { detectImageMime } from '@motif/core'
 import { getRuntime } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
-import { ServiceError, saveReferenceImage } from '@/server/services'
+import { removeStagedReference, ServiceError, saveReferenceImage } from '@/server/services'
 
-/** 上传参考图（multipart form: topicId + file）。魔数校验，不信任客户端 Content-Type */
+/** 上传参考图（multipart form: topicId + file）。只入暂存表不进画布；魔数校验，不信任客户端 Content-Type */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const user = requireUser(req)
@@ -17,8 +17,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const buffer = Buffer.from(await file.arrayBuffer())
     const mime = detectImageMime(buffer)
     if (!mime) throw new ServiceError(415, '仅支持 PNG / JPG / WebP。')
-    const img = saveReferenceImage(getRuntime().store, getRuntime().dataDir, user, topicId, { buffer, mimeType: mime })
-    return NextResponse.json({ canvasImage: img }, { status: 201 })
+    const name = file instanceof File && file.name ? file.name : undefined
+    const reference = saveReferenceImage(getRuntime().store, getRuntime().dataDir, user, topicId, {
+      buffer,
+      mimeType: mime,
+      name,
+    })
+    return NextResponse.json({ reference }, { status: 201 })
+  } catch (e) {
+    return jsonError(e)
+  }
+}
+
+/** 删除暂存参考（上传后反悔；query: ?refId=refu_…，本人幂等删除） */
+export async function DELETE(req: NextRequest): Promise<NextResponse> {
+  try {
+    const user = requireUser(req)
+    const refId = new URL(req.url).searchParams.get('refId') ?? ''
+    removeStagedReference(getRuntime().store, user, refId)
+    return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)
   }

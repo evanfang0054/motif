@@ -11,7 +11,9 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     const { id } = await params
     const detail = getRuntime().store.getTopicDetail(id)
     if (!detail || detail.topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
-    return NextResponse.json(detail)
+    // 附带暂存参考（上传后未生成的），供面板跨刷新恢复
+    const staged = getRuntime().store.listReferenceUploads(id)
+    return NextResponse.json({ ...detail, staged })
   } catch (e) {
     return jsonError(e)
   }
