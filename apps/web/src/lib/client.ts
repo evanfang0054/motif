@@ -192,6 +192,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ packageId }),
     }),
+  billingOrderStatus: (orderId: string) =>
+    call<{ status: 'pending' | 'paid'; credits?: number }>(`/api/billing/order?order=${encodeURIComponent(orderId)}`),
   mockPay: (orderId: string) =>
     call<{ ok: true; paid: number; user: User }>('/api/billing/mock-pay', {
       method: 'POST',
