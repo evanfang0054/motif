@@ -1072,6 +1072,15 @@ export class MotifStore {
     return tx()
   }
 
+  /** 按订单号读取（含归属与渠道信息）：回调入账与 mock-pay 渠道隔离都用它 */
+  getOrder(orderId: string): { id: string; userId: string; credits: number; amountTotal: number; status: string; channel: string } | undefined {
+    const r = this.db
+      .prepare('SELECT id, user_id, credits, amount_total, status, channel FROM orders WHERE id = ?')
+      .get(orderId) as { id: string; user_id: string; credits: number; amount_total: number; status: string; channel: string } | undefined
+    if (!r) return undefined
+    return { id: r.id, userId: r.user_id, credits: r.credits, amountTotal: r.amount_total, status: r.status, channel: r.channel }
+  }
+
   listOrders(filter: { userId?: string; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
     id: string
     userId: string

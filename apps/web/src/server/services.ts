@@ -409,10 +409,12 @@ export function redeem(store: MotifStore, user: User, code: string): User {
 }
 
 /**
- * 计费模式：mock（演示收银台，默认）| live（预留真实支付渠道接入位）。
- * 安全基线：live 模式下 mock 支付端点一律 403，防止公开部署被"免费印钞"。
- * 取值读配置（数据库优先、回退环境变量），因此可在管理后台危险区里热改。
+ * 支付渠道：mock（模拟收银台，默认）| epay | stripe。
+ * PAYMENT_CHANNEL 是危险区合一开关：选真实渠道即「正式计费」。
+ * 安全基线：非 mock 渠道下，模拟支付端点一律 403，防止公开部署被「免费印钞」。
+ * 未知值兜底 mock（fail-safe），与 configHealth 探测的归一化一致。
  */
-export function billingMode(store: MotifStore): 'mock' | 'live' {
-  return (resolveSetting(store, process.env, 'MOTIF_BILLING_MODE') ?? 'mock').toLowerCase() === 'live' ? 'live' : 'mock'
+export function paymentChannel(store: MotifStore): 'mock' | 'epay' | 'stripe' {
+  const raw = (resolveSetting(store, process.env, 'PAYMENT_CHANNEL') ?? 'mock').toLowerCase()
+  return raw === 'epay' || raw === 'stripe' ? raw : 'mock'
 }

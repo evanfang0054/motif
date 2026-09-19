@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MotifStore } from '@motif/db'
-import { billingMode, sendCode } from '@/server/services'
+import { paymentChannel, sendCode } from '@/server/services'
 
 let dir: string
 let store: MotifStore
@@ -11,7 +11,7 @@ let store: MotifStore
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-settings-danger-'))
   store = new MotifStore(join(dir, 't.db'))
-  delete process.env.MOTIF_BILLING_MODE
+  delete process.env.PAYMENT_CHANNEL
   delete process.env.MOTIF_EXPOSE_DEV_CODE
 })
 
@@ -19,26 +19,31 @@ afterEach(() => {
   store.close()
   rmSync(dir, { recursive: true, force: true })
   vi.unstubAllEnvs()
-  delete process.env.MOTIF_BILLING_MODE
+  delete process.env.PAYMENT_CHANNEL
   delete process.env.MOTIF_EXPOSE_DEV_CODE
 })
 
-describe('计费模式读配置而不是读环境变量', () => {
+describe('支付渠道读配置而不是读环境变量', () => {
   it('默认 mock', () => {
-    expect(billingMode(store)).toBe('mock')
+    expect(paymentChannel(store)).toBe('mock')
   })
 
   it('库里的值压过环境变量（正对照：只读 env 的实现会红在这条）', () => {
-    process.env.MOTIF_BILLING_MODE = 'mock'
-    store.setSetting('MOTIF_BILLING_MODE', 'live')
-    expect(billingMode(store)).toBe('live')
+    process.env.PAYMENT_CHANNEL = 'mock'
+    store.setSetting('PAYMENT_CHANNEL', 'epay')
+    expect(paymentChannel(store)).toBe('epay')
   })
 
   it('库里没有该键时回退环境变量（升级前的部署行为不变）', () => {
-    process.env.MOTIF_BILLING_MODE = 'live'
-    // 数据库无该键时 resolveSetting 返回环境变量的值，所以这里**就是** 'live'。
+    process.env.PAYMENT_CHANNEL = 'epay'
+    // 数据库无该键时 resolveSetting 返回环境变量的值，所以这里**就是** 'epay'。
     // 这条断言守的是「老部署只设环境变量也能照旧生效」。
-    expect(billingMode(store)).toBe('live')
+    expect(paymentChannel(store)).toBe('epay')
+  })
+
+  it('未知值兜底 mock（fail-safe）', () => {
+    store.setSetting('PAYMENT_CHANNEL', 'paypal')
+    expect(paymentChannel(store)).toBe('mock')
   })
 })
 
