@@ -810,3 +810,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.audit-detail-json {
+  color: var(--foreground); /* 提亮 light 主题对比度（复查实测 4.4→≈12:1） */
+}
