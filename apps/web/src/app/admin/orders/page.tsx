@@ -1,4 +1,5 @@
 'use client'
+import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminOrder } from '@/lib/client'
@@ -82,8 +83,8 @@ export default function AdminOrdersPage() {
               <td data-label="额度">{o.credits}</td>
               <td data-label="金额">{money(o.amountTotal, o.currency)}</td>
               <td data-label="状态"><span className="admin-chip">{STATUS_LABEL[o.status] ?? o.status}</span></td>
-              <td data-label="创建时间">{o.createdAt.slice(0, 19).replace('T', ' ')}</td>
-              <td data-label="支付时间">{o.paidAt ? o.paidAt.slice(0, 19).replace('T', ' ') : '—'}</td>
+              <td data-label="创建时间">{formatDateTime(o.createdAt)}</td>
+              <td data-label="支付时间">{formatDateTime(o.paidAt)}</td>
             </tr>
           ))}
           {loading ? (

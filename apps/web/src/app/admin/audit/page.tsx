@@ -1,4 +1,5 @@
 'use client'
+import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminAuditRow } from '@/lib/client'
@@ -55,7 +56,7 @@ export default function AdminAuditPage() {
         <tbody>
           {items.map((r) => (
             <tr key={r.id}>
-              <td data-label="时间">{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
+              <td data-label="时间">{formatDateTime(r.createdAt)}</td>
               <td className="admin-mono" data-label="操作者">{r.actorId}</td>
               <td className="admin-mono" data-label="动作">{r.action}</td>
               <td className="admin-mono" data-label="目标">{r.targetType ? `${r.targetType}:${r.targetId ?? '—'}` : '—'}</td>
