@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Input, SearchField, Select, ListBox, Table, TextField, NumberField } from '@heroui/react'
+import { Drawer, Input, SearchField, Select, ListBox, Table, TextField, NumberField } from '@heroui/react'
 import type { User } from '@motif/core'
 import { api } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
@@ -250,61 +250,79 @@ export default function AdminUsersPage() {
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
-      {adjust && (
-        <div className="admin-modal-mask" onClick={() => setAdjust(null)}>
-          <div className="admin-modal" role="dialog" aria-label="调整额度" onClick={(e) => e.stopPropagation()}>
-            <h2 className="admin-title">调整额度 · {adjust.user.name}</h2>
-            <p className="admin-muted">当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。</p>
-            <label className="admin-field">
-              调整张数
-              <NumberField
-                className="w-full"
-                value={adjust.delta === '' ? undefined : Number(adjust.delta)}
-                onChange={(v) => setAdjust({ ...adjust, delta: v === undefined ? '' : String(v) })}
-              >
-                <NumberField.Group>
-                  <NumberField.Input placeholder="如 25 或 -10" />
-                </NumberField.Group>
-              </NumberField>
-            </label>
-            <label className="admin-field">
-              原因（必填）
-              <TextField
-                className="w-full"
-                value={adjust.reason}
-                onChange={(v) => setAdjust({ ...adjust, reason: v })}
-                maxLength={200}
-              >
-                <Input placeholder="如 渠道补偿" />
-              </TextField>
-            </label>
-            <div className="admin-actions">
-              <button className="admin-btn-primary" disabled={busy || !adjust.reason.trim() || !adjust.delta} onClick={() => void submitAdjust()}>
-                确认调整
-              </button>
-              <button disabled={busy} onClick={() => setAdjust(null)}>取消</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Drawer.Backdrop isOpen={adjust !== null} onOpenChange={(o) => { if (!o) setAdjust(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>调整额度 · {adjust?.user.name}</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+            </Drawer.Header>
+            <Drawer.Body>
+              {adjust && (
+                <>
+                  <p className="admin-muted">当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。</p>
+                  <label className="admin-field">
+                    调整张数
+                    <NumberField
+                      className="w-full"
+                      value={adjust.delta === '' ? undefined : Number(adjust.delta)}
+                      onChange={(v) => setAdjust({ ...adjust, delta: v === undefined ? '' : String(v) })}
+                    >
+                      <NumberField.Group>
+                        <NumberField.Input placeholder="如 25 或 -10" />
+                      </NumberField.Group>
+                    </NumberField>
+                  </label>
+                  <label className="admin-field">
+                    原因（必填）
+                    <TextField
+                      className="w-full"
+                      value={adjust.reason}
+                      onChange={(v) => setAdjust({ ...adjust, reason: v })}
+                      maxLength={200}
+                    >
+                      <Input placeholder="如 渠道补偿" />
+                    </TextField>
+                  </label>
+                  <div className="admin-actions">
+                    <button className="admin-btn-primary" disabled={busy || !adjust.reason.trim() || !adjust.delta} onClick={() => void submitAdjust()}>
+                      确认调整
+                    </button>
+                    <button disabled={busy} onClick={() => setAdjust(null)}>取消</button>
+                  </div>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
 
-      {reset && (
-        <div className="admin-modal-mask" onClick={() => setReset(null)}>
-          <div className="admin-modal" role="dialog" aria-label="一次性密码" onClick={(e) => e.stopPropagation()}>
-            <h2 className="admin-title">一次性密码 · {reset.name}</h2>
-            <p className="admin-alert-err" role="alert" style={{ display: 'block' }}>
-              关闭后不再显示。请立刻通过安全渠道转交，并要求对方登录后立即修改。
-            </p>
-            <pre className="admin-detail">{reset.password}</pre>
-            <div className="admin-actions">
-              <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(reset.password).catch(() => undefined)}>
-                复制
-              </button>
-              <button onClick={() => setReset(null)}>我已记录，关闭</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Drawer.Backdrop isOpen={reset !== null} onOpenChange={(o) => { if (!o) setReset(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>一次性密码 · {reset?.name}</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+            </Drawer.Header>
+            <Drawer.Body>
+              {reset && (
+                <>
+                  <p className="admin-alert-err" role="alert" style={{ display: 'block' }}>
+                    关闭后不再显示。请立刻通过安全渠道转交，并要求对方登录后立即修改。
+                  </p>
+                  <pre className="admin-detail">{reset.password}</pre>
+                  <div className="admin-actions">
+                    <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(reset.password).catch(() => undefined)}>
+                      复制
+                    </button>
+                    <button onClick={() => setReset(null)}>我已记录，关闭</button>
+                  </div>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
 
       {confirmElement}
     </section>
