@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { NumberField, SearchField, Select, ListBox, Table } from '@heroui/react'
+import { Button, Drawer, NumberField, SearchField, Select, ListBox, Table } from '@heroui/react'
 import { api, type AdminLogRow } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
@@ -31,6 +31,8 @@ export default function AdminLogsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const { confirm, confirmElement } = useConfirm()
+  // 右侧抽屉查看的日志行（与 audit 抽屉同模式）
+  const [detail, setDetail] = useState<AdminLogRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -154,13 +156,9 @@ export default function AdminLogsPage() {
                     <Table.Cell data-label="重试">{m.attempts}</Table.Cell>
                     <Table.Cell data-label="失败原因">{m.error ? <span className="admin-mono">{m.error}</span> : '—'}</Table.Cell>
                     <Table.Cell data-label="提示词">
-                      <details>
-                        <summary>展开</summary>
-                        <div className="admin-prompt">
-                          <div><b>用户提交</b>：{m.prompt}</div>
-                          <div><b>实际发往网关</b>：{m.finalPrompt}</div>
-                        </div>
-                      </details>
+                      <Button size="sm" variant="secondary" onPress={() => setDetail(m)}>
+                        查看详情
+                      </Button>
                     </Table.Cell>
                   </Table.Row>
                 ))
@@ -171,6 +169,37 @@ export default function AdminLogsPage() {
       </Table>
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+
+      <Drawer.Backdrop isOpen={detail !== null} isDismissable onOpenChange={(o) => { if (!o) setDetail(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>生成日志详情</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+            </Drawer.Header>
+            <Drawer.Body>
+              {detail && (
+                <>
+                  <dl className="audit-detail-meta">
+                    <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
+                    <div><dt>用户</dt><dd className="admin-mono">{detail.userId}</dd></div>
+                    <div><dt>状态</dt><dd>{STATUS_LABEL[detail.status] ?? detail.status}</dd></div>
+                    <div><dt>张数</dt><dd>{detail.generatedCount}/{detail.requestedCount}</dd></div>
+                    <div><dt>重试</dt><dd>{detail.attempts}</dd></div>
+                    {detail.error && (
+                      <div><dt>失败原因</dt><dd className="admin-neg">{detail.error}</dd></div>
+                    )}
+                  </dl>
+                  <div className="audit-detail-label">用户提交的提示词</div>
+                  <pre className="audit-detail-json">{detail.prompt}</pre>
+                  <div className="audit-detail-label">实际发往网关的提示词</div>
+                  <pre className="audit-detail-json">{detail.finalPrompt}</pre>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
 
       {confirmElement}
     </section>
