@@ -6,6 +6,7 @@ import {
   newCanvasImageId,
   newCdkCode,
   newMessageId,
+  newReferenceUploadId,
   newTopicId,
   newUserId,
   newInviteCode,
@@ -17,6 +18,7 @@ import {
   type CreditSource,
   type Message,
   type MessageStatus,
+  type StagedReference,
   type Topic,
   type TopicDetail,
   type User,
@@ -906,6 +908,66 @@ export class MotifStore {
     return rows.map(rowToCanvasImage)
   }
 
+  // ---------- 暂存参考图（上传后、生成前；开始生成时转正为画布图） ----------
+
+  insertReferenceUpload(input: {
+    topicId: string
+    userId: string
+    name: string
+    imageKey: string
+    mimeType: string
+    bytes: number
+  }): StagedReference {
+    const id = newReferenceUploadId()
+    this.db
+      .prepare(
+        'INSERT INTO reference_uploads (id, topic_id, user_id, name, image_key, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .run(id, input.topicId, input.userId, input.name, input.imageKey, input.mimeType, input.bytes, nowIso())
+    return this.getReferenceUpload(id)!
+  }
+
+  getReferenceUpload(id: string): StagedReference | null {
+    const r = this.db.prepare('SELECT * FROM reference_uploads WHERE id = ?').get(id) as
+      | { id: string; topic_id: string; name: string; image_key: string; mime_type: string; bytes: number; created_at: string }
+      | undefined
+    if (!r) return null
+    return {
+      id: r.id,
+      topicId: r.topic_id,
+      name: r.name,
+      imageKey: r.image_key,
+      mimeType: r.mime_type,
+      bytes: r.bytes,
+      createdAt: r.created_at,
+    }
+  }
+
+  deleteReferenceUpload(id: string): boolean {
+    return this.db.prepare('DELETE FROM reference_uploads WHERE id = ?').run(id).changes > 0
+  }
+
+  listReferenceUploads(topicId: string): StagedReference[] {
+    const rows = this.db.prepare('SELECT * FROM reference_uploads WHERE topic_id = ? ORDER BY created_at, id').all(topicId) as Array<{
+      id: string
+      topic_id: string
+      name: string
+      image_key: string
+      mime_type: string
+      bytes: number
+      created_at: string
+    }>
+    return rows.map((r) => ({
+      id: r.id,
+      topicId: r.topic_id,
+      name: r.name,
+      imageKey: r.image_key,
+      mimeType: r.mime_type,
+      bytes: r.bytes,
+      createdAt: r.created_at,
+    }))
+  }
+
   countGeneratedInMessage(messageId: string): number {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS c FROM canvas_images WHERE message_id = ? AND origin = 'generated'`)
@@ -1042,11 +1104,11 @@ export class MotifStore {
 
   // ---------- orders ----------
 
-  createOrder(userId: string, pkg: CreditPackage): string {
+  createOrder(userId: string, pkg: CreditPackage, channel: 'mock' | 'epay' | 'stripe' = 'mock'): string {
     const id = newOrderId()
     this.db
-      .prepare('INSERT INTO orders (id, user_id, package_id, credits, amount_total, currency, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, userId, pkg.id, pkg.credits, pkg.amountTotal, pkg.currency, 'pending', nowIso())
+      .prepare('INSERT INTO orders (id, user_id, package_id, credits, amount_total, currency, status, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, userId, pkg.id, pkg.credits, pkg.amountTotal, pkg.currency, 'pending', channel, nowIso())
     return id
   }
 
@@ -1058,6 +1120,15 @@ export class MotifStore {
       return row.credits
     })
     return tx()
+  }
+
+  /** 按订单号读取（含归属与渠道信息）：回调入账与 mock-pay 渠道隔离都用它 */
+  getOrder(orderId: string): { id: string; userId: string; credits: number; amountTotal: number; status: string; channel: string } | undefined {
+    const r = this.db
+      .prepare('SELECT id, user_id, credits, amount_total, status, channel FROM orders WHERE id = ?')
+      .get(orderId) as { id: string; user_id: string; credits: number; amount_total: number; status: string; channel: string } | undefined
+    if (!r) return undefined
+    return { id: r.id, userId: r.user_id, credits: r.credits, amountTotal: r.amount_total, status: r.status, channel: r.channel }
   }
 
   listOrders(filter: { userId?: string; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
@@ -1274,6 +1345,11 @@ export class MotifStore {
     this.db
       .prepare('INSERT INTO admin_audit (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(input.actorId, input.action, input.targetType ?? null, input.targetId ?? null, input.detail ?? null, nowIso())
+  }
+
+  /** 审计保留清理：删除截止时间之前的记录，返回删除行数（回调端点防灌爆的配套机制） */
+  deleteAuditBefore(cutoffIso: string): number {
+    return this.db.prepare('DELETE FROM admin_audit WHERE created_at < ?').run(cutoffIso).changes as number
   }
 
   /** 审计流水（可按操作者过滤，倒序，默认上限 100 条） */

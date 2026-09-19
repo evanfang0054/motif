@@ -120,8 +120,20 @@ export function applySchema(db: Database): void {
       amount_total INTEGER NOT NULL,
       currency TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      channel TEXT NOT NULL DEFAULT 'mock',
       created_at TEXT NOT NULL,
       paid_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS reference_uploads (
+      id TEXT PRIMARY KEY,
+      topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      image_key TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS feedback (
@@ -174,6 +186,7 @@ export function applySchema(db: Database): void {
     "ALTER TABLE feedback ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
     'ALTER TABLE feedback ADD COLUMN resolved_at TEXT',
     'ALTER TABLE feedback ADD COLUMN resolved_by TEXT',
+    "ALTER TABLE orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'mock'",
   ]) {
     try {
       db.exec(ddl)

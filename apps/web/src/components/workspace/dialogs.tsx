@@ -18,44 +18,64 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   )
 }
 
-/** 充值弹窗：套餐列表 + 模拟收银台 + CDK 入口 */
+/** 币种符号映射（不含零小数货币）；未知币种退化为 ISO 代码 */
+const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: 'US$', hkd: 'HK$', eur: '€', gbp: '£' }
+const fmtPrice = (p: CreditPackage) =>
+  `${CURRENCY_SYMBOL[p.currency] ?? `${p.currency.toUpperCase()} `}${(p.amountTotal / 100).toFixed(2)}`
+
+/** 充值弹窗：套餐列表 + 收银台分流（mock 站内确认；epay/stripe 整页跳网关/Stripe）+ CDK 入口 */
 function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onPaid: (u: User) => void; onRedeem: () => void }) {
   const [packages, setPackages] = useState<CreditPackage[]>([])
+  const [channel, setChannel] = useState<'mock' | 'epay' | 'stripe'>('mock')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
-    void api.billingPackages().then((d) => setPackages(d.packages)).catch(() => setError('套餐加载失败'))
+    void api
+      .billingPackages()
+      .then((d) => {
+        setPackages(d.packages)
+        setChannel(d.channel ?? 'mock')
+      })
+      .catch(() => setError('套餐加载失败'))
   }, [])
 
   const checkout = async (pkg: CreditPackage) => {
     setBusyId(pkg.id)
     setError(null)
     try {
-      const { orderId } = await api.checkout(pkg.id)
-      // 本地部署：直接走模拟收银台确认
+      const { orderId, checkoutUrl } = await api.checkout(pkg.id)
+      if (/^https?:\/\//i.test(checkoutUrl)) {
+        // 真实渠道：整页跳网关/Stripe 收银页，支付完成由 return_url 带回结果页
+        window.location.href = checkoutUrl
+        return
+      }
+      // mock 渠道：站内模拟收银台确认
       const res = await api.mockPay(orderId)
       onPaid(res.user)
     } catch (e) {
       setError(e instanceof Error ? e.message : '支付失败')
-    } finally {
       setBusyId(null)
     }
   }
 
+  const payNote =
+    channel === 'mock'
+      ? '本地部署走模拟收银台，不会产生真实扣款。'
+      : channel === 'stripe'
+        ? '点击后将跳转 Stripe 安全支付页，支付完成自动返回。'
+        : '点击后将跳转支付网关完成付款，支付完成自动返回。'
+
   return (
     <Modal title="充值额度" onClose={onClose}>
-      <p className="text-sm" style={{ color: 'var(--muted)' }}>
-        选择额度套餐，本地部署走模拟收银台；线上版将跳转 Stripe 安全支付。
-        <b style={{ color: 'var(--warning)' }}>（当前为演示模式，无需真实付款）</b>
-      </p>
+      <p className="text-sm" style={{ color: 'var(--muted)' }}>{payNote}</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {packages.map((pkg) => (
           <button key={pkg.id} className="ws-size-chip" style={{ padding: '12px' }} disabled={busyId !== null} onClick={() => void checkout(pkg)}>
             <b className="text-sm">{pkg.label}</b>
             <br />
             <span style={{ color: 'var(--muted)' }}>
-              HK$ {(pkg.amountTotal / 100).toFixed(0)} {busyId === pkg.id ? '· 支付中…' : ''}
+              {fmtPrice(pkg)} {busyId === pkg.id ? (channel === 'mock' ? '· 支付中…' : '· 跳转支付…') : ''}
             </span>
           </button>
         ))}

@@ -1102,6 +1102,27 @@ body {
   padding: 24px;
 }
 
+/* 结果页「处理中」脉冲圆点（跟随品牌暖色，明暗两套主题自动适配） */
+.pay-pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand-warm);
+  margin-right: 6px;
+  animation: pay-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pay-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* ---------- 主题三态切换（浅色 / 深色 / 跟随系统） ---------- */
 .ws-theme-toggle {
   display: inline-flex;

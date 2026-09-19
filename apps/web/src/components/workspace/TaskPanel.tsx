@@ -2,6 +2,7 @@
 
 import { useRef } from 'react'
 import { SIZE_PRESETS } from '@/lib/templates'
+import type { StagedReference } from '@motif/core'
 import { StatusBadge } from './TopNav'
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
   customW: number
   customH: number
   referenceCount: number
+  staged: StagedReference[]
+  stagedPreviews: Record<string, string>
   busy: boolean
   /** 当前余额：用于生成前的消耗提示与不足预警 */
   credits?: number
@@ -22,6 +25,7 @@ interface Props {
   onSizeChange: (v: string) => void
   onCustomSizeChange: (w: number, h: number) => void
   onUploadReference: (file: File) => void
+  onRemoveStaged: (id: string) => void
   onGenerate: () => void
   onCancel: () => void
   onNewTask: () => void
@@ -34,6 +38,8 @@ function TaskPanel(p: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const credits = p.credits
   const insufficient = typeof credits === 'number' && credits < p.count
+  // 可移除的暂存参考（上传后、生成前）；「@ 引用」进来的画布图不进暂存列表，但仍计入 referenceCount
+  const stagedOnly = p.staged
 
   return (
     <section className="ws-panel">
@@ -84,6 +90,35 @@ function TaskPanel(p: Props) {
           />
           <span className="text-xs" style={{ color: 'var(--muted)' }}>PNG / JPG / WebP ≤10MB</span>
         </div>
+        {stagedOnly.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {stagedOnly.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                {p.stagedPreviews[s.id] ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={p.stagedPreviews[s.id]} alt={s.name} width={34} height={34} style={{ borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                ) : (
+                  <span
+                    aria-hidden
+                    style={{ width: 34, height: 34, borderRadius: 6, border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    图
+                  </span>
+                )}
+                <span className="truncate" style={{ flex: 1, minWidth: 0 }}>{s.name}</span>
+                <button
+                  className="ws-btn"
+                  style={{ padding: '2px 8px' }}
+                  aria-label={`移除暂存参考 ${s.name}`}
+                  onClick={() => p.onRemoveStaged(s.id)}
+                >
+                  移除
+                </button>
+              </div>
+            ))}
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>已暂存 {stagedOnly.length} 张：点「开始生成」后进入画布</p>
+          </div>
+        )}
       </div>
 
       <div>

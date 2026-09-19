@@ -5,6 +5,7 @@ import type {
   CanvasImage,
   GenerateImagesInput,
   GenerateImagesResponse,
+  StagedReference,
   Topic,
   TopicDetail,
   User,
@@ -101,9 +102,9 @@ export interface AdminAuditRow {
 /** 管理后台：一项系统配置。密钥项的 value 恒为 null，只给掩码与「已设置」标记 */
 export interface AdminSettingItem {
   key: string
-  group: 'generation' | 'mailer' | 'danger' | 'security' | 'data'
+  group: 'generation' | 'payment' | 'mailer' | 'danger' | 'security' | 'data'
   label: string
-  kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url'
+  kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
   masked: string | null
   isSet: boolean
@@ -171,15 +172,17 @@ export const api = {
     call<GenerateImagesResponse>('/api/generate-images', { method: 'POST', body: JSON.stringify(input) }),
   cancelMessage: (messageId: string) =>
     call<{ ok: true; topic: Topic }>(`/api/messages/${messageId}/cancel`, { method: 'POST' }),
-  uploadReference: async (topicId: string, file: File): Promise<{ canvasImage: CanvasImage }> => {
+  uploadReference: async (topicId: string, file: File): Promise<{ reference: StagedReference }> => {
     const form = new FormData()
     form.set('topicId', topicId)
     form.set('file', file)
     const res = await fetch('/api/canvas-images', { method: 'POST', body: form })
-    const data = (await res.json()) as { canvasImage?: CanvasImage; error?: string }
+    const data = (await res.json()) as { reference?: StagedReference; error?: string }
     if (!res.ok) throw new ApiError(res.status, data.error || '上传失败')
-    return data as { canvasImage: CanvasImage }
+    return data as { reference: StagedReference }
   },
+  removeStagedReference: (refId: string) =>
+    call<{ ok: true }>(`/api/canvas-images?refId=${encodeURIComponent(refId)}`, { method: 'DELETE' }),
   deleteCanvasImage: (id: string) => call<{ ok: true }>(`/api/canvas-images/${id}`, { method: 'DELETE' }),
   deleteCanvasImages: (ids: string[]) =>
     call<{ ok: true; deleted: number }>('/api/canvas-images/delete-batch', {
@@ -192,6 +195,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ packageId }),
     }),
+  billingOrderStatus: (orderId: string) =>
+    call<{ status: 'pending' | 'paid'; credits?: number }>(`/api/billing/order?order=${encodeURIComponent(orderId)}`),
   mockPay: (orderId: string) =>
     call<{ ok: true; paid: number; user: User }>('/api/billing/mock-pay', {
       method: 'POST',
@@ -240,7 +245,7 @@ export const api = {
   adminListLogs: (params: { status?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: AdminLogRow[]; total: number; page: number; pageSize: number }>(`/api/admin/logs${toQuery(params)}`),
   adminCleanupLogs: (days: number) =>
-    call<{ ok: true; deleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
+    call<{ ok: true; deleted: number; auditDeleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
   adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }>(`/api/admin/audit${toQuery(params)}`),
   adminGetSettings: () => call<{ items: AdminSettingItem[]; health: AdminConfigHealth[] }>('/api/admin/settings'),
@@ -250,6 +255,8 @@ export const api = {
       body: JSON.stringify({ updates }),
     }),
   /** 危险区专用入口：确认由服务端强校验（必须严格等于 true），页面上的勾选只是前置流程 */
+  adminTestMail: (to: string) =>
+    call<{ ok: true; via: string }>('/api/admin/settings/test-mail', { method: 'POST', body: JSON.stringify({ to }) }),
   adminSaveDangerSettings: (updates: Record<string, string>) =>
     call<{ ok: true; updated: string[] }>('/api/admin/settings/danger', {
       method: 'POST',

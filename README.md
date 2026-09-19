@@ -129,7 +129,7 @@ motif/
 | `MOTIF_SKIP_ADMIN_BOOTSTRAP` | `1` = 跳过管理员账号自动创建（本地开发常用） |
 | `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
-| `MOTIF_BILLING_MODE` | `mock` | `mock`=演示收银台；`live`=关闭模拟支付（真实渠道接入位） |
+| `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
 
 ### 方式 A：Docker 一键部署（推荐）
 

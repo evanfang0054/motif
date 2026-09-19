@@ -10,17 +10,20 @@ import {
   validatePrompt,
   validateSize,
   type CanvasImage,
+  type CreditPackage,
   type GenerateImagesInput,
   type GenerateImagesResponse,
   type Topic,
+  type StagedReference,
   type User,
 } from '@motif/core'
 import { buildImageKey, storagePathFor, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
+import { createPaymentGateway } from './payment'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveSetting } from './settings'
+import { resolveBool, resolveConfigValues, resolveSetting, yuanToFen } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -61,6 +64,28 @@ export async function sendCode(
   const expose =
     mailer.isConsole && (process.env.NODE_ENV !== 'production' || resolveBool(store, process.env, 'MOTIF_EXPOSE_DEV_CODE'))
   return { sent: true, ...(expose ? { devCode: code } : {}), via: mailer.mailer.name }
+}
+
+/**
+ * 管理后台测试发送：用当前生效渠道真实投递一封，失败透传底层原因（如 SMTP 535 授权码错误）。
+ * 频控与 sendCode 对齐：每邮箱 60s/1 封、每小时 10 封——防 root 会话被劫持后滥用为轰炸跳板。
+ */
+export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ ok: true; via: string }> {
+  const err = validateEmail(to)
+  if (err) throw new ServiceError(400, err)
+  if (!checkRate(`testmail:to:${to.toLowerCase()}`, 60_000, 1)) {
+    throw new ServiceError(429, '发送过于频繁，请 1 分钟后再试。')
+  }
+  if (!checkRate(`testmail:to1h:${to.toLowerCase()}`, 3_600_000, 10)) {
+    throw new ServiceError(429, '该邮箱测试发送次数已达上限，请稍后再试。')
+  }
+  try {
+    await mailer.mailer.sendTest(to)
+  } catch (e) {
+    // 底层原因（SMTP 535 / Resend 401…）必须透传到页面：普通 Error 会被 jsonError 归一成 500 通用文案
+    throw new ServiceError(502, `测试发送失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+  return { ok: true, via: mailer.mailer.name }
 }
 
 export function register(
@@ -169,14 +194,19 @@ export async function enqueueGeneration(
     throw new ServiceError(409, '当前任务仍在生成中，请稍候。')
   }
 
-  // 校验参考图归属：必须存在、属于当前用户与当前任务
-  const validRefs: string[] = []
+  // 参考图两源分流：refu_ = 暂存参考（生成时转正为画布图），cimg_ = 已在画布的图
+  const stagedIds: string[] = []
+  const canvasRefIds: string[] = []
   for (const id of Array.isArray(input.referenceCanvasImageIds) ? input.referenceCanvasImageIds : []) {
+    if (id.startsWith('refu_')) stagedIds.push(id)
+    else canvasRefIds.push(id)
+  }
+  // 画布参考：校验归属（必须存在、属于当前用户与当前任务）
+  for (const id of canvasRefIds) {
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id || img.topicId !== topic.id) {
       throw new ServiceError(400, '参考图不存在或不属于当前任务。')
     }
-    validRefs.push(id)
   }
 
   const cost = input.count
@@ -184,6 +214,10 @@ export async function enqueueGeneration(
   // 「额度不足时不建 topic/message」的既有语义）
   const updated = store.deductCredits(user.id, cost, { source: 'generation_charge', refId: null, note: '入队扣费' })
   if (!updated) throw new ServiceError(402, '额度不足，请先充值。')
+
+  // 扣费成功后才把暂存参考转正为画布图：画布只在生成真正发生时被触及
+  const stagedCanvasIds = resolveStagedReferences(store, user, topic.id, stagedIds)
+  const validRefs = [...canvasRefIds, ...stagedCanvasIds]
 
   const size = sizeCheck.value
   const message = store.createMessage({
@@ -312,15 +346,15 @@ export function finishCancel(store: MotifStore, msg: { id: string; topicId: stri
   store.setTopicActive(msg.topicId, null, null, 'idle')
 }
 
-// ---------- 参考图上传 ----------
+// ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------
 
 export function saveReferenceImage(
   store: MotifStore,
   dataDir: string,
   user: User,
   topicId: string,
-  file: { buffer: Buffer; mimeType: string }
-): CanvasImage {
+  file: { buffer: Buffer; mimeType: string; name?: string }
+): StagedReference {
   const topic = store.getTopic(topicId)
   if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
   const ext = file.mimeType.includes('png') ? 'png' : file.mimeType.includes('webp') ? 'webp' : 'jpg'
@@ -328,28 +362,85 @@ export function saveReferenceImage(
   const abs = storagePathFor(dataDir, imageKey)
   mkdirSync(dirname(abs), { recursive: true })
   writeFileSync(abs, file.buffer)
-  return store.insertCanvasImage({
+  // 只进暂存表，不写 canvas_images：画布保持空态（模板画廊可见），开始生成时才转正
+  return store.insertReferenceUpload({
     topicId,
     userId: user.id,
-    messageId: null,
-    origin: 'uploaded',
-    name: '参考图',
+    name: (file.name || '参考图').slice(0, 40),
     imageKey,
     mimeType: file.mimeType,
     bytes: file.buffer.length,
-    width: 0,
-    height: 0,
   })
+}
+
+/**
+ * 暂存参考转正：把 refu_ 暂存图逐张落为画布图（origin=uploaded），返回可用的画布参考 id 列表。
+ * 归属校验失败（不存在/非本人/非本任务）直接抛错，绝不静默跳过。
+ */
+export function resolveStagedReferences(
+  store: MotifStore,
+  user: User,
+  topicId: string,
+  stagedIds: string[]
+): string[] {
+  const out: string[] = []
+  for (const id of stagedIds) {
+    const ref = store.getReferenceUpload(id)
+    if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
+    const img = store.insertCanvasImage({
+      topicId,
+      userId: user.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: ref.name,
+      imageKey: ref.imageKey,
+      mimeType: ref.mimeType,
+      bytes: ref.bytes,
+      width: 0,
+      height: 0,
+    })
+    store.deleteReferenceUpload(id)
+    out.push(img.id)
+  }
+  return out
+}
+
+/** 删除暂存参考（上传后反悔用）：校验归属 */
+export function removeStagedReference(store: MotifStore, user: User, id: string): void {
+  const ref = store.getReferenceUpload(id)
+  if (!ref) return // 已不存在视为已删除（幂等）
+  const topic = store.getTopic(ref.topicId)
+  if (!topic || topic.userId !== user.id) throw new ServiceError(404, '参考图不存在。')
+  store.deleteReferenceUpload(id)
 }
 
 // ---------- billing / redeem ----------
 
-export const CREDIT_PACKAGES = [
-  { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' },
-  { id: 'credits_100', label: '100 张额度', credits: 100, amountTotal: 1736, currency: 'hkd' },
-  { id: 'credits_200', label: '200 张额度', credits: 200, amountTotal: 3472, currency: 'hkd' },
-  { id: 'credits_500', label: '500 张额度', credits: 500, amountTotal: 8680, currency: 'hkd' },
+const PACKAGE_FALLBACK: ReadonlyArray<{ credits: number; fen: number }> = [
+  { credits: 50, fen: 6800 },
+  { credits: 100, fen: 13600 },
+  { credits: 200, fen: 27200 },
+  { credits: 500, fen: 68000 },
 ]
+
+/**
+ * 套餐：币种与价格后台可配（settings 唯一真相），缺省回退 68/136/272/680。
+ * amountTotal 一律「分」；清空配置键 = 删除行 → 回退默认（与 settings 清空语义一致）。
+ */
+export function resolvePackages(store: MotifStore, env: Record<string, string | undefined>): CreditPackage[] {
+  // 归一小写：Stripe 要求小写 ISO 币种，播种绕过校验的大写值在这里兜住
+  const currency = (resolveSetting(store, env, 'BILLING_CURRENCY') ?? 'hkd').toLowerCase()
+  return PACKAGE_FALLBACK.map(({ credits, fen }) => {
+    const key = `PRICE_CREDITS_${credits}`
+    const raw = resolveSetting(store, env, key)
+    const parsed = raw !== null ? yuanToFen(raw) : null
+    if (raw !== null && parsed === null) {
+      // 直改库/播种可绕过 money 校验：坏值静默回退会让运营无信号，这里留一条日志
+      console.warn(`[billing] ${key} 配置非法（${raw}），已回退默认价`)
+    }
+    return { id: `credits_${credits}`, label: `${credits} 张额度`, credits, amountTotal: parsed ?? fen, currency }
+  })
+}
 
 /**
  * 校验 CDK 并到账。失败原因分三类给文案，让用户能分清「输错了 / 被作废了 / 已用过了」。
@@ -373,10 +464,68 @@ export function redeem(store: MotifStore, user: User, code: string): User {
 }
 
 /**
- * 计费模式：mock（演示收银台，默认）| live（预留真实支付渠道接入位）。
- * 安全基线：live 模式下 mock 支付端点一律 403，防止公开部署被"免费印钞"。
- * 取值读配置（数据库优先、回退环境变量），因此可在管理后台危险区里热改。
+ * 支付渠道：mock（模拟收银台，默认）| epay | stripe。
+ * PAYMENT_CHANNEL 是危险区合一开关：选真实渠道即「正式计费」。
+ * 安全基线：非 mock 渠道下，模拟支付端点一律 403，防止公开部署被「免费印钞」。
+ * 未知值兜底 mock（fail-safe），与 configHealth 探测的归一化一致。
  */
-export function billingMode(store: MotifStore): 'mock' | 'live' {
-  return (resolveSetting(store, process.env, 'MOTIF_BILLING_MODE') ?? 'mock').toLowerCase() === 'live' ? 'live' : 'mock'
+export function paymentChannel(store: MotifStore): 'mock' | 'epay' | 'stripe' {
+  const raw = (resolveSetting(store, process.env, 'PAYMENT_CHANNEL') ?? 'mock').toLowerCase()
+  return raw === 'epay' || raw === 'stripe' ? raw : 'mock'
+}
+
+export interface CheckoutStart {
+  orderId: string
+  checkoutUrl: string
+}
+
+const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问题持续请联系站点管理员。'
+
+/**
+ * 下单分流：mock → 站内收银台；epay/stripe → 网关收银页。
+ * 订单先落 pending（记录创建渠道）；渠道配置错误/网关异常统一转用户友好 503
+ * （内部键名走 payment 健康检查与审计，不透给充值用户）。
+ * 渠道切换不影响已建订单：notify/webhook 路由按各自 URL 定渠道、用当前凭据现构造网关，
+ * 行为上对存量订单的回调依然友好（但凭据被替换后旧单回调会验签失败，换密钥需留意在途订单）。
+ */
+export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
+  const pkg = resolvePackages(store, env).find((p) => p.id === packageId)
+  if (!pkg) throw new ServiceError(400, '套餐不存在。')
+  const channel = paymentChannel(store)
+  const orderId = store.createOrder(userId, pkg, channel)
+  if (channel === 'mock') return { orderId, checkoutUrl: `/billing/mock-pay?order=${orderId}` }
+  try {
+    const site = resolveSetting(store, env, 'SITE_URL')
+    if (!site) throw new ServiceError(503, CHECKOUT_UNAVAILABLE)
+    const base = site.replace(/\/+$/, '')
+    const gateway = createPaymentGateway(channel, resolveConfigValues(store, env))
+    const { redirectUrl } = await gateway.createCheckout(
+      { orderId, label: pkg.label, amountTotal: pkg.amountTotal, currency: pkg.currency },
+      {
+        notifyUrl: `${base}/api/billing/notify/epay`,
+        returnUrl: `${base}/billing/result?order=${orderId}`,
+        cancelUrl: `${base}/billing/result?order=${orderId}&canceled=1`,
+      }
+    )
+    return { orderId, checkoutUrl: redirectUrl }
+  } catch (e) {
+    if (e instanceof ServiceError) throw e
+    throw new ServiceError(503, CHECKOUT_UNAVAILABLE)
+  }
+}
+
+/**
+ * 回调入账：金额核对（分对分）→ payOrder 条件更新（pending→paid 仅一次）→ addCredits。
+ * ok=入账；duplicate=重复通知（幂等忽略）；mismatch=金额不符（拒绝）；
+ * not_found=订单不可见（异常时序），区别于 duplicate——调用方回 fail 让网关按策略重试，防真实付款丢单。
+ */
+export function creditPaidOrder(store: MotifStore, orderId: string, paidFen: number): 'ok' | 'duplicate' | 'mismatch' | 'not_found' {
+  const order = store.getOrder(orderId)
+  if (!order) return 'not_found'
+  if (order.status !== 'pending') return 'duplicate'
+  if (order.amountTotal !== paidFen) return 'mismatch'
+  const credits = store.payOrder(orderId, order.userId)
+  if (credits === null) return 'duplicate' // 并发下另一通知抢先入账
+  store.addCredits(order.userId, credits, { source: 'order_paid', refId: orderId, note: '订单支付到账' })
+  return 'ok'
 }

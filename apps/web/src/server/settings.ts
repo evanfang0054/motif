@@ -1,6 +1,7 @@
 import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
+import { createPaymentGateway } from './payment'
 
 /**
  * 配置注册表与存取策略。
@@ -12,8 +13,8 @@ import { createMailerFromConfig } from './mailer'
  * 3. 只读键（数据位置）永不进 DB：它们决定数据库自身位置，属于先于数据库存在的引导参数。
  */
 
-export type SettingGroup = 'generation' | 'mailer' | 'danger' | 'security' | 'data'
-export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url'
+export type SettingGroup = 'generation' | 'payment' | 'mailer' | 'danger' | 'security' | 'data'
+export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
   key: string
@@ -53,9 +54,24 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'RESEND_API_KEY', group: 'mailer', label: 'Resend 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
   { key: 'SENDGRID_API_KEY', group: 'mailer', label: 'SendGrid 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
 
+  // ---- 支付与套餐 ----
+  // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
+  // 不进 runtime 缓存，保存即热生效，无需重建 provider / mailer。
+  { key: 'SITE_URL', group: 'payment', label: '站点地址', kind: 'url', hint: '如 https://motif.example.com；支付回调与支付完成跳转由此拼接，真实渠道必填' },
+  { key: 'BILLING_CURRENCY', group: 'payment', label: '套餐币种', kind: 'enum', options: ['cny', 'usd', 'hkd', 'eur', 'gbp'], defaultHint: 'hkd', hint: '全局单币种，不含零小数货币（jpy 会与按分计价冲突放大 100 倍金额）；易支付网关基本仅支持 cny' },
+  { key: 'PRICE_CREDITS_50', group: 'payment', label: '50 张价格（所选币种）', kind: 'money', defaultHint: '68.00', hint: '单位跟随套餐币种主单位；两位小数、单档 ≤99999.99；需高于渠道最低收款额（Stripe 按币种 USD0.50/HKD4.00…，易支付站点常见 ≥1 元）；下单按分落库' },
+  { key: 'PRICE_CREDITS_100', group: 'payment', label: '100 张价格（所选币种）', kind: 'money', defaultHint: '136.00' },
+  { key: 'PRICE_CREDITS_200', group: 'payment', label: '200 张价格（所选币种）', kind: 'money', defaultHint: '272.00' },
+  { key: 'PRICE_CREDITS_500', group: 'payment', label: '500 张价格（所选币种）', kind: 'money', defaultHint: '680.00' },
+  { key: 'EPAY_API_URL', group: 'payment', label: '易支付网关地址', kind: 'url', hint: '易支付协议网关根地址，选 epay 渠道必填' },
+  { key: 'EPAY_PID', group: 'payment', label: '易支付商户 ID', kind: 'string' },
+  { key: 'EPAY_KEY', group: 'payment', label: '易支付商户密钥', kind: 'secret', hint: '只写不读' },
+  { key: 'STRIPE_SECRET_KEY', group: 'payment', label: 'Stripe 密钥', kind: 'secret', hint: 'sk_test_… / sk_live_…；只写不读' },
+  { key: 'STRIPE_WEBHOOK_SECRET', group: 'payment', label: 'Stripe Webhook 签名密钥', kind: 'secret', hint: 'whsec_…（test 模式在 Dashboard /test/webhooks 获取）；只写不读' },
+
   // ---- 危险区：会削弱安全基线，必须走专用入口 + 二次确认 ----
   { key: 'MOTIF_EXPOSE_DEV_CODE', group: 'danger', label: '验证码随接口直出', kind: 'boolean', defaultHint: 'false', danger: true, hint: '开启后任何人调注册接口都能直接拿到验证码，等于关闭邮箱验证。仅限本地联调。' },
-  { key: 'MOTIF_BILLING_MODE', group: 'danger', label: '计费模式', kind: 'enum', options: ['mock', 'live'], defaultHint: 'mock', danger: true, hint: '切到 live 后演示收银台端点一律拒绝，需已接入真实支付渠道，否则用户无法充值。' },
+  { key: 'PAYMENT_CHANNEL', group: 'danger', label: '支付渠道', kind: 'enum', options: ['mock', 'epay', 'stripe'], defaultHint: 'mock', danger: true, hint: 'mock=模拟收银台（不产生真实扣款）；epay/stripe=真实渠道，需先在「支付与套餐」保存对应凭据，否则用户无法充值。切回 mock 时存量真实渠道订单仍按创建渠道回调入账。' },
 
   // ---- 会话与安全 ----
   { key: 'MOTIF_COOKIE_SECURE', group: 'security', label: '会话 Cookie 加 Secure 标记', kind: 'boolean', defaultHint: 'false', hint: 'HTTPS 部署时开启；本地 http 联调勿开，否则浏览器会拒收 cookie。' },
@@ -115,6 +131,12 @@ export function maskSecret(value: string): string {
   if (!value) return ''
   if (value.length <= 8) return '•'.repeat(value.length)
   return `${value.slice(0, 3)}${'•'.repeat(Math.min(12, value.length - 7))}${value.slice(-4)}`
+}
+
+/** 元字符串 → 分整数；非法/超上限返回 null。金额一律以分存储与比对，避免浮点。 */
+export function yuanToFen(v: string): number | null {
+  if (!/^\d{1,5}(\.\d{1,2})?$/.test(v)) return null
+  return Math.round(Number(v) * 100)
 }
 
 /**
@@ -204,6 +226,11 @@ function validateValue(def: SettingDef, value: string): string | null {
         : `${def.label}（${def.key}）只能是 true 或 false。`
     case 'enum':
       return def.options?.includes(value) ? null : `${def.label}（${def.key}）只能是 ${def.options?.join(' / ')}。`
+    case 'money':
+      // 上限防误配超大值：转分后超出安全整数 / SQLite 整数边界会让下单整链路 500
+      return /^\d{1,5}(\.\d{1,2})?$/.test(value)
+        ? null
+        : `${def.label}（${def.key}）需为 0–99999.99 的数字，最多两位小数。`
     default:
       return null
   }
@@ -285,5 +312,17 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
   return [
     probe('generation', () => createImageProviderFromEnv(values)),
     probe('mailer', () => createMailerFromConfig(values)),
+    probe('payment', () => {
+      // 判据复用 createPaymentGateway 工厂（必需字段清单不手写第二份，防漂移）；
+      // 对 stripe 额外要求 webhook 密钥——工厂能构造但收不到合法回调，运营上必须视为未就绪
+      const channel = (values.PAYMENT_CHANNEL ?? 'mock').toLowerCase()
+      if (channel === 'mock') return null
+      if (channel !== 'epay' && channel !== 'stripe') return null
+      createPaymentGateway(channel, values)
+      if (channel === 'stripe' && !values.STRIPE_WEBHOOK_SECRET) {
+        throw new Error('Stripe 渠道还需配置 Webhook 签名密钥（whsec_…），否则支付回调无法验签入账')
+      }
+      return null
+    }),
   ]
 }

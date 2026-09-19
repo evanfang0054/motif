@@ -1,4 +1,5 @@
 'use client'
+import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminFeedbackRow } from '@/lib/client'
@@ -84,7 +85,7 @@ export default function AdminFeedbackPage() {
                 </span>
               </td>
               <td className="admin-mono" data-label="处理人">{f.resolvedBy ?? '—'}</td>
-              <td data-label="提交时间">{f.createdAt.slice(0, 19).replace('T', ' ')}</td>
+              <td data-label="提交时间">{formatDateTime(f.createdAt)}</td>
               <td data-label="操作">
                 {f.status === 'pending' ? (
                   <button className="admin-btn-primary" disabled={busy} onClick={() => void resolve(f.id)}>标记已处理</button>

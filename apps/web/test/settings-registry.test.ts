@@ -144,7 +144,7 @@ describe('读取视图（密钥只回掩码）', () => {
   it('危险区项被标记为 danger', () => {
     expect(readSettingsView(store, {}).filter((v) => v.danger).map((v) => v.key)).toEqual([
       'MOTIF_EXPOSE_DEV_CODE',
-      'MOTIF_BILLING_MODE',
+      'PAYMENT_CHANNEL',
     ])
   })
 })
@@ -254,7 +254,7 @@ describe('写入校验', () => {
   })
 
   it('写危险区键时 runtimeAffected 为 false（它们每次调用现读，不需要重建运行时）', () => {
-    const r = writeSettings(store, { MOTIF_BILLING_MODE: 'live' }, { danger: true })
+    const r = writeSettings(store, { PAYMENT_CHANNEL: 'epay' }, { danger: true })
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.runtimeAffected).toBe(false)
   })
@@ -282,5 +282,40 @@ describe('配置健康检查', () => {
     const m = configHealth(store, {}).find((h) => h.group === 'mailer')!
     expect(m.ready).toBe(false)
     expect(m.reason).toContain('SMTP_HOST')
+  })
+
+  it('payment 渠道 mock 天然就绪；选了 epay 缺配置时报告未就绪', () => {
+    expect(configHealth(store, { PAYMENT_CHANNEL: 'mock' }).find((h) => h.group === 'payment')!.ready).toBe(true)
+    const p = configHealth(store, { PAYMENT_CHANNEL: 'epay' }).find((h) => h.group === 'payment')!
+    expect(p.ready).toBe(false)
+    expect(p.reason).toContain('缺少 EPAY_API_URL')
+  })
+})
+
+describe('payment 注册表', () => {
+  it('money 类型：接受 ≤99999.99 的两位小数，拒绝负数/三位小数/超上限/非数字', () => {
+    expect(writeSettings(store, { PRICE_CREDITS_50: '68.00' }, { danger: false })).toMatchObject({ ok: true })
+    expect(writeSettings(store, { PRICE_CREDITS_50: '99999.99' }, { danger: false })).toMatchObject({ ok: true })
+    expect(writeSettings(store, { PRICE_CREDITS_50: '-1' }, { danger: false })).toMatchObject({ ok: false })
+    expect(writeSettings(store, { PRICE_CREDITS_50: '1.234' }, { danger: false })).toMatchObject({ ok: false })
+    expect(writeSettings(store, { PRICE_CREDITS_50: '100000' }, { danger: false })).toMatchObject({ ok: false })
+    expect(writeSettings(store, { PRICE_CREDITS_50: 'abc' }, { danger: false })).toMatchObject({ ok: false })
+  })
+
+  it('BILLING_CURRENCY 只接受注册币种，且不含零小数货币 jpy', () => {
+    expect(writeSettings(store, { BILLING_CURRENCY: 'cny' }, { danger: false })).toMatchObject({ ok: true })
+    expect(writeSettings(store, { BILLING_CURRENCY: 'rmb' }, { danger: false })).toMatchObject({ ok: false })
+    expect(writeSettings(store, { BILLING_CURRENCY: 'jpy' }, { danger: false })).toMatchObject({ ok: false })
+  })
+
+  it('PAYMENT_CHANNEL 是危险区键：普通入口拒收，危险入口接受 mock/epay/stripe', () => {
+    expect(writeSettings(store, { PAYMENT_CHANNEL: 'epay' }, { danger: false })).toMatchObject({ ok: false })
+    expect(writeSettings(store, { PAYMENT_CHANNEL: 'epay' }, { danger: true })).toMatchObject({ ok: true })
+    expect(writeSettings(store, { PAYMENT_CHANNEL: 'paypal' }, { danger: true })).toMatchObject({ ok: false })
+  })
+
+  it('旧键 MOTIF_BILLING_MODE 已从注册表移除', () => {
+    expect(writeSettings(store, { MOTIF_BILLING_MODE: 'live' }, { danger: true })).toMatchObject({ ok: false })
+    expect(SETTING_DEFS.some((d) => d.key === 'MOTIF_BILLING_MODE')).toBe(false)
   })
 })

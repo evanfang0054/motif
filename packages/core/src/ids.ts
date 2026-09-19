@@ -31,6 +31,10 @@ export function newMessageId(): string {
 export function newCanvasImageId(): string {
   return `cimg_${hex(32)}`
 }
+/** 暂存参考图：上传后、生成前存在于暂存表，开始生成时转正为画布图 */
+export function newReferenceUploadId(): string {
+  return `refu_${hex(32)}`
+}
 export function newSessionToken(): string {
   return hex(64)
 }

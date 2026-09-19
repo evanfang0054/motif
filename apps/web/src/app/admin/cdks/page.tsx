@@ -1,4 +1,5 @@
 'use client'
+import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type AdminCdk } from '@/lib/client'
@@ -157,7 +158,7 @@ export default function AdminCdksPage() {
                 <td data-label="面额">{c.credits}</td>
                 <td data-label="状态"><span className={`admin-chip is-${st}`}>{STATUS_LABEL[st]}</span></td>
                 <td className="admin-mono" data-label="兑换者">{c.redeemedBy ?? '—'}</td>
-                <td data-label="创建时间">{c.createdAt.slice(0, 19).replace('T', ' ')}</td>
+                <td data-label="创建时间">{formatDateTime(c.createdAt)}</td>
                 <td data-label="操作">
                   {st === 'unredeemed' ? (
                     <button className="admin-btn-danger" onClick={() => void revoke(c.code)}>作废</button>

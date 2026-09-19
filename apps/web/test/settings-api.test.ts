@@ -104,10 +104,10 @@ describe('POST /api/admin/settings（普通配置）', () => {
 
   it('危险区键混进普通保存被拒 400（即使带了 confirm）', async () => {
     const res = await settingsPOST(
-      reqWith(sessionFor('root', 'r9@b.co'), { updates: { MOTIF_BILLING_MODE: 'live' }, confirm: true })
+      reqWith(sessionFor('root', 'r9@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true })
     )
     expect(res.status).toBe(400)
-    expect(store.getSetting('MOTIF_BILLING_MODE')).toBeNull()
+    expect(store.getSetting('PAYMENT_CHANNEL')).toBeNull()
   })
 
   it('保存成功写入审计，且审计详情不含密钥值', async () => {
@@ -124,9 +124,9 @@ describe('POST /api/admin/settings（普通配置）', () => {
 
 describe('POST /api/admin/settings/danger（危险区）', () => {
   it('缺少二次确认参数被拒 400，且库中不留痕', async () => {
-    const res = await dangerPOST(reqWith(sessionFor('root', 'r11@b.co'), { updates: { MOTIF_BILLING_MODE: 'live' } }))
+    const res = await dangerPOST(reqWith(sessionFor('root', 'r11@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' } }))
     expect(res.status).toBe(400)
-    expect(store.getSetting('MOTIF_BILLING_MODE')).toBeNull()
+    expect(store.getSetting('PAYMENT_CHANNEL')).toBeNull()
   })
 
   it('confirm 为假值时同样被拒（不能用 0 / "true" 蒙混）', async () => {
@@ -134,18 +134,18 @@ describe('POST /api/admin/settings/danger（危险区）', () => {
     // SqliteError: UNIQUE constraint failed —— 测试会在任何断言之前就红掉
     const token = sessionFor('root', 'r12@b.co')
     for (const bad of [false, 0, 'true', 1]) {
-      const res = await dangerPOST(reqWith(token, { updates: { MOTIF_BILLING_MODE: 'live' }, confirm: bad }))
+      const res = await dangerPOST(reqWith(token, { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: bad }))
       expect(res.status).toBe(400)
     }
-    expect(store.getSetting('MOTIF_BILLING_MODE')).toBeNull()
+    expect(store.getSetting('PAYMENT_CHANNEL')).toBeNull()
   })
 
   it('带确认时成功并写入审计', async () => {
     const res = await dangerPOST(
-      reqWith(sessionFor('root', 'r13@b.co'), { updates: { MOTIF_BILLING_MODE: 'live' }, confirm: true })
+      reqWith(sessionFor('root', 'r13@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true })
     )
     expect(res.status).toBe(200)
-    expect(store.getSetting('MOTIF_BILLING_MODE')).toBe('live')
+    expect(store.getSetting('PAYMENT_CHANNEL')).toBe('epay')
     expect(store.listAuditPaged({ limit: 10, offset: 0 }).some((r) => r.action === 'settings.update')).toBe(true)
   })
 
