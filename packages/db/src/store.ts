@@ -436,18 +436,6 @@ export class MotifStore {
     mkdirSync(dirname(file), { recursive: true })
     this.db = new Database(file)
     applySchema(this.db)
-    this.migrate()
-  }
-
-  /**
-   * 轻量迁移：applySchema 的 CREATE TABLE IF NOT EXISTS 不会给已存在的旧表补列。
-   * 当前仅 orders.channel（订单创建时的支付渠道，mock-pay 靠它隔离真实渠道订单）。
-   */
-  private migrate(): void {
-    const orderCols = this.db.prepare('PRAGMA table_info(orders)').all() as Array<{ name: string }>
-    if (!orderCols.some((c) => c.name === 'channel')) {
-      this.db.prepare("ALTER TABLE orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'mock'").run()
-    }
   }
 
   close(): void {

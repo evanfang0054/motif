@@ -380,11 +380,17 @@ const PACKAGE_FALLBACK: ReadonlyArray<{ credits: number; fen: number }> = [
  * amountTotal 一律「分」；清空配置键 = 删除行 → 回退默认（与 settings 清空语义一致）。
  */
 export function resolvePackages(store: MotifStore, env: Record<string, string | undefined>): CreditPackage[] {
-  const currency = resolveSetting(store, env, 'BILLING_CURRENCY') ?? 'hkd'
+  // 归一小写：Stripe 要求小写 ISO 币种，播种绕过校验的大写值在这里兜住
+  const currency = (resolveSetting(store, env, 'BILLING_CURRENCY') ?? 'hkd').toLowerCase()
   return PACKAGE_FALLBACK.map(({ credits, fen }) => {
-    const raw = resolveSetting(store, env, `PRICE_CREDITS_${credits}`)
-    const amountTotal = raw !== null ? (yuanToFen(raw) ?? fen) : fen
-    return { id: `credits_${credits}`, label: `${credits} 张额度`, credits, amountTotal, currency }
+    const key = `PRICE_CREDITS_${credits}`
+    const raw = resolveSetting(store, env, key)
+    const parsed = raw !== null ? yuanToFen(raw) : null
+    if (raw !== null && parsed === null) {
+      // 直改库/播种可绕过 money 校验：坏值静默回退会让运营无信号，这里留一条日志
+      console.warn(`[billing] ${key} 配置非法（${raw}），已回退默认价`)
+    }
+    return { id: `credits_${credits}`, label: `${credits} 张额度`, credits, amountTotal: parsed ?? fen, currency }
   })
 }
 

@@ -42,10 +42,14 @@ describe('creditPaidOrder（幂等入账）', () => {
     expect(store.getOrder(epayOrder)!.channel).toBe('epay')
     expect(store.getOrder(orderId)!.channel).toBe('mock')
   })
-  it('到账记录进入额度流水（source=order_paid，守恒可追溯）', () => {
+  it('到账写入额度流水（source=order_paid，守恒可追溯）', () => {
     creditPaidOrder(store, orderId, 6800)
-    const updated = store.getUserById(userId)!
-    expect(updated.credits).toBe(50)
+    // 断言真正读 credit_ledger：锁定「入账必落流水」而非只看余额
+    expect(store.listLedger({ userId, source: 'order_paid' })[0]).toMatchObject({
+      delta: 50,
+      refId: orderId,
+      source: 'order_paid',
+    })
   })
 })
 

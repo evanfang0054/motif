@@ -175,6 +175,7 @@ export function applySchema(db: Database): void {
     "ALTER TABLE feedback ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
     'ALTER TABLE feedback ADD COLUMN resolved_at TEXT',
     'ALTER TABLE feedback ADD COLUMN resolved_by TEXT',
+    "ALTER TABLE orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'mock'",
   ]) {
     try {
       db.exec(ddl)

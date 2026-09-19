@@ -15,11 +15,14 @@ function Panel() {
   const [credits, setCredits] = useState<number | null>(null)
   const [errText, setErrText] = useState(orderId ? '' : '链接缺少订单号，请从工作台重新发起充值。')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dead = useRef(false) // StrictMode 双挂载防护：cleanup 置位后，在途回调全部自弃
 
   const query = useCallback(
     async (attempt: number) => {
+      if (dead.current) return
       try {
         const r = await api.billingOrderStatus(orderId)
+        if (dead.current) return
         if (r.status === 'paid') {
           setState('paid')
           setCredits(r.credits ?? null)
@@ -30,8 +33,11 @@ function Panel() {
           setErrText('长时间未确认到账。可稍后在工作台查看额度；若已扣款请联系站点管理员。')
           return
         }
-        timer.current = setTimeout(() => void query(attempt + 1), 3000)
+        timer.current = setTimeout(() => {
+          if (!dead.current) void query(attempt + 1)
+        }, 3000)
       } catch (e) {
+        if (dead.current) return
         setState('error')
         setErrText(
           e instanceof ApiError && e.status === 401
@@ -45,9 +51,11 @@ function Panel() {
 
   useEffect(() => {
     if (state !== 'pending' || !orderId) return
+    dead.current = false
     void query(0)
     return () => {
-      if (timer.current) clearTimeout(timer.current) // 卸载后不再多打一次
+      dead.current = true
+      if (timer.current) clearTimeout(timer.current)
     }
   }, [state, orderId, query])
 
