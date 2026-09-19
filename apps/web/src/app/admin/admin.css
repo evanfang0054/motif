@@ -266,8 +266,8 @@
 }
 
 .admin-btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--surface-accent);
+  border-color: var(--surface-accent);
   color: var(--button-text, #fff);
 }
 

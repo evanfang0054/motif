@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@heroui/styles"; /* 顺序必须：tailwindcss 在前（heroui-migration P1 原子变更） */
 
 /*
  * Motif 设计令牌 —— 亮色为基准（默认），暗色由 html[data-theme="dark"] 控制
@@ -22,9 +23,9 @@
   --border-strong: #d3c8b6;
   --muted: #6c6a64;
   --muted-strong: #3d3d3a;
-  --accent: #efe9de;
-  --accent-hover: #e8e0d2;
-  --accent-soft: #f5f0e8;
+  --surface-accent: #efe9de;
+  --surface-accent-hover: #e8e0d2;
+  --surface-accent-soft: #f5f0e8;
   --button: #efe9de;
   --button-hover: #e8e0d2;
   --button-text: #141413;
@@ -70,9 +71,9 @@ html[data-theme="dark"] {
     --border-strong: #4a453c;
     --muted: #a09d96;
     --muted-strong: #d8d4ca;
-    --accent: #2a2723;
-    --accent-hover: #332f2a;
-    --accent-soft: #252320;
+    --surface-accent: #2a2723;
+    --surface-accent-hover: #332f2a;
+    --surface-accent-soft: #252320;
     --button: #2a2723;
     --button-hover: #332f2a;
     --button-text: #faf9f5;
@@ -99,6 +100,27 @@ html[data-theme="dark"] {
     --scrollbar-track: transparent;
     --scrollbar-thumb: #45403a;
     --scrollbar-thumb-hover: #5a544b;
+}
+
+/*
+ * HeroUI 令牌桥接（spec §5 · heroui-migration P1）：
+ * @heroui/styles 的 -hover/-soft/-soft-foreground 家族均由基令牌 color-mix 派生，
+ * 因此这里只覆盖基令牌；同名项目令牌（--background/--foreground/--danger 等定义于上方）
+ * 按「后定义者胜」级联自动成为 HeroUI 组件取值（正向桥接）。
+ * --accent 是唯一无项目对应的品牌语义色：HeroUI 默认蓝紫，改接珊瑚。
+ * 亮暗同值 #cc785c：暗下对最深表面 5.47:1 已达标，提亮反而降低珊瑚底奶白文字对比。
+ * --danger 保持双角色：按钮底色沿用上方 --danger（白字对比更好）；
+ * 表面危险文字角色新增 --danger-quiet（暗色提亮至主要表面 ≥4.5:1，P3 admin 消费，关 plans 待办#1）。
+ */
+:root,
+[data-theme="light"] {
+  --accent: var(--brand-warm); /* 珊瑚 #cc785c */
+  --danger-quiet: var(--danger); /* 亮色沿用 #c64545 */
+}
+
+html[data-theme="dark"] {
+  --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
+  --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
 }
 
 @theme inline {
@@ -1176,7 +1198,7 @@ body {
   border-radius: 6px;
   padding: 4px 12px;
   cursor: pointer;
-  background: var(--accent);
+  background: var(--surface-accent);
   color: var(--button-text, #fff);
 }
 
