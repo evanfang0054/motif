@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, Input, Label, Link, TextField, TextArea } from '@heroui/react'
 import { Modal as HeroModal } from '@heroui/react'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
@@ -86,19 +87,34 @@ function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onP
       <p className="text-sm" style={{ color: 'var(--muted)' }}>{payNote}</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {packages.map((pkg) => (
-          <button key={pkg.id} className="ws-size-chip" style={{ padding: '12px' }} disabled={busyId !== null} onClick={() => void checkout(pkg)}>
-            <b className="text-sm">{pkg.label}</b>
-            <br />
-            <span style={{ color: 'var(--muted)' }}>
-              {fmtPrice(pkg)} {busyId === pkg.id ? (channel === 'mock' ? '· 支付中…' : '· 跳转支付…') : ''}
+          <Button
+            key={pkg.id}
+            variant="outline"
+            className="h-auto w-full text-start"
+            isDisabled={busyId !== null}
+            onPress={() => void checkout(pkg)}
+          >
+            <span className="block">
+              <b className="text-sm">{pkg.label}</b>
+              <br />
+              <span style={{ color: 'var(--muted)' }}>
+                {fmtPrice(pkg)} {busyId === pkg.id ? (channel === 'mock' ? '· 支付中…' : '· 跳转支付…') : ''}
+              </span>
             </span>
-          </button>
+          </Button>
         ))}
       </div>
-      {error && <div className="lp-alert lp-alert-error mt-3">{error}</div>}
-      <button className="lp-link-btn mt-4" onClick={onRedeem}>
+      {error && (
+        <Alert status="danger" className="mt-3">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{error}</Alert.Title>
+          </Alert.Content>
+        </Alert>
+      )}
+      <Link onPress={onRedeem} className="mt-4 block w-fit" style={{ fontSize: 13, color: 'var(--muted)' }}>
         已有 CDK？前往兑换 →
-      </button>
+      </Link>
     </Modal>
   )
 }
@@ -127,12 +143,21 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
     <Modal title="CDK 兑换" onClose={onClose}>
       <p className="text-sm" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</p>
       <form onSubmit={submit} className="mt-3 flex gap-2">
-        <input className="lp-input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="输入 CDK" style={{ flex: 1 }} />
-        <button className="ws-btn ws-btn-primary" type="submit" disabled={busy || !code.trim()}>
+        <TextField aria-label="CDK" className="min-w-0 flex-1" value={code} onChange={setCode}>
+          <Input placeholder="输入 CDK" />
+        </TextField>
+        <Button type="submit" variant="primary" isDisabled={busy || !code.trim()}>
           {busy ? '兑换中…' : '兑换'}
-        </button>
+        </Button>
       </form>
-      {error && <div className="lp-alert lp-alert-error mt-3">{error}</div>}
+      {error && (
+        <Alert status="danger" className="mt-3">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{error}</Alert.Title>
+          </Alert.Content>
+        </Alert>
+      )}
     </Modal>
   )
 }
@@ -149,16 +174,18 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
         当前已邀请 <b>{user.invitedCount}</b> 人，你的邀请码：<b>{user.inviteCode}</b>
       </p>
       <div className="mt-3 flex gap-2">
-        <input className="lp-input" readOnly value={link} style={{ flex: 1 }} onFocus={(e) => e.target.select()} />
-        <button
-          className="ws-btn ws-btn-primary"
-          onClick={() => {
+        <TextField aria-label="邀请链接" className="min-w-0 flex-1" value={link}>
+          <Input readOnly onFocus={(e) => e.target.select()} />
+        </TextField>
+        <Button
+          variant="primary"
+          onPress={() => {
             void navigator.clipboard?.writeText(link)
             setCopied(true)
           }}
         >
           {copied ? '已复制' : '复制'}
-        </button>
+        </Button>
       </div>
     </Modal>
   )
@@ -187,11 +214,20 @@ function FeedbackDialog({ onClose, onSent }: { onClose: () => void; onSent: () =
   return (
     <Modal title="提交反馈" onClose={onClose}>
       <form onSubmit={submit}>
-        <textarea className="ws-textarea" value={content} onChange={(e) => setContent(e.target.value)} placeholder="说说你的使用感受，或遇到的问题…" />
-        {error && <div className="lp-alert lp-alert-error mt-2">{error}</div>}
-        <button className="ws-btn ws-btn-primary mt-3 w-full" style={{ justifyContent: 'center' }} type="submit" disabled={busy || !content.trim()}>
+        <TextField aria-label="反馈内容" className="w-full" value={content} onChange={setContent}>
+          <TextArea placeholder="说说你的使用感受，或遇到的问题…" rows={5} className="w-full min-h-[120px] resize-y" />
+        </TextField>
+        {error && (
+          <Alert status="danger" className="mt-2">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{error}</Alert.Title>
+            </Alert.Content>
+          </Alert>
+        )}
+        <Button className="mt-3 w-full" type="submit" variant="primary" isDisabled={busy || !content.trim()}>
           {busy ? '提交中…' : '提交反馈'}
-        </button>
+        </Button>
       </form>
     </Modal>
   )
@@ -260,30 +296,39 @@ function ProfileDialog({
       <p className="text-xs" style={{ color: 'var(--muted)' }}>{user.email}</p>
 
       <form onSubmit={saveProfile} className="mt-3">
-        <label className="lp-label" htmlFor="pf-name">昵称</label>
-        <div className="flex gap-2">
-          <input id="pf-name" className="lp-input" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
-          <button className="ws-btn ws-btn-primary" type="submit" disabled={busy || !name.trim()}>保存昵称</button>
+        <div className="flex items-end gap-2">
+          <TextField className="min-w-0 flex-1" value={name} onChange={setName}>
+            <Label>昵称</Label>
+            <Input />
+          </TextField>
+          <Button type="submit" variant="primary" isDisabled={busy || !name.trim()}>保存昵称</Button>
         </div>
       </form>
 
       <div className="my-4" style={{ borderTop: '1px solid var(--border)' }} />
 
       <form onSubmit={changePassword}>
-        <div className="lp-field">
-          <label className="lp-label" htmlFor="pf-oldpw">当前密码</label>
-          <input id="pf-oldpw" className="lp-input" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} autoComplete="current-password" />
-        </div>
-        <div className="lp-field">
-          <label className="lp-label" htmlFor="pf-newpw">新密码（至少 6 位）</label>
-          <input id="pf-newpw" className="lp-input" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
-        </div>
-        <button className="ws-btn mt-3 w-full" style={{ justifyContent: 'center' }} type="submit" disabled={busy || !oldPassword || !newPassword}>
+        <TextField type="password" autoComplete="current-password" value={oldPassword} onChange={setOldPassword} className="mt-3.5">
+          <Label>当前密码</Label>
+          <Input />
+        </TextField>
+        <TextField type="password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} className="mt-3.5">
+          <Label>新密码（至少 6 位）</Label>
+          <Input />
+        </TextField>
+        <Button className="mt-3 w-full" type="submit" variant="secondary" isDisabled={busy || !oldPassword || !newPassword}>
           修改密码
-        </button>
+        </Button>
       </form>
 
-      {error && <div className="lp-alert lp-alert-error mt-3">{error}</div>}
+      {error && (
+        <Alert status="danger" className="mt-3">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>{error}</Alert.Title>
+          </Alert.Content>
+        </Alert>
+      )}
     </Modal>
   )
 }
