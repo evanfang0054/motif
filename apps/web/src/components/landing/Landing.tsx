@@ -60,7 +60,7 @@ function Landing() {
             </p>
             <div className="lp-actions">
               <Button variant="primary" render={anchorRender({ href: '#auth', onClick: goLogin })}>立即开始</Button>
-              <Button variant="ghost" render={anchorRender({ href: '#showcase' })}>先看效果</Button>
+              <Button variant="outline" render={anchorRender({ href: '#showcase' })}>先看效果</Button>
             </div>
             <div className="lp-hero-points">
               <span>✓ 注册即送 3 张额度</span>

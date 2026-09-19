@@ -89,12 +89,12 @@ function Panel() {
         <Alert status="danger" role="alert" className="mt-4">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Description>{errText}</Alert.Description>
-            <Button size="sm" variant="ghost" className="mt-2" onPress={() => { setErrText(''); setState('pending') }}>重新查询</Button>
+            <Alert.Title>{errText}</Alert.Title>
+            <Button size="sm" variant="outline" className="mt-2" onPress={() => { setErrText(''); setState('pending') }}>重新查询</Button>
           </Alert.Content>
         </Alert>
       )}
-      <Button variant="primary" className="mt-4" render={anchorRender({ href: '/' })}>返回工作台</Button>
+      <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>返回工作台</Button>
     </Card>
   )
 }

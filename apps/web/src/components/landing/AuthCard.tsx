@@ -225,7 +225,7 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
                 <Label>邮箱验证码</Label>
                 <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
               </TextField>
-              <Button type="button" variant="ghost" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
+              <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
                 {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
               </Button>
             </div>
