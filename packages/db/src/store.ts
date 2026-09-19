@@ -1297,6 +1297,11 @@ export class MotifStore {
       .run(input.actorId, input.action, input.targetType ?? null, input.targetId ?? null, input.detail ?? null, nowIso())
   }
 
+  /** 审计保留清理：删除截止时间之前的记录，返回删除行数（回调端点防灌爆的配套机制） */
+  deleteAuditBefore(cutoffIso: string): number {
+    return this.db.prepare('DELETE FROM admin_audit WHERE created_at < ?').run(cutoffIso).changes as number
+  }
+
   /** 审计流水（可按操作者过滤，倒序，默认上限 100 条） */
   listAudit(filter: { actorId?: string; limit?: number } = {}): Array<{
     id: number

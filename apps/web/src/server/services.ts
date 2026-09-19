@@ -458,3 +458,19 @@ export async function startCheckout(store: MotifStore, env: Record<string, strin
     throw new ServiceError(503, CHECKOUT_UNAVAILABLE)
   }
 }
+
+/**
+ * 回调入账：金额核对（分对分）→ payOrder 条件更新（pending→paid 仅一次）→ addCredits。
+ * ok=入账；duplicate=重复通知（幂等忽略）；mismatch=金额不符（拒绝）；
+ * not_found=订单不可见（异常时序），区别于 duplicate——调用方回 fail 让网关按策略重试，防真实付款丢单。
+ */
+export function creditPaidOrder(store: MotifStore, orderId: string, paidFen: number): 'ok' | 'duplicate' | 'mismatch' | 'not_found' {
+  const order = store.getOrder(orderId)
+  if (!order) return 'not_found'
+  if (order.status !== 'pending') return 'duplicate'
+  if (order.amountTotal !== paidFen) return 'mismatch'
+  const credits = store.payOrder(orderId, order.userId)
+  if (credits === null) return 'duplicate' // 并发下另一通知抢先入账
+  store.addCredits(order.userId, credits, { source: 'order_paid', refId: orderId, note: '订单支付到账' })
+  return 'ok'
+}
