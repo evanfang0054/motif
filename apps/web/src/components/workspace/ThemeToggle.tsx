@@ -63,8 +63,6 @@ function ThemeToggle() {
         >
           {MODE_LABEL[m]}
         </Button>
-          {MODE_LABEL[m]}
-        </Button>
       ))}
     </ButtonGroup>
   )
