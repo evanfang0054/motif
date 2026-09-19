@@ -115,7 +115,7 @@ export default function AdminAuditPage() {
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
-      <Drawer.Backdrop isOpen={detail !== null} onOpenChange={(o) => { if (!o) setDetail(null) }}>
+      <Drawer.Backdrop isOpen={detail !== null} isDismissable onOpenChange={(o) => { if (!o) setDetail(null) }}>
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
