@@ -121,6 +121,7 @@ html[data-theme="dark"] {
 html[data-theme="dark"] {
   --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
   --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
+  --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
 }
 
 /*

@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Input, NumberField, SearchField, Select, ListBox, Table, TextField } from '@heroui/react'
+import { Button, Input, NumberField, SearchField, Select, ListBox, Table, TextField } from '@heroui/react'
 import { api, type AdminCdk } from '@/lib/client'
 import { buildCdkCsv } from '@/lib/admin-csv'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
@@ -162,8 +162,8 @@ export default function AdminCdksPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <button onClick={() => void copyCodes()} disabled={items.length === 0}>复制列表</button>
-        <button onClick={exportCsv} disabled={items.length === 0}>导出 CSV</button>
+        <Button variant="secondary" onPress={() => void copyCodes()} isDisabled={items.length === 0}>复制列表</Button>
+        <Button variant="secondary" onPress={exportCsv} isDisabled={items.length === 0}>导出 CSV</Button>
         <ListCount loading={loading} total={total} unit="个" />
       </div>
 

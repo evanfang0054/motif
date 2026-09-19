@@ -255,8 +255,7 @@
 }
 
 .admin-btn-primary,
-.admin-btn-danger,
-.admin-toolbar button {
+.admin-btn-danger {
   padding: 7px 14px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -276,7 +275,6 @@
   border-color: var(--danger);
 }
 
-.admin-toolbar button:disabled,
 .admin-btn-primary:disabled,
 .admin-btn-danger:disabled {
   opacity: 0.5;
@@ -674,6 +672,6 @@
 /* 表格视窗内滚动（P3 复查反馈）：列表在自身视口内滚动，分页器固定在表格下方可见，
    不再要求整页滚动到页尾。高度 = 视口 - 头部/标题/工具栏/分页器的经验占位。 */
 .admin-table-scroll {
-  max-height: calc(100dvh - 300px);
+  max-height: calc(100dvh - 320px);
   min-height: 160px;
 }
