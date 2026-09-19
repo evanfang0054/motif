@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Checkbox, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
+import { Checkbox, Chip, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { useConfirm } from '@/components/admin/confirm'
@@ -292,10 +292,13 @@ export default function AdminSettingsPage() {
 
       <div className="admin-health" id="settings-health">
         {health.map((h) => (
-          <div className="admin-health-item" key={h.group}>
-            {h.ready ? '✅' : '⚠️'} {HEALTH_LABEL[h.group] ?? h.group}
-            {h.ready ? '已就绪' : `未就绪：${h.reason ?? '配置不完整'}`}
-          </div>
+          <Chip
+            key={h.group}
+            color={h.ready ? 'success' : 'warning'}
+            title={h.ready ? undefined : h.reason ?? '配置不完整'}
+          >
+            {HEALTH_LABEL[h.group] ?? h.group}：{h.ready ? '已就绪' : '未就绪'}
+          </Chip>
         ))}
       </div>
 

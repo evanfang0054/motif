@@ -675,3 +675,87 @@
   max-height: calc(100dvh - 320px);
   min-height: 160px;
 }
+
+/* 概览可视化（P3 复查）：成功率环形图 + CDK 状态占比条 + 额度来源构成条 */
+.admin-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.admin-ring-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.admin-ring {
+  width: 56px;
+  height: 56px;
+}
+.admin-ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.admin-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.admin-bar-label {
+  width: 52px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-bar {
+  flex: 1;
+}
+.admin-bar-value {
+  min-width: 36px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.admin-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.admin-source-label {
+  width: 104px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-source-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+.admin-source-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.admin-source-fill.is-pos {
+  background: var(--success);
+}
+.admin-source-fill.is-neg {
+  background: var(--danger-quiet);
+}
+.admin-source-value {
+  width: 76px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
