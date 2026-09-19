@@ -1,7 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, ButtonGroup, Modal, Toolbar } from '@heroui/react'
 import type { CanvasImage } from '@motif/core'
+import { anchorRender } from '@/components/ui/anchor-button'
 import { hitTest, toWorld, type Rect } from './canvas-geometry'
 
 /**
@@ -67,6 +69,20 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
   const dragRef = useRef<{ id: string; pointerId: number; startX: number; startY: number; orig: Pos; moved: boolean } | null>(null)
   const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null)
   const fittedRef = useRef<string | null>(null)
+  // 灯箱关闭后还原焦点（条件挂载、无触发器上下文，GDD L4-2-G1-A1 同语义）
+  const lightboxRestoreRef = useRef<HTMLElement | null>(null)
+
+  // 灯箱打开时记录焦点来源；关闭（含 Esc/遮罩/✕）后还原——
+  // 还原需 setTimeout 让 Modal 先完成卸载，否则其焦点收尾会把焦点重置回 body（冒烟 P-1）
+  useEffect(() => {
+    if (preview) {
+      lightboxRestoreRef.current = document.activeElement as HTMLElement | null
+      return () => {
+        const el = lightboxRestoreRef.current
+        setTimeout(() => el?.focus?.(), 0)
+      }
+    }
+  }, [preview])
 
   // 新图片出现时分配下一个网格槽位
   useEffect(() => {
@@ -358,57 +374,65 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
 
         {/* 选中图片上方浮动工具栏 */}
         {singleSelected && (
-          <div
+          <Toolbar
+            aria-label="图片操作"
             className="canvas-toolbar"
             style={{ left: singleSelected.screenX, top: singleSelected.screenY }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <button type="button" className="canvas-tool-btn" title="放大预览" onClick={() => setPreview(singleSelected.img)}>
+            <Button isIconOnly size="sm" variant="secondary" aria-label="放大预览" onPress={() => setPreview(singleSelected.img)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M15 3h6v6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /><path d="M9 21H3v-6" />
               </svg>
-            </button>
-            <button type="button" className="canvas-tool-btn canvas-tool-btn-text" title="加入参考图，并把编号写进提示词" onClick={() => onAddReference(singleSelected.img)}>
+            </Button>
+            <Button size="sm" variant="secondary" aria-label="加入参考图，并把编号写进提示词" onPress={() => onAddReference(singleSelected.img)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M16 5h6" /><path d="M19 2v6" /><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /><circle cx="9" cy="9" r="2" />
               </svg>
               @ 引用
-            </button>
-            <a className="canvas-tool-btn" title="下载" href={singleSelected.img.src} download={singleSelected.img.name}>
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="secondary"
+              aria-label="下载"
+              render={anchorRender({ href: singleSelected.img.src, download: singleSelected.img.name })}
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" />
               </svg>
-            </a>
+            </Button>
             <span className="canvas-tool-divider" />
-            <button type="button" className="canvas-tool-btn canvas-tool-btn-danger" title="删除所选图片" onClick={() => onRemoveImages([singleSelected.img])}>
+            <Button isIconOnly size="sm" variant="danger" aria-label="删除所选图片" onPress={() => onRemoveImages([singleSelected.img])}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               </svg>
-            </button>
-          </div>
+            </Button>
+          </Toolbar>
         )}
 
         {/* 多选批量工具栏 */}
         {multiSelected && (
-          <div
+          <Toolbar
+            aria-label="批量操作"
             className="canvas-toolbar"
             style={{ left: multiSelected.screenX, top: multiSelected.screenY }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <span className="canvas-tool-btn canvas-tool-btn-text">已选 {multiSelected.imgs.length} 张</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>已选 {multiSelected.imgs.length} 张</span>
             <span className="canvas-tool-divider" />
-            <button
-              type="button"
-              className="canvas-tool-btn canvas-tool-btn-danger"
-              title="删除所选图片"
+            <Button
+              isIconOnly
+              size="sm"
+              variant="danger"
               aria-label="删除所选图片"
-              onClick={() => onRemoveImages(multiSelected.imgs)}
+              onPress={() => onRemoveImages(multiSelected.imgs)}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               </svg>
-            </button>
-          </div>
+            </Button>
+          </Toolbar>
         )}
       </div>
 
@@ -420,21 +444,23 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
             <>
               <span className="canvas-pill-divider" />
               <span className="canvas-pill-count">已选 {selected.size}</span>
-              <button type="button" className="canvas-pill-btn" onClick={() => setSelected(new Set())}>清空选择</button>
+              <Button size="sm" variant="secondary" onPress={() => setSelected(new Set())}>清空选择</Button>
             </>
           )}
         </div>
-        <button type="button" className="ws-btn pointer-events-auto" onClick={arrange}>整理布局</button>
+        <Button variant="secondary" className="pointer-events-auto" onPress={arrange}>整理布局</Button>
       </div>
 
       {/* 右下缩放控件 */}
-      <div className="canvas-zoombar">
-        <button type="button" className="canvas-zoom-btn" aria-label="缩小" onClick={() => zoomAt(1 / ZOOM_STEP)}>−</button>
-        <button type="button" className="canvas-zoom-value" title="重置为 100%" onClick={() => zoomAt(1 / view.scale)}>{Math.round(view.scale * 100)}%</button>
-        <button type="button" className="canvas-zoom-btn" aria-label="放大" onClick={() => zoomAt(ZOOM_STEP)}>＋</button>
+      <Toolbar className="canvas-zoombar" aria-label="缩放">
+        <ButtonGroup>
+          <Button isIconOnly size="sm" variant="secondary" aria-label="缩小" onPress={() => zoomAt(1 / ZOOM_STEP)}>−</Button>
+          <Button size="sm" variant="secondary" aria-label="重置为 100%" onPress={() => zoomAt(1 / view.scale)}>{Math.round(view.scale * 100)}%</Button>
+          <Button isIconOnly size="sm" variant="secondary" aria-label="放大" onPress={() => zoomAt(ZOOM_STEP)}>＋</Button>
+        </ButtonGroup>
         <span className="canvas-tool-divider" />
-        <button type="button" className="canvas-zoom-btn canvas-zoom-btn-text" onClick={() => fitView(images, positions)}>适应</button>
-      </div>
+        <Button size="sm" variant="ghost" onPress={() => fitView(images, positions)}>适应</Button>
+      </Toolbar>
 
       {/* 屏幕阅读器图片清单 */}
       <ul className="sr-only">
@@ -443,16 +469,29 @@ function CanvasBoard({ images, onRemoveImages, onAddReference }: Props) {
         ))}
       </ul>
 
-      {/* 灯箱预览 */}
+      {/* 灯箱预览（HeroUI Modal 容器；点背景/✕/Esc 关闭） */}
       {preview && (
-        <div className="canvas-lightbox" role="dialog" aria-label="图片预览" onClick={() => setPreview(null)}>
-          <button type="button" className="canvas-lightbox-close" aria-label="关闭预览" onClick={() => setPreview(null)}>✕</button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview.src} alt={preview.name} onClick={(e) => e.stopPropagation()} />
-          <p className="canvas-lightbox-caption">
-            #{String(preview.serial).padStart(3, '0')} {preview.name} · {preview.width}×{preview.height}
-          </p>
-        </div>
+        <Modal.Backdrop
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setPreview(null)
+          }}
+        >
+          <Modal.Container>
+            <Modal.Dialog aria-label="图片预览" className="max-w-[min(920px,92vw)]">
+              <Modal.CloseTrigger aria-label="关闭预览">✕</Modal.CloseTrigger>
+              <Modal.Body className="p-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview.src} alt={preview.name} onClick={(e) => e.stopPropagation()} style={{ display: 'block', maxWidth: '100%', maxHeight: '72vh' }} />
+              </Modal.Body>
+              <Modal.Footer className="justify-center">
+                <p className="canvas-lightbox-caption">
+                  #{String(preview.serial).padStart(3, '0')} {preview.name} · {preview.width}×{preview.height}
+                </p>
+              </Modal.Footer>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
       )}
     </div>
   )

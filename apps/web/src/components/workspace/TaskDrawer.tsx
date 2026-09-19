@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Drawer } from '@heroui/react'
+import { Button, Drawer, Input, TextField } from '@heroui/react'
 import type { Topic } from '@motif/core'
 import { TOPIC_STATUS_LABEL } from '@motif/core'
 
@@ -58,28 +58,27 @@ function TaskDrawer(p: Props) {
                       setRenaming(null)
                     }}
                   >
-                    <input
-                      className="lp-input"
-                      value={renameValue}
-                      autoFocus
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <button
-                      className="ws-btn ws-btn-primary"
+                    <TextField aria-label="任务名称" className="min-w-0 flex-1" value={renameValue} onChange={setRenameValue}>
+                      <Input autoFocus onClick={(e) => e.stopPropagation()} />
+                    </TextField>
+                    <Button
                       type="submit"
+                      variant="primary"
+                      size="sm"
                       onClick={(e) => e.stopPropagation()}
                     >
                       保存
-                    </button>
+                    </Button>
                   </form>
                 ) : (
                   <>
                     <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
                     <span className="ws-badge">{TOPIC_STATUS_LABEL[t.status] ?? t.status}</span>
-                    <button
-                      className="ws-btn"
-                      title="重命名任务"
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isIconOnly
+                      aria-label="重命名任务"
                       onClick={(e) => {
                         e.stopPropagation()
                         setRenaming(t.id)
@@ -87,29 +86,31 @@ function TaskDrawer(p: Props) {
                       }}
                     >
                       ✎
-                    </button>
-                    <button
-                      className="ws-btn"
-                      title="删除任务"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      isIconOnly
+                      aria-label="删除任务"
                       onClick={(e) => {
                         e.stopPropagation()
                         p.onDelete(t.id)
                       }}
                     >
                       🗑
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
             ))}
           </Drawer.Body>
           <Drawer.Footer className="flex flex-col gap-2">
-            <button className="ws-btn" onClick={p.onInvite} style={{ justifyContent: 'center' }}>
+            <Button variant="secondary" className="w-full" onPress={p.onInvite}>
               邀请好友（获得额度）
-            </button>
-            <button className="ws-btn" onClick={p.onFeedback} style={{ justifyContent: 'center' }}>
+            </Button>
+            <Button variant="secondary" className="w-full" onPress={p.onFeedback}>
               提交反馈
-            </button>
+            </Button>
           </Drawer.Footer>
         </Drawer.Dialog>
       </Drawer.Content>

@@ -1,5 +1,6 @@
 'use client'
 
+import { Button, Chip } from '@heroui/react'
 import { TEMPLATES } from '@/lib/templates'
 
 /** 画布空态：模板画廊，点击模板写入提示词、张数与尺寸 */
@@ -14,18 +15,21 @@ function TemplateGallery({ onSelect }: { onSelect: (key: string) => void }) {
       </div>
       <div className="tpl-grid">
         {TEMPLATES.map((tpl) => (
-          <button key={tpl.key} className="tpl-card" onClick={() => onSelect(tpl.key)}>
-            <img src={tpl.preview} alt={tpl.title} loading="lazy" />
-            <span className="tpl-card-body block">
-              <span className="tpl-card-title block">{tpl.title}</span>
-              <span className="tpl-card-desc block">{tpl.desc}</span>
-              <span className="tpl-card-meta">
-                <span className="tpl-tag">{tpl.needsReference ? '需参考图' : '免参考'}</span>
-                <span className="tpl-tag">{tpl.count} 张</span>
-                <span className="tpl-tag">{tpl.sizeLabel}</span>
+          <Button key={tpl.key} variant="secondary" className="h-auto w-full p-0 text-start align-top" onPress={() => onSelect(tpl.key)}>
+            <span className="block w-full overflow-hidden rounded-2xl">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={tpl.preview} alt={tpl.title} loading="lazy" style={{ width: '100%', display: 'block' }} />
+              <span className="tpl-card-body block">
+                <span className="tpl-card-title block">{tpl.title}</span>
+                <span className="tpl-card-desc block">{tpl.desc}</span>
+                <span className="tpl-card-meta">
+                  <Chip size="sm">{tpl.needsReference ? '需参考图' : '免参考'}</Chip>
+                  <Chip size="sm">{tpl.count} 张</Chip>
+                  <Chip size="sm">{tpl.sizeLabel}</Chip>
+                </span>
               </span>
             </span>
-          </button>
+          </Button>
         ))}
       </div>
     </div>

@@ -13,6 +13,8 @@ import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
 import { PasswordHintBanner } from './PasswordHintBanner'
+import { AlertDialog, Button, Spinner } from '@heroui/react'
+import { showToast } from '@/components/ui/toast'
 
 export interface PanelState {
   prompt: string
@@ -54,19 +56,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
     | { kind: 'topic'; id: string; title: string }
     | null
   >(null)
-  const [toast, setToast] = useState<string | null>(null)
   // 强制改密软提示仅本次会话可关闭；下次登录仍会提醒（标记仍在库里）
   const [passwordHintDismissed, setPasswordHintDismissed] = useState(false)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
-
-  const showToast = useCallback((msg: string, dwellMs = 2600) => {
-    setToast(msg)
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    // 失败/退款等重要提示驻留更久，普通操作反馈保持轻量
-    toastTimer.current = setTimeout(() => setToast(null), dwellMs)
-  }, [])
 
   /** 统一入口：写 detail 前检测消息状态迁移（取消/失败/完成），弹出对应提示 */
   const applyDetail = useCallback(
@@ -78,18 +71,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
         if (active.status === 'canceled') {
           const done = d.canvasImages.filter((i) => i.messageId === active.id).length
           const refund = active.requestedCount - done
-          if (refund > 0) showToast(`任务已取消，未完成的 ${refund} 张额度已退回。`, 6000)
+          if (refund > 0) showToast({ tone: 'info', message: `任务已取消，未完成的 ${refund} 张额度已退回。`, timeoutMs: 6000 })
         } else if (active.status === 'failed') {
-          showToast(`生成失败：${active.error ?? '未知原因'}。`, 6000)
+          showToast({ tone: 'danger', message: `生成失败：${active.error ?? '未知原因'}。`, timeoutMs: 6000 })
         } else if (active.status === 'completed') {
-          showToast('生成完成 ✓')
+          showToast({ tone: 'success', message: '生成完成 ✓' })
         }
       }
       if (active) lastMsgStatusRef.current = active.status
       detailRef.current = d
       setDetail(d)
     },
-    [showToast]
+    []
   )
 
   const refreshTopics = useCallback(async (): Promise<Topic[]> => {
@@ -187,13 +180,13 @@ function Workspace({ initialUser }: { initialUser: User }) {
         size: tpl.size,
         referenceIds: p.referenceIds,
       }))
-      showToast(`已套用「${tpl.title}」模板`)
+      showToast({ tone: 'info', message: `已套用「${tpl.title}」模板` })
       // 额度预警前置：新用户余额往往小于模板张数，别等提交时才发现
       if (user.credits < tpl.count) {
-        showToast(`注意：「${tpl.title}」需 ${tpl.count} 张额度，当前余额 ${user.credits} 张；可调小张数或点击「充值」`, 5200)
+        showToast({ tone: 'warning', message: `注意：「${tpl.title}」需 ${tpl.count} 张额度，当前余额 ${user.credits} 张；可调小张数或点击「充值」`, timeoutMs: 5200 })
       }
     },
-    [showToast, user.credits]
+    [user.credits]
   )
 
   const creatingRef = useRef(false)
@@ -210,12 +203,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
       }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
       setActiveId(topic.id)
       await refreshTopics()
-      if (reused) showToast('已自动新建任务')
+      if (reused) showToast({ tone: 'info', message: '已自动新建任务' })
       return topic.id
     } finally {
       creatingRef.current = false
     }
-  }, [activeId, refreshTopics, showToast])
+  }, [activeId, refreshTopics])
 
   /** 顶栏/抽屉「＋ 新任务」：真正新建（或复用空闲空任务）并切换过去 */
   const createTopic = useCallback(
@@ -230,12 +223,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
         }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
         setActiveId(topic.id)
         await refreshTopics()
-        showToast(reused ? '已回到未使用的空任务' : '已创建新任务')
+        showToast({ tone: 'success', message: reused ? '已回到未使用的空任务' : '已创建新任务' })
       } catch {
-        showToast('新任务创建失败，请重试')
+        showToast({ tone: 'danger', message: '新任务创建失败，请重试' })
       }
     },
-    [refreshTopics, showToast]
+    [refreshTopics]
   )
 
   const busy = detail?.topic.status === 'pending' || detail?.topic.status === 'running' || detail?.topic.status === 'canceling'
@@ -271,16 +264,16 @@ function Workspace({ initialUser }: { initialUser: User }) {
       }))
       await refreshTopics()
       await refreshDetail(res.topic.id)
-      showToast('任务已加入队列，后台生成中。')
+      showToast({ tone: 'info', message: '任务已加入队列，后台生成中。' })
     } catch (e) {
       const msg = e instanceof Error ? e.message : '提交失败，请重试。'
-      showToast(msg, 4000)
+      showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
       // 额度不足：光提示不够，直接把充值入口送到用户面前
       if (msg.includes('额度不足')) {
         setDialog('billing')
       }
     }
-  }, [panel, activeId, ensureTopic, refreshTopics, refreshDetail, showToast])
+  }, [panel, activeId, ensureTopic, refreshTopics, refreshDetail])
 
   const cancelRunning = useCallback(async () => {
     if (!detail) return
@@ -289,20 +282,20 @@ function Workspace({ initialUser }: { initialUser: User }) {
     try {
       await api.cancelMessage(msg.id)
       await refreshDetail(detail.topic.id)
-      showToast('已请求取消任务，正在停止后台生成。')
+      showToast({ tone: 'info', message: '已请求取消任务，正在停止后台生成。' })
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '取消失败')
+      showToast({ tone: 'danger', message: e instanceof Error ? e.message : '取消失败' })
     }
-  }, [detail, refreshDetail, showToast])
+  }, [detail, refreshDetail])
 
   const renameTopic = useCallback(
     async (id: string, title: string) => {
       await api.renameTopic(id, title)
       await refreshTopics()
       if (activeId === id) await refreshDetail(id)
-      showToast('任务已重命名')
+      showToast({ tone: 'success', message: '任务已重命名' })
     },
-    [activeId, refreshDetail, refreshTopics, showToast]
+    [activeId, refreshDetail, refreshTopics]
   )
 
   const deleteTopic = useCallback(
@@ -310,9 +303,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
       await api.deleteTopic(id)
       const list = await refreshTopics()
       if (activeId === id) setActiveId(list[0]?.id ?? null)
-      showToast('任务已删除')
+      showToast({ tone: 'success', message: '任务已删除' })
     },
-    [activeId, refreshTopics, showToast]
+    [activeId, refreshTopics]
   )
 
   const removeImages = useCallback(async (imgs: CanvasImage[]) => {
@@ -329,9 +322,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
         const prompt = p.prompt.includes(serial) ? p.prompt : `${p.prompt ? p.prompt.replace(/\s+$/, '') + ' ' : ''}${serial} 作为参考图保持主体一致。`
         return { ...p, referenceIds: [...p.referenceIds, img.id], prompt }
       })
-      showToast(`已引用 ${serial} 为参考图`)
+      showToast({ tone: 'info', message: `已引用 ${serial} 为参考图` })
     },
-    [showToast]
+    []
   )
 
   const uploadReference = useCallback(
@@ -339,7 +332,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       // 自动建任务：用户不必理解「任务」概念，上传动作本身就该可用
       const tid = await ensureTopic()
       if (!tid) {
-        showToast('请先新建一个任务')
+        showToast({ tone: 'info', message: '请先新建一个任务' })
         return
       }
       try {
@@ -352,12 +345,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
           staged: [...p.staged, reference],
           stagedPreviews: { ...p.stagedPreviews, [reference.id]: previewUrl },
         }))
-        showToast('参考图已暂存，点「开始生成」后进入画布')
+        showToast({ tone: 'info', message: '参考图已暂存，点「开始生成」后进入画布' })
       } catch (e) {
-        showToast(e instanceof Error ? e.message : '上传失败')
+        showToast({ tone: 'danger', message: e instanceof Error ? e.message : '上传失败' })
       }
     },
-    [ensureTopic, showToast]
+    [ensureTopic]
   )
 
   /** 移除暂存参考（服务端删除 + 面板同步） */
@@ -368,9 +361,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
         referenceIds: p.referenceIds.filter((x) => x !== id),
         staged: p.staged.filter((s) => s.id !== id),
       }))
-      void api.removeStagedReference(id).catch(() => showToast('暂存参考删除失败'))
+      void api.removeStagedReference(id).catch(() => showToast({ tone: 'danger', message: '暂存参考删除失败' }))
     },
-    [showToast]
+    []
   )
 
   const logout = useCallback(async () => {
@@ -382,9 +375,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
     async (user: User) => {
       setUser(user)
       setDialog(null)
-      showToast(`支付成功，已充值 ${user.credits} 张总额度中的新额度`)
+      showToast({ tone: 'success', message: `支付成功，已充值 ${user.credits} 张总额度中的新额度` })
     },
-    [showToast]
+    []
   )
 
   return (
@@ -442,17 +435,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
                 pointerEvents: 'none',
               }}
             >
-              <span
-                aria-hidden
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  border: '2px solid var(--border-strong)',
-                  borderTopColor: 'var(--brand-warm)',
-                  animation: 'ws-spin 0.9s linear infinite',
-                }}
-              />
+              <Spinner size="sm" />
               云端生成中，完成后图片会自动出现在画布
             </div>
           )}
@@ -485,7 +468,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           />
         ) : (
           <div className="lg:hidden">
-            <button className="ws-btn" onClick={() => setPanelOpen(true)}>展开生成面板</button>
+            <Button variant="secondary" onPress={() => setPanelOpen(true)}>展开生成面板</Button>
           </div>
         )}
       </div>
@@ -528,7 +511,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           onRedeemed={(u) => {
             setUser(u)
             setDialog(null)
-            showToast('兑换成功，额度已到账')
+            showToast({ tone: 'success', message: '兑换成功，额度已到账' })
           }}
         />
       )}
@@ -539,11 +522,11 @@ function Workspace({ initialUser }: { initialUser: User }) {
           onSaved={(u) => {
             setUser(u)
             setDialog(null)
-            showToast('资料已更新')
+            showToast({ tone: 'success', message: '资料已更新' })
           }}
           onPasswordChanged={() => {
             setDialog(null)
-            showToast('密码已修改')
+            showToast({ tone: 'success', message: '密码已修改' })
           }}
         />
       )}
@@ -553,49 +536,55 @@ function Workspace({ initialUser }: { initialUser: User }) {
           onClose={() => setDialog(null)}
           onSent={() => {
             setDialog(null)
-            showToast('反馈已提交，感谢！')
+            showToast({ tone: 'success', message: '反馈已提交，感谢！' })
           }}
         />
       )}
 
       {confirmDelete && (
-        <div className="ws-modal-mask" onClick={() => setConfirmDelete(null)}>
-          <div className="ws-modal" role="dialog" aria-label="删除确认" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-base font-bold">{confirmDelete.kind === 'image' ? '删除图片' : '删除任务'}</h2>
-            {confirmDelete.kind === 'image' ? (
-              <p className="mt-3 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-                {deleteImageConfirmText(confirmDelete.ids.length)}
-                <br />
-                其余图片的编号保持不变，提示词里已写好的编号仍会指向原来的图片。
-              </p>
-            ) : (
-              <p className="mt-3 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-                将删除任务「{confirmDelete.title}」及其全部生成记录与图片，删除后无法恢复。
-              </p>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button className="ws-btn" onClick={() => setConfirmDelete(null)}>取消</button>
-              <button
-                className="ws-btn"
-                style={{ background: 'var(--danger)', color: 'var(--danger-text)', borderColor: 'transparent' }}
-                onClick={() => {
-                  const target = confirmDelete
-                  setConfirmDelete(null)
-                  if (target.kind === 'image') void removeImages(target.ids)
-                  else void deleteTopic(target.id)
-                }}
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="ws-toast" role="status">
-          {toast}
-        </div>
+        <AlertDialog.Backdrop
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setConfirmDelete(null)
+          }}
+        >
+          <AlertDialog.Container>
+            <AlertDialog.Dialog aria-label="删除确认">
+              <AlertDialog.CloseTrigger aria-label="关闭" />
+              <AlertDialog.Header>
+                <AlertDialog.Icon status="danger" />
+                <AlertDialog.Heading>{confirmDelete.kind === 'image' ? '删除图片' : '删除任务'}</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                {confirmDelete.kind === 'image' ? (
+                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                    {deleteImageConfirmText(confirmDelete.ids.length)}
+                    <br />
+                    其余图片的编号保持不变，提示词里已写好的编号仍会指向原来的图片。
+                  </p>
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                    将删除任务「{confirmDelete.title}」及其全部生成记录与图片，删除后无法恢复。
+                  </p>
+                )}
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <Button slot="close" variant="secondary">取消</Button>
+                <Button
+                  variant="danger"
+                  onPress={() => {
+                    const target = confirmDelete
+                    setConfirmDelete(null)
+                    if (target.kind === 'image') void removeImages(target.ids)
+                    else void deleteTopic(target.id)
+                  }}
+                >
+                  删除
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
       )}
     </main>
   )
