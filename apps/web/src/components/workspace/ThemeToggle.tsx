@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Button, ButtonGroup } from '@heroui/react'
 
 /**
  * 主题三态切换：浅色 / 深色 / 跟随系统（默认浅色）。
@@ -52,19 +53,20 @@ function ThemeToggle() {
   }
 
   return (
-    <div className="ws-theme-toggle" role="group" aria-label="主题外观">
+    <ButtonGroup className="ws-theme-toggle" aria-label="主题外观">
       {MODES.map((m) => (
-        <button
+        <Button
           key={m}
-          type="button"
-          className={`ws-theme-opt${mode === m ? ' is-active' : ''}`}
-          onClick={() => select(m)}
-          title={MODE_LABEL[m]}
+          size="sm"
+          variant={mode === m ? 'primary' : 'secondary'}
+          onPress={() => select(m)}
         >
           {MODE_LABEL[m]}
-        </button>
+        </Button>
+          {MODE_LABEL[m]}
+        </Button>
       ))}
-    </div>
+    </ButtonGroup>
   )
 }
 
