@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@heroui/styles"; /* 顺序必须：tailwindcss 在前（heroui-migration P1 原子变更） */
 
 /*
  * Motif 设计令牌 —— 亮色为基准（默认），暗色由 html[data-theme="dark"] 控制
@@ -99,6 +100,26 @@ html[data-theme="dark"] {
     --scrollbar-track: transparent;
     --scrollbar-thumb: #45403a;
     --scrollbar-thumb-hover: #5a544b;
+}
+
+/*
+ * HeroUI 令牌桥接（spec §5 · heroui-migration P1）：
+ * @heroui/styles 的 -hover/-soft/-soft-foreground 家族均由基令牌 color-mix 派生，
+ * 因此这里只覆盖基令牌；同名项目令牌（--background/--foreground/--danger 等定义于上方）
+ * 按「后定义者胜」级联自动成为 HeroUI 组件取值（正向桥接）。
+ * --accent 是唯一无项目对应的品牌语义色：HeroUI 默认蓝紫，改接珊瑚。
+ * 亮暗同值 #cc785c：暗下对最深表面 5.47:1 已达标，提亮反而降低珊瑚底奶白文字对比。
+ * --danger 保持双角色：按钮底色沿用上方 --danger（白字对比更好）；
+ * 表面危险文字角色新增 --danger-quiet（暗色提亮至主要表面 ≥4.5:1，P3 admin 消费，关 plans 待办#1）。
+ */
+:root,
+[data-theme="light"] {
+  --accent: var(--brand-warm); /* 珊瑚 #cc785c */
+  --danger-quiet: var(--danger); /* 亮色沿用 #c64545 */
+}
+
+html[data-theme="dark"] {
+  --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
 }
 
 @theme inline {
