@@ -7,6 +7,8 @@
  * 否则加载窗口里会显示「共 0 个 /（无匹配的…）」，与「真的没有数据」无法区分，会误导运营。
  */
 
+import { Pagination } from '@heroui/react'
+
 /** 加载中的占位行。用 role="status" 让读屏也能感知状态变化 */
 export function ListLoadingRow({ colSpan }: { colSpan: number }) {
   return (
@@ -39,16 +41,24 @@ export function Pager({ page, pageSize, total, onChange }: { page: number; pageS
   const pages = Math.max(1, Math.ceil(total / pageSize))
   if (total <= pageSize) return null
   return (
-    <nav className="admin-pager" aria-label="分页">
-      <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)}>
-        上一页
-      </button>
-      <span className="admin-muted" aria-live="polite">
-        第 {page} / {pages} 页
-      </span>
-      <button type="button" disabled={page >= pages} onClick={() => onChange(page + 1)}>
-        下一页
-      </button>
-    </nav>
+    <Pagination className="admin-pager">
+      <Pagination.Summary>
+        <span className="admin-muted" aria-live="polite">
+          第 {page} / {pages} 页
+        </span>
+      </Pagination.Summary>
+      <Pagination.Content>
+        <Pagination.Item>
+          <Pagination.Previous isDisabled={page <= 1} onPress={() => onChange(page - 1)}>
+            <span>上一页</span>
+          </Pagination.Previous>
+        </Pagination.Item>
+        <Pagination.Item>
+          <Pagination.Next isDisabled={page >= pages} onPress={() => onChange(page + 1)}>
+            <span>下一页</span>
+          </Pagination.Next>
+        </Pagination.Item>
+      </Pagination.Content>
+    </Pagination>
   )
 }
