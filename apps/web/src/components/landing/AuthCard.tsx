@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Alert, Button, Card, Input, InputGroup, Label, Link, TextField } from '@heroui/react'
 import { api } from '@/lib/client'
 
 type Mode = 'login' | 'register' | 'reset'
@@ -18,67 +19,54 @@ interface AuthCardProps {
   onModeChange: (m: Mode) => void
 }
 
-/** 可见性切换的密码输入框 */
+/** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
 function PasswordInput({
-  id,
   value,
   onChange,
   autoComplete,
   label,
+  ariaBase,
 }: {
-  id: string
   value: string
   onChange: (v: string) => void
   autoComplete: string
   label: string
+  ariaBase: string
 }) {
   const [show, setShow] = useState(false)
   return (
-    <div style={{ position: 'relative' }}>
-      <input
-        id={id}
-        className="lp-input"
-        type={show ? 'text' : 'password'}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        style={{ paddingRight: 44 }}
-      />
-      <button
-        type="button"
-        aria-label={show ? `隐藏${label}` : `显示${label}`}
-        aria-pressed={show}
-        onClick={() => setShow((v) => !v)}
-        style={{
-          position: 'absolute',
-          right: 6,
-          top: '50%',
-          transform: 'translateY(-50%)',
-          border: 'none',
-          background: 'transparent',
-          cursor: 'pointer',
-          padding: 8,
-          lineHeight: 0,
-          color: 'var(--muted-strong)',
-        }}
-      >
-        {show ? (
-          // 睁眼：当前明文
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
-        ) : (
-          // 闭眼：当前密文
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68" />
-            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61" />
-            <path d="M2 2l20 20" />
-            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
-          </svg>
-        )}
-      </button>
-    </div>
+    <TextField value={value} onChange={onChange}>
+      <Label>{label}</Label>
+      <InputGroup>
+        <InputGroup.Input type={show ? 'text' : 'password'} autoComplete={autoComplete} />
+        <InputGroup.Suffix className="pe-0">
+          <Button
+            isIconOnly
+            aria-label={show ? `隐藏${ariaBase}` : `显示${ariaBase}`}
+            aria-pressed={show}
+            size="sm"
+            variant="ghost"
+            onPress={() => setShow((v) => !v)}
+          >
+            {show ? (
+              // 睁眼：当前明文
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            ) : (
+              // 闭眼：当前密文
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68" />
+                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61" />
+                <path d="M2 2l20 20" />
+                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+              </svg>
+            )}
+          </Button>
+        </InputGroup.Suffix>
+      </InputGroup>
+    </TextField>
   )
 }
 
@@ -197,7 +185,7 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
   }, [])
 
   return (
-    <section id="auth" className="lp-card">
+    <Card id="auth" className="p-6" style={{ scrollMarginTop: 96 }}>
       <h2 className="text-lg font-bold">{mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'}</h2>
       <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
         {mode === 'reset' ? '输入注册邮箱与验证码设置新密码。' : mode === 'register' ? '注册即送 3 张生成额度，无需绑卡。' : '登录后继续你的生成任务。'}
@@ -205,58 +193,54 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
 
       <form onSubmit={submit} className="mt-2">
         {mode === 'register' && (
-          <div className="lp-field">
-            <label className="lp-label" htmlFor="lp-name">昵称</label>
-            <input id="lp-name" className="lp-input" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="用于头像和任务列表展示" autoComplete="nickname" />
-          </div>
+          <TextField className="mt-3.5" value={name} onChange={setName}>
+            <Label>昵称</Label>
+            <Input placeholder="用于头像和任务列表展示" autoComplete="nickname" />
+          </TextField>
         )}
 
-        <div className="lp-field">
-          <label className="lp-label" htmlFor="lp-email">邮箱</label>
-          <input
-            id="lp-email"
-            ref={emailRef}
-            className="lp-input"
-            type="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value)
-              if (codeMsg) setCodeMsg(null)
-            }}
-            placeholder="you@example.com"
-            autoComplete="email"
-          />
-        </div>
+        <TextField
+          className="mt-3.5"
+          value={email}
+          onChange={(v) => {
+            setEmail(v)
+            if (codeMsg) setCodeMsg(null)
+          }}
+        >
+          <Label>邮箱</Label>
+          <Input ref={emailRef} type="email" placeholder="you@example.com" autoComplete="email" />
+        </TextField>
 
         {mode === 'register' && (
-          <div className="lp-field">
-            <label className="lp-label" htmlFor="lp-invite">邀请码（选填）</label>
-            <input id="lp-invite" className="lp-input" type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} placeholder="选填" />
-          </div>
+          <TextField className="mt-3.5" value={inviteCode} onChange={setInviteCode}>
+            <Label>邀请码（选填）</Label>
+            <Input placeholder="选填" />
+          </TextField>
         )}
 
         {mode !== 'login' && (
-          <div className="lp-field">
-            <label className="lp-label" htmlFor="lp-code">邮箱验证码</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input id="lp-code" className="lp-input" type="text" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6 位数字" style={{ flex: 1 }} autoComplete="one-time-code" />
-              <button type="button" className="lp-btn lp-btn-ghost" onClick={sendCode} disabled={cooldown > 0} style={cooldown > 0 ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}>
+          <>
+            <div className="mt-3.5 flex items-end gap-2">
+              <TextField className="min-w-0 flex-1" value={code} onChange={setCode}>
+                <Label>邮箱验证码</Label>
+                <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
+              </TextField>
+              <Button type="button" variant="ghost" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
                 {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
-              </button>
+              </Button>
             </div>
             {codeMsg && (
-              <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger, #b3402e)' : 'var(--muted-strong)' }}>
+              <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
                 {codeMsg.text}
               </p>
             )}
-          </div>
+          </>
         )}
 
-        <div className="lp-field">
-          <label className="lp-label" htmlFor="lp-password">{mode === 'reset' ? '新密码' : '密码'}</label>
+        <div className="mt-3.5">
           <PasswordInput
-            id="lp-password"
-            label="密码"
+            label={mode === 'reset' ? '新密码' : '密码'}
+            ariaBase="密码"
             value={password}
             onChange={setPassword}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -264,31 +248,44 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
         </div>
 
         {mode === 'register' && (
-          <div className="lp-field">
-            <label className="lp-label" htmlFor="lp-password2">确认密码</label>
-            <PasswordInput id="lp-password2" label="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
+          <div className="mt-3.5">
+            <PasswordInput label="确认密码" ariaBase="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
           </div>
         )}
 
-        {error && <div className="lp-alert lp-alert-error" role="alert">{error}</div>}
-        {notice && <div className="lp-alert lp-alert-ok">{notice}</div>}
+        {error && (
+          <Alert status="danger" role="alert" className="mt-3">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{error}</Alert.Title>
+            </Alert.Content>
+          </Alert>
+        )}
+        {notice && (
+          <Alert status="success" className="mt-3">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{notice}</Alert.Title>
+            </Alert.Content>
+          </Alert>
+        )}
 
-        <button type="submit" className="lp-btn lp-btn-primary mt-4 w-full" disabled={busy}>
+        <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
           {busy ? '处理中…' : mode === 'login' ? '登录并开始生成' : mode === 'register' ? '注册并领取 3 张额度' : '重置密码'}
-        </button>
+        </Button>
       </form>
 
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
         {mode === 'login' ? (
-          <button type="button" className="lp-link-btn" onClick={() => switchMode('register')}>注册账号</button>
+          <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
         ) : (
-          <button type="button" className="lp-link-btn" onClick={() => switchMode('login')}>已有账号？登录</button>
+          <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
         )}
         {mode !== 'reset' && (
-          <button type="button" className="lp-link-btn" onClick={() => switchMode('reset')}>忘记密码？</button>
+          <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
         )}
       </div>
-    </section>
+    </Card>
   )
 }
 
