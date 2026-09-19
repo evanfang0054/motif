@@ -105,6 +105,8 @@ export interface CreditPackage {
 export interface BillingPackagesResponse {
   packages: CreditPackage[]
   configured: boolean
+  /** 当前支付渠道：mock=模拟收银台；epay/stripe=真实渠道（客户端据此切文案） */
+  channel?: 'mock' | 'epay' | 'stripe'
 }
 
 /** 生成请求（POST /api/generate-images） */

@@ -20,8 +20,9 @@ import { buildImageKey, storagePathFor, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
+import { createPaymentGateway } from './payment'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveSetting, yuanToFen } from './settings'
+import { resolveBool, resolveConfigValues, resolveSetting, yuanToFen } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -417,4 +418,43 @@ export function redeem(store: MotifStore, user: User, code: string): User {
 export function paymentChannel(store: MotifStore): 'mock' | 'epay' | 'stripe' {
   const raw = (resolveSetting(store, process.env, 'PAYMENT_CHANNEL') ?? 'mock').toLowerCase()
   return raw === 'epay' || raw === 'stripe' ? raw : 'mock'
+}
+
+export interface CheckoutStart {
+  orderId: string
+  checkoutUrl: string
+}
+
+const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问题持续请联系站点管理员。'
+
+/**
+ * 下单分流：mock → 站内收银台；epay/stripe → 网关收银页。
+ * 订单先落 pending（记录创建渠道）；渠道配置错误/网关异常统一转用户友好 503
+ * （内部键名走 payment 健康检查与审计，不透给充值用户）。
+ * 渠道切换不影响已建订单：回调路由按订单渠道直接构造网关，不读当前 PAYMENT_CHANNEL。
+ */
+export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
+  const pkg = resolvePackages(store, env).find((p) => p.id === packageId)
+  if (!pkg) throw new ServiceError(400, '套餐不存在。')
+  const channel = paymentChannel(store)
+  const orderId = store.createOrder(userId, pkg, channel)
+  if (channel === 'mock') return { orderId, checkoutUrl: `/billing/mock-pay?order=${orderId}` }
+  try {
+    const site = resolveSetting(store, env, 'SITE_URL')
+    if (!site) throw new ServiceError(503, CHECKOUT_UNAVAILABLE)
+    const base = site.replace(/\/+$/, '')
+    const gateway = createPaymentGateway(channel, resolveConfigValues(store, env))
+    const { redirectUrl } = await gateway.createCheckout(
+      { orderId, label: pkg.label, amountTotal: pkg.amountTotal, currency: pkg.currency },
+      {
+        notifyUrl: `${base}/api/billing/notify/epay`,
+        returnUrl: `${base}/billing/result?order=${orderId}`,
+        cancelUrl: `${base}/billing/result?order=${orderId}&canceled=1`,
+      }
+    )
+    return { orderId, checkoutUrl: redirectUrl }
+  } catch (e) {
+    if (e instanceof ServiceError) throw e
+    throw new ServiceError(503, CHECKOUT_UNAVAILABLE)
+  }
 }
