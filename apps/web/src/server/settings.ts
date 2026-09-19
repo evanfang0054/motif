@@ -132,6 +132,12 @@ export function maskSecret(value: string): string {
   return `${value.slice(0, 3)}${'•'.repeat(Math.min(12, value.length - 7))}${value.slice(-4)}`
 }
 
+/** 元字符串 → 分整数；非法/超上限返回 null。金额一律以分存储与比对，避免浮点。 */
+export function yuanToFen(v: string): number | null {
+  if (!/^\d{1,5}(\.\d{1,2})?$/.test(v)) return null
+  return Math.round(Number(v) * 100)
+}
+
 /**
  * 播种：只把 env 里**非空**的值写进 DB，已存在的键一律不动。返回本次新写入的键。
  *

@@ -10,6 +10,7 @@ import {
   validatePrompt,
   validateSize,
   type CanvasImage,
+  type CreditPackage,
   type GenerateImagesInput,
   type GenerateImagesResponse,
   type Topic,
@@ -20,7 +21,7 @@ import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveSetting } from './settings'
+import { resolveBool, resolveSetting, yuanToFen } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -366,12 +367,25 @@ export function saveReferenceImage(
 
 // ---------- billing / redeem ----------
 
-export const CREDIT_PACKAGES = [
-  { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' },
-  { id: 'credits_100', label: '100 张额度', credits: 100, amountTotal: 1736, currency: 'hkd' },
-  { id: 'credits_200', label: '200 张额度', credits: 200, amountTotal: 3472, currency: 'hkd' },
-  { id: 'credits_500', label: '500 张额度', credits: 500, amountTotal: 8680, currency: 'hkd' },
+const PACKAGE_FALLBACK: ReadonlyArray<{ credits: number; fen: number }> = [
+  { credits: 50, fen: 6800 },
+  { credits: 100, fen: 13600 },
+  { credits: 200, fen: 27200 },
+  { credits: 500, fen: 68000 },
 ]
+
+/**
+ * 套餐：币种与价格后台可配（settings 唯一真相），缺省回退 68/136/272/680。
+ * amountTotal 一律「分」；清空配置键 = 删除行 → 回退默认（与 settings 清空语义一致）。
+ */
+export function resolvePackages(store: MotifStore, env: Record<string, string | undefined>): CreditPackage[] {
+  const currency = resolveSetting(store, env, 'BILLING_CURRENCY') ?? 'hkd'
+  return PACKAGE_FALLBACK.map(({ credits, fen }) => {
+    const raw = resolveSetting(store, env, `PRICE_CREDITS_${credits}`)
+    const amountTotal = raw !== null ? (yuanToFen(raw) ?? fen) : fen
+    return { id: `credits_${credits}`, label: `${credits} 张额度`, credits, amountTotal, currency }
+  })
+}
 
 /**
  * 校验 CDK 并到账。失败原因分三类给文案，让用户能分清「输错了 / 被作废了 / 已用过了」。
