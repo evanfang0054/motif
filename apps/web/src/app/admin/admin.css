@@ -255,8 +255,7 @@
 }
 
 .admin-btn-primary,
-.admin-btn-danger,
-.admin-toolbar button {
+.admin-btn-danger {
   padding: 7px 14px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -272,11 +271,10 @@
 }
 
 .admin-btn-danger {
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：暗色 #eb6962 ≥4.5:1 */
   border-color: var(--danger);
 }
 
-.admin-toolbar button:disabled,
 .admin-btn-primary:disabled,
 .admin-btn-danger:disabled {
   opacity: 0.5;
@@ -301,7 +299,7 @@
   /* 与 .admin-alert-ok 对称：底色用 -soft 淡彩、文字用语义色本身。
      ⚠️ 不要写成 var(--danger-text) —— 那个令牌在两套主题下都是白色，是给「红底上的文字」
      用的；打在 -soft 淡彩底上，亮色主题里等于白字白底（实测对比度 1.05，完全看不见）。 */
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-table {
@@ -439,7 +437,7 @@
 }
 
 .admin-neg {
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-detail {
@@ -630,7 +628,7 @@
 .admin-danger .admin-title {
   /* ⚠️ 用 --danger 而不是 --danger-text：后者两套主题下都是白色，只适合做「红底上的文字」，
      当标题色会变成白字白底（亮色主题实测对比度 1.05，等于看不见）。 */
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-confirm-line {
@@ -669,4 +667,149 @@
   padding: 8px;
   border-radius: 8px;
   display: inline-block;
+}
+
+/* 表格视窗内滚动（P3 复查反馈）：列表在自身视口内滚动，分页器固定在表格下方可见，
+   不再要求整页滚动到页尾。高度 = 视口 - 头部/标题/工具栏/分页器的经验占位。 */
+.admin-table-scroll {
+  max-height: calc(100dvh - 320px);
+  min-height: 160px;
+}
+
+/* 概览可视化（P3 复查）：成功率环形图 + CDK 状态占比条 + 额度来源构成条 */
+.admin-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.admin-ring-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+.admin-ring {
+  width: 56px;
+  height: 56px;
+}
+.admin-ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.admin-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.admin-bar-label {
+  width: 52px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-bar {
+  flex: 1;
+}
+.admin-bar-value {
+  min-width: 36px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.admin-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.admin-source-label {
+  width: 104px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.admin-source-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+.admin-source-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.admin-source-fill.is-pos {
+  background: var(--success);
+}
+.admin-source-fill.is-neg {
+  background: var(--danger-quiet);
+}
+.admin-source-value {
+  width: 76px;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 概览·额度账目面板（来源构成 + 对账口径） */
+.admin-ledger {
+  margin-top: 16px;
+}
+.admin-ledger-ok {
+  color: var(--success);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.admin-ledger-bad {
+  color: var(--danger-quiet);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.admin-source-heading {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 12px 0 4px;
+}
+
+/* audit 详情抽屉排版 */
+.audit-detail-meta {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px 12px;
+  margin: 0 0 12px;
+}
+.audit-detail-meta dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.audit-detail-meta dd {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.audit-detail-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 12px 0 4px;
+}
+.audit-detail-json {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.audit-detail-json {
+  color: var(--foreground); /* 提亮 light 主题对比度（复查实测 4.4→≈12:1） */
 }

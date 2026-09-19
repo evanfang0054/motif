@@ -121,6 +121,33 @@ html[data-theme="dark"] {
 html[data-theme="dark"] {
   --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
   --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
+  --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
+}
+
+/*
+ * 表单控件令牌桥接（P3 复查补充）：HeroUI 输入件的静默/悬停/聚焦底色与边框
+ * 默认走中性白黑系，与暖米面板存在色调落差（用户反馈：聚焦前后底色不一致）。
+ * 统一桥接到项目表面系；聚焦边框 = 珊瑚（DESIGN.md text-input-focused 规范）。
+ */
+:root,
+[data-theme="light"] {
+  --field-background: var(--surface-primary);
+  --field-focus: var(--surface-primary);
+  --field-border: var(--border);
+  --field-border-hover: var(--border-strong);
+  --field-border-focus: var(--brand-warm);
+  --search-field-group-bg: var(--surface-primary);
+  --search-field-group-bg-hover: var(--surface-hover);
+}
+
+html[data-theme="dark"] {
+  --field-background: var(--surface-primary);
+  --field-focus: var(--surface-primary);
+  --field-border: var(--border);
+  --field-border-hover: var(--border-strong);
+  --field-border-focus: var(--brand-warm);
+  --search-field-group-bg: var(--surface-primary);
+  --search-field-group-bg-hover: var(--surface-hover);
 }
 
 @theme inline {

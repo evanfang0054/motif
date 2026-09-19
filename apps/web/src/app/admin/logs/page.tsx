@@ -2,8 +2,10 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Drawer, NumberField, SearchField, Select, ListBox, Table } from '@heroui/react'
 import { api, type AdminLogRow } from '@/lib/client'
-import { ListCount, ListEmptyRow, ListLoadingRow, Pager } from '@/components/admin/ListUi'
+import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
+import { useConfirm } from '@/components/admin/confirm'
 
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中',
@@ -28,6 +30,9 @@ export default function AdminLogsPage() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
+  const { confirm, confirmElement } = useConfirm()
+  // 右侧抽屉查看的日志行（与 audit 抽屉同模式）
+  const [detail, setDetail] = useState<AdminLogRow | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,9 +56,10 @@ export default function AdminLogsPage() {
     const n = Number(days)
     if (!Number.isInteger(n) || n < 1 || n > 3650) return setErr('保留天数需为 1–3650 的整数。')
     if (
-      !window.confirm(
-        `确认清理 ${n} 天前的历史生成记录？\n\n这些记录是额度对账的唯一追溯依据，删除后无法恢复。\n只删除已结束（完成 / 失败 / 已取消）的轮次，不会删除画布图片与额度流水。`
-      )
+      !(await confirm({
+        message: `确认清理 ${n} 天前的历史生成记录？\n\n这些记录是额度对账的唯一追溯依据，删除后无法恢复。\n只删除已结束（完成 / 失败 / 已取消）的轮次，不会删除画布图片与额度流水。`,
+        confirmLabel: '清理',
+      }))
     )
       return
     setBusy(true)
@@ -75,24 +81,42 @@ export default function AdminLogsPage() {
       <p className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</p>
 
       <div className="admin-toolbar">
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
-          <option value="">全部状态</option>
-          {Object.entries(STATUS_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>{v}</option>
-          ))}
-        </select>
-        <input type="search" value={userId} onChange={(e) => { setUserId(e.target.value); setPage(1) }} placeholder="按用户 ID 筛选" />
+        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as string) ?? ''); setPage(1) }}>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
+              {Object.entries(STATUS_LABEL).map(([k, v]) => (
+                <ListBox.Item key={`status-${k}`} id={`status-${k}`}>{v}</ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <SearchField aria-label="按用户 ID 筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
+          <SearchField.Group>
+            <SearchField.SearchIcon />
+            <SearchField.Input placeholder="按用户 ID 筛选" />
+            <SearchField.ClearButton />
+          </SearchField.Group>
+        </SearchField>
         <ListCount loading={loading} total={total} unit="条" />
         <span style={{ flex: 1 }} />
-        <input
-          type="number"
-          min={1}
-          max={3650}
-          value={days}
-          onChange={(e) => setDays(e.target.value)}
+        <NumberField
+          className="w-full"
           style={{ width: 90 }}
+          minValue={1}
+          maxValue={3650}
           aria-label="清理保留天数"
-        />
+          value={days === '' ? undefined : Number(days)}
+          onChange={(v) => setDays(v === undefined ? '' : String(v))}
+        >
+          <NumberField.Group>
+            <NumberField.Input />
+          </NumberField.Group>
+        </NumberField>
         <button className="admin-btn-danger" disabled={busy} onClick={() => void cleanup()}>
           清理 {days} 天前
         </button>
@@ -101,43 +125,83 @@ export default function AdminLogsPage() {
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
       {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>时间</th><th>用户</th><th>状态</th><th>张数</th><th>重试</th><th>失败原因</th><th>提示词</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((m) => (
-            <tr key={m.id}>
-              <td data-label="时间">{formatDateTime(m.createdAt)}</td>
-              <td className="admin-mono" data-label="用户">{m.userId}</td>
-              <td data-label="状态">
-                <span className="admin-chip">{STATUS_LABEL[m.status] ?? m.status}</span>
-              </td>
-              <td data-label="张数">{m.generatedCount}/{m.requestedCount}</td>
-              <td data-label="重试">{m.attempts}</td>
-              <td data-label="失败原因">{m.error ? <span className="admin-mono">{m.error}</span> : '—'}</td>
-              <td data-label="提示词">
-                <details>
-                  <summary>展开</summary>
-                  <div className="admin-prompt">
-                    <div><b>用户提交</b>：{m.prompt}</div>
-                    <div><b>实际发往网关</b>：{m.finalPrompt}</div>
-                  </div>
-                </details>
-              </td>
-            </tr>
-          ))}
-          {loading ? (
-            <ListLoadingRow colSpan={7} />
-          ) : (
-            items.length === 0 && <ListEmptyRow colSpan={7} text="（无匹配的生成记录）" />
-          )}
-        </tbody>
-      </table>
+      <Table>
+        <Table.ScrollContainer className="admin-table-scroll">
+          <Table.Content aria-label="生成日志列表">
+            <Table.Header>
+              <Table.Column isRowHeader>时间</Table.Column>
+              <Table.Column>用户</Table.Column>
+              <Table.Column>状态</Table.Column>
+              <Table.Column>张数</Table.Column>
+              <Table.Column>重试</Table.Column>
+              <Table.Column>失败原因</Table.Column>
+              <Table.Column>提示词</Table.Column>
+            </Table.Header>
+            <Table.Body
+              renderEmptyState={() =>
+                loading ? null : <ListEmptyContent text="（无匹配的生成记录）" />
+              }
+            >
+              {loading ? (
+                <ListLoadingRows cols={7} />
+              ) : (
+                items.map((m) => (
+                  <Table.Row key={m.id}>
+                    <Table.Cell data-label="时间">{formatDateTime(m.createdAt)}</Table.Cell>
+                    <Table.Cell className="admin-mono" data-label="用户">{m.userId}</Table.Cell>
+                    <Table.Cell data-label="状态">
+                      <span className="admin-chip">{STATUS_LABEL[m.status] ?? m.status}</span>
+                    </Table.Cell>
+                    <Table.Cell data-label="张数">{m.generatedCount}/{m.requestedCount}</Table.Cell>
+                    <Table.Cell data-label="重试">{m.attempts}</Table.Cell>
+                    <Table.Cell data-label="失败原因">{m.error ? <span className="admin-mono">{m.error}</span> : '—'}</Table.Cell>
+                    <Table.Cell data-label="提示词">
+                      <Button size="sm" variant="secondary" onPress={() => setDetail(m)}>
+                        查看详情
+                      </Button>
+                    </Table.Cell>
+                  </Table.Row>
+                ))
+              )}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+
+      <Drawer.Backdrop isOpen={detail !== null} isDismissable onOpenChange={(o) => { if (!o) setDetail(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>生成日志详情</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+            </Drawer.Header>
+            <Drawer.Body>
+              {detail && (
+                <>
+                  <dl className="audit-detail-meta">
+                    <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
+                    <div><dt>用户</dt><dd className="admin-mono">{detail.userId}</dd></div>
+                    <div><dt>状态</dt><dd>{STATUS_LABEL[detail.status] ?? detail.status}</dd></div>
+                    <div><dt>张数</dt><dd>{detail.generatedCount}/{detail.requestedCount}</dd></div>
+                    <div><dt>重试</dt><dd>{detail.attempts}</dd></div>
+                    {detail.error && (
+                      <div><dt>失败原因</dt><dd className="admin-neg">{detail.error}</dd></div>
+                    )}
+                  </dl>
+                  <div className="audit-detail-label">用户提交的提示词</div>
+                  <pre className="audit-detail-json">{detail.prompt}</pre>
+                  <div className="audit-detail-label">实际发往网关的提示词</div>
+                  <pre className="audit-detail-json">{detail.finalPrompt}</pre>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+
+      {confirmElement}
     </section>
   )
 }

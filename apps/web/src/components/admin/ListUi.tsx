@@ -5,35 +5,46 @@
  *
  * 抽出来的原因：六个列表页在「加载中」与「空数据」两件事上必须表现一致 ——
  * 否则加载窗口里会显示「共 0 个 /（无匹配的…）」，与「真的没有数据」无法区分，会误导运营。
+ *
+ * P3 起双轨过渡：HeroUI Table 形态（ListLoadingRows / ListEmptyContent）供已迁移页使用；
+ * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
-import { Pagination } from '@heroui/react'
+import { EmptyState, Pagination, Skeleton, Table } from '@heroui/react'
 
-/** 加载中的占位行。用 role="status" 让读屏也能感知状态变化 */
-export function ListLoadingRow({ colSpan }: { colSpan: number }) {
+/** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */
+export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   return (
-    <tr>
-      <td colSpan={colSpan} className="admin-muted" role="status">
-        加载中…
-      </td>
-    </tr>
+    <>
+      {Array.from({ length: rows }, (_, r) => (
+        <Table.Row key={`skeleton-${r}`}>
+          {Array.from({ length: cols }, (_, c) => (
+            <Table.Cell key={c}>
+              <Skeleton className="h-4 w-3/4 rounded-medium" />
+            </Table.Cell>
+          ))}
+        </Table.Row>
+      ))}
+    </>
   )
 }
 
-/** 空态行。只在**加载完成后**才渲染，避免与加载态混淆 */
-export function ListEmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
+/** HeroUI Table 空态：塞进 Table.Body 的 renderEmptyState。只在**加载完成后**才会出现（空 children 才触发） */
+export function ListEmptyContent({ text }: { text: string }) {
   return (
-    <tr>
-      <td colSpan={colSpan} className="admin-muted">
-        {text}
-      </td>
-    </tr>
+    <EmptyState className="flex h-full w-full flex-col items-center justify-center gap-3 py-8 text-center">
+      <span className="admin-muted text-sm">{text}</span>
+    </EmptyState>
   )
 }
 
-/** 列表工具栏里的计数：加载中显示省略号而不是 0 */
+/** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知（L3-3-G1-A3） */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
-  return <span className="admin-muted">共 {loading ? '…' : total} {unit}</span>
+  return (
+    <span className="admin-muted" role="status">
+      共 {loading ? '…' : total} {unit}
+    </span>
+  )
 }
 
 /** 分页控件。只有一页时不渲染 —— 避免给运营一个永远点不动的控件 */

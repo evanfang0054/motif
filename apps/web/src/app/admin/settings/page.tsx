@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Checkbox, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
+import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
 
@@ -35,6 +37,8 @@ export default function AdminSettingsPage() {
   const [testTo, setTestTo] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const { confirm, confirmElement } = useConfirm()
+  const [tab, setTab] = useState<string>('generation')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,7 +87,7 @@ export default function AdminSettingsPage() {
     setMsg(null)
     try {
       if (group === 'danger') {
-        if (!window.confirm('危险区开关会削弱系统安全基线，确定要应用吗？')) return
+        if (!(await confirm({ message: '危险区开关会削弱系统安全基线，确定要应用吗？', confirmLabel: '应用' }))) return
         await api.adminSaveDangerSettings(updates)
       } else {
         await api.adminSaveSettings(updates)
@@ -103,65 +107,74 @@ export default function AdminSettingsPage() {
       // 未设置时给出「实际会落在哪」的提示：只读项常常是空的（默认路径由应用自己拼），
       // 只显示空输入框会让运维以为没配置、不知道数据在哪
       return (
-        <input
-          value={item.value ?? ''}
-          readOnly
-          disabled
-          aria-label={item.label}
-          placeholder={item.defaultHint ? `未设置，默认 ${item.defaultHint}` : '未设置'}
-        />
+        <TextField isDisabled value={item.value ?? ''} aria-label={item.label}>
+          <Input placeholder={item.defaultHint ? `未设置，默认 ${item.defaultHint}` : '未设置'} />
+        </TextField>
       )
     }
     if (item.kind === 'enum') {
+      const current = dirty[item.key] ?? item.value ?? ''
       return (
-        <select
-          value={dirty[item.key] ?? item.value ?? ''}
-          onChange={(e) => setField(item.key, e.target.value)}
+        <Select
           aria-label={item.label}
+          value={current || null}
+          onChange={(v) => setField(item.key, (v as string) ?? '')}
         >
-          {(item.options ?? []).map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {(item.options ?? []).map((o) => (
+                <ListBox.Item key={`opt-${item.key}-${o}`} id={`opt-${item.key}-${o}`}>
+                  {o}
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
       )
     }
     if (item.kind === 'boolean') {
       return (
-        <select
-          value={dirty[item.key] ?? item.value ?? 'false'}
-          onChange={(e) => setField(item.key, e.target.value)}
+        <Switch
+          isSelected={(dirty[item.key] ?? item.value ?? 'false') === 'true'}
+          onChange={(sel) => setField(item.key, sel ? 'true' : 'false')}
           aria-label={item.label}
         >
-          <option value="false">关闭</option>
-          <option value="true">开启</option>
-        </select>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
       )
     }
     if (item.kind === 'secret') {
       return (
-        <input
+        <TextField
           type="password"
           autoComplete="new-password"
           value={dirty[item.key] ?? ''}
-          onChange={(e) => setField(item.key, e.target.value)}
-          placeholder={item.isSet ? `已设置（${item.masked}），留空则不修改` : '未设置'}
-          aria-label={item.label}
-        />
+          onChange={(v) => setField(item.key, v)}
+        >
+          <Input placeholder={item.isSet ? `已设置（${item.masked}），留空则不修改` : '未设置'} />
+        </TextField>
       )
     }
     return (
-      <input
+      <TextField
         value={dirty[item.key] ?? item.value ?? ''}
-        onChange={(e) => setField(item.key, e.target.value)}
-        placeholder={item.defaultHint ? `默认 ${item.defaultHint}` : ''}
-        aria-label={item.label}
-      />
+        onChange={(v) => setField(item.key, v)}
+      >
+        <Input placeholder={item.defaultHint ? `默认 ${item.defaultHint}` : ''} />
+      </TextField>
     )
   }
 
-  function renderGroup(group: AdminSettingItem['group']) {
+  /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */
+  function renderGroupBody(group: AdminSettingItem['group']) {
     const groupItems = items.filter((i) => i.group === group)
     if (groupItems.length === 0) return null
     // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
@@ -184,8 +197,7 @@ export default function AdminSettingsPage() {
           ? (PAYMENT_GUIDES[(draftChannel ?? 'mock') as 'epay' | 'stripe'] ?? [])
           : []
     return (
-      <section className="admin-panel" key={group} id={`settings-${group}`}>
-        <h2 className="admin-title">{GROUP_TITLE[group]}</h2>
+      <>
         {group === 'data' && (
           <p className="admin-muted">
             这两项决定数据库自身的位置，属于先于数据库存在的引导参数，只能在部署的环境变量里修改。
@@ -257,7 +269,7 @@ export default function AdminSettingsPage() {
             )}
           </div>
         )}
-      </section>
+      </>
     )
   }
 
@@ -266,9 +278,7 @@ export default function AdminSettingsPage() {
   return (
     <section className="admin-panel" id="settings-root">
       <h1 className="admin-title">系统设置</h1>
-      <p className="admin-muted">
-        配置的真相在这张数据库表里：首次启动会把环境变量播种进来，此后一律以这里为准。
-      </p>
+      <p className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</p>
 
       {loading && <p className="admin-muted">加载中…</p>}
       {err && (
@@ -278,53 +288,81 @@ export default function AdminSettingsPage() {
       )}
       {msg && <div className="admin-alert-ok">{msg}</div>}
 
-      <div className="admin-health" id="settings-health">
-        {health.map((h) => (
-          <div className="admin-health-item" key={h.group}>
-            {h.ready ? '✅' : '⚠️'} {HEALTH_LABEL[h.group] ?? h.group}
-            {h.ready ? '已就绪' : `未就绪：${h.reason ?? '配置不完整'}`}
-          </div>
-        ))}
-      </div>
-
-      {GROUP_ORDER.map((g) => renderGroup(g))}
-
-      {dangerItems.length > 0 && (
-        <section className="admin-panel admin-danger" id="settings-danger">
-          <h2 className="admin-title">{GROUP_TITLE.danger}</h2>
-          <p className="admin-muted">以下开关会削弱系统安全基线，变更需二次确认并留痕。</p>
-          {dangerItems.map((item) => (
-            <div className="admin-field" key={item.key}>
-              <label htmlFor={`setting-${item.key}`}>
-                {item.label}
-                <span className="admin-field-key">{item.key}</span>
-              </label>
-              {field(item)}
-              {item.hint && <p className="admin-field-hint">{item.hint}</p>}
-              {item.key === 'PAYMENT_CHANNEL' && (() => {
-                const paymentHealth = health.find((h) => h.group === 'payment')
-                return (
-                  <p className="admin-field-hint">
-                    当前支付配置：
-                    {paymentHealth?.ready ? '✅ 已就绪' : `⚠️ 未就绪：${paymentHealth?.reason ?? '配置不完整'}`}
-                    <a href="#settings-payment"> 前往「支付与套餐」</a>
-                  </p>
-                )
-              })()}
-            </div>
+      {items.length > 0 && (
+        <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(String(k))}>
+          <Tabs.ListContainer>
+            <Tabs.List aria-label="系统设置分区">
+              {GROUP_ORDER.map((g) => (
+                <Tabs.Tab key={g} id={g}>
+                  {GROUP_TITLE[g]}
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+              ))}
+              {dangerItems.length > 0 && (
+                <Tabs.Tab id="danger">
+                  {GROUP_TITLE.danger}
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+              )}
+            </Tabs.List>
+          </Tabs.ListContainer>
+          {GROUP_ORDER.map((g) => (
+            <Tabs.Panel key={g} id={g}>
+              {renderGroupBody(g)}
+            </Tabs.Panel>
           ))}
-          <label className="admin-confirm-line">
-            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-            我已了解上述后果
-          </label>
-          {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
-              不自定义填充红底 —— 填充底要挑一对在明暗两套主题下都够对比度的「底 + 字」，
-              容易在暗色主题下掉到 AA 以下。 */}
-          <button className="admin-btn-danger" disabled={!confirmed || saving} onClick={() => void save('danger')}>
-            应用危险区开关
-          </button>
-        </section>
+          {dangerItems.length > 0 && (
+            <Tabs.Panel id="danger">
+              <p className="admin-muted">以下开关会削弱系统安全基线，变更需二次确认并留痕。</p>
+              {dangerItems.map((item) => (
+                <div className="admin-field" key={item.key}>
+                  <label htmlFor={`setting-${item.key}`}>
+                    {item.label}
+                    <span className="admin-field-key">{item.key}</span>
+                  </label>
+                  {field(item)}
+                  {item.hint && <p className="admin-field-hint">{item.hint}</p>}
+                  {item.key === 'PAYMENT_CHANNEL' && (() => {
+                    const paymentHealth = health.find((h) => h.group === 'payment')
+                    return (
+                      <p className="admin-field-hint">
+                        当前支付配置：
+                        {paymentHealth?.ready ? '✅ 已就绪' : `⚠️ 未就绪：${paymentHealth?.reason ?? '配置不完整'}`}
+                        <button
+                          type="button"
+                          onClick={() => setTab('payment')}
+                          style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                        >
+                          前往「支付与套餐」
+                        </button>
+                      </p>
+                    )
+                  })()}
+                </div>
+              ))}
+              <Checkbox
+                className="admin-confirm-line"
+                isSelected={confirmed}
+                onChange={(sel) => setConfirmed(sel)}
+              >
+                <Checkbox.Content>
+                  <Checkbox.Control>
+                    <Checkbox.Indicator />
+                  </Checkbox.Control>
+                </Checkbox.Content>
+                我已了解上述后果
+              </Checkbox>
+              {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
+                  文字色走 --danger-quiet（暗色 #eb6962）保证 AA。 */}
+              <button className="admin-btn-danger" disabled={!confirmed || saving} onClick={() => void save('danger')}>
+                应用危险区开关
+              </button>
+            </Tabs.Panel>
+          )}
+        </Tabs>
       )}
+
+      {confirmElement}
     </section>
   )
 }
