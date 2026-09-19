@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Checkbox, Input, Select, ListBox, Switch, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
+import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
 
@@ -35,6 +37,7 @@ export default function AdminSettingsPage() {
   const [testTo, setTestTo] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const { confirm, confirmElement } = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,7 +86,7 @@ export default function AdminSettingsPage() {
     setMsg(null)
     try {
       if (group === 'danger') {
-        if (!window.confirm('危险区开关会削弱系统安全基线，确定要应用吗？')) return
+        if (!(await confirm({ message: '危险区开关会削弱系统安全基线，确定要应用吗？', confirmLabel: '应用' }))) return
         await api.adminSaveDangerSettings(updates)
       } else {
         await api.adminSaveSettings(updates)
@@ -103,61 +106,69 @@ export default function AdminSettingsPage() {
       // 未设置时给出「实际会落在哪」的提示：只读项常常是空的（默认路径由应用自己拼），
       // 只显示空输入框会让运维以为没配置、不知道数据在哪
       return (
-        <input
-          value={item.value ?? ''}
-          readOnly
-          disabled
-          aria-label={item.label}
-          placeholder={item.defaultHint ? `未设置，默认 ${item.defaultHint}` : '未设置'}
-        />
+        <TextField isDisabled value={item.value ?? ''} aria-label={item.label}>
+          <Input placeholder={item.defaultHint ? `未设置，默认 ${item.defaultHint}` : '未设置'} />
+        </TextField>
       )
     }
     if (item.kind === 'enum') {
+      const current = dirty[item.key] ?? item.value ?? ''
       return (
-        <select
-          value={dirty[item.key] ?? item.value ?? ''}
-          onChange={(e) => setField(item.key, e.target.value)}
+        <Select
           aria-label={item.label}
+          value={current || null}
+          onChange={(v) => setField(item.key, (v as string) ?? '')}
         >
-          {(item.options ?? []).map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              {(item.options ?? []).map((o) => (
+                <ListBox.Item key={`opt-${item.key}-${o}`} id={`opt-${item.key}-${o}`}>
+                  {o}
+                </ListBox.Item>
+              ))}
+            </ListBox>
+          </Select.Popover>
+        </Select>
       )
     }
     if (item.kind === 'boolean') {
       return (
-        <select
-          value={dirty[item.key] ?? item.value ?? 'false'}
-          onChange={(e) => setField(item.key, e.target.value)}
+        <Switch
+          isSelected={(dirty[item.key] ?? item.value ?? 'false') === 'true'}
+          onChange={(sel) => setField(item.key, sel ? 'true' : 'false')}
           aria-label={item.label}
         >
-          <option value="false">关闭</option>
-          <option value="true">开启</option>
-        </select>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
       )
     }
     if (item.kind === 'secret') {
       return (
-        <input
+        <TextField
           type="password"
           autoComplete="new-password"
           value={dirty[item.key] ?? ''}
-          onChange={(e) => setField(item.key, e.target.value)}
-          placeholder={item.isSet ? `已设置（${item.masked}），留空则不修改` : '未设置'}
-          aria-label={item.label}
-        />
+          onChange={(v) => setField(item.key, v)}
+        >
+          <Input placeholder={item.isSet ? `已设置（${item.masked}），留空则不修改` : '未设置'} />
+        </TextField>
       )
     }
     return (
-      <input
+      <TextField
         value={dirty[item.key] ?? item.value ?? ''}
-        onChange={(e) => setField(item.key, e.target.value)}
-        placeholder={item.defaultHint ? `默认 ${item.defaultHint}` : ''}
-        aria-label={item.label}
-      />
+        onChange={(v) => setField(item.key, v)}
+      >
+        <Input placeholder={item.defaultHint ? `默认 ${item.defaultHint}` : ''} />
+      </TextField>
     )
   }
 
@@ -313,10 +324,18 @@ export default function AdminSettingsPage() {
               })()}
             </div>
           ))}
-          <label className="admin-confirm-line">
-            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          <Checkbox
+            className="admin-confirm-line"
+            isSelected={confirmed}
+            onChange={(sel) => setConfirmed(sel)}
+          >
+            <Checkbox.Content>
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+            </Checkbox.Content>
             我已了解上述后果
-          </label>
+          </Checkbox>
           {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
               不自定义填充红底 —— 填充底要挑一对在明暗两套主题下都够对比度的「底 + 字」，
               容易在暗色主题下掉到 AA 以下。 */}
@@ -325,6 +344,8 @@ export default function AdminSettingsPage() {
           </button>
         </section>
       )}
+
+      {confirmElement}
     </section>
   )
 }

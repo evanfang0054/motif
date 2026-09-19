@@ -272,7 +272,7 @@
 }
 
 .admin-btn-danger {
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：暗色 #eb6962 ≥4.5:1 */
   border-color: var(--danger);
 }
 
@@ -301,7 +301,7 @@
   /* 与 .admin-alert-ok 对称：底色用 -soft 淡彩、文字用语义色本身。
      ⚠️ 不要写成 var(--danger-text) —— 那个令牌在两套主题下都是白色，是给「红底上的文字」
      用的；打在 -soft 淡彩底上，亮色主题里等于白字白底（实测对比度 1.05，完全看不见）。 */
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-table {
@@ -439,7 +439,7 @@
 }
 
 .admin-neg {
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-detail {
@@ -630,7 +630,7 @@
 .admin-danger .admin-title {
   /* ⚠️ 用 --danger 而不是 --danger-text：后者两套主题下都是白色，只适合做「红底上的文字」，
      当标题色会变成白字白底（亮色主题实测对比度 1.05，等于看不见）。 */
-  color: var(--danger);
+  color: var(--danger-quiet); /* AA：文字角色 */
 }
 
 .admin-confirm-line {
