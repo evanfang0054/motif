@@ -101,9 +101,9 @@ export interface AdminAuditRow {
 /** 管理后台：一项系统配置。密钥项的 value 恒为 null，只给掩码与「已设置」标记 */
 export interface AdminSettingItem {
   key: string
-  group: 'generation' | 'mailer' | 'danger' | 'security' | 'data'
+  group: 'generation' | 'payment' | 'mailer' | 'danger' | 'security' | 'data'
   label: string
-  kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url'
+  kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
   masked: string | null
   isSet: boolean

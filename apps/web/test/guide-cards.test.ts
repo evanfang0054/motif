@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAILER_GUIDES, PAYMENT_GUIDES_EMPTY_OK } from '@/lib/guide-cards'
+import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 
 describe('邮件渠道引导卡数据', () => {
   it('smtp/resend/sendgrid 三渠道各有一张卡', () => {
@@ -17,5 +17,18 @@ describe('邮件渠道引导卡数据', () => {
         expect(c.linkLabel.length).toBeGreaterThan(0)
       }
     }
+  })
+})
+
+describe('支付渠道引导卡数据', () => {
+  it('epay/stripe 各有一张卡', () => {
+    expect(PAYMENT_GUIDES.epay.length).toBeGreaterThanOrEqual(1)
+    expect(PAYMENT_GUIDES.stripe.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('Stripe 卡必须包含 live 模式双替换步骤（防只换 key 不换 whsec 的生产事故）', () => {
+    const all = PAYMENT_GUIDES.stripe.flatMap((c) => c.steps).join('\n')
+    expect(all).toContain('whsec_')
+    expect(all).toContain('sk_live_')
   })
 })

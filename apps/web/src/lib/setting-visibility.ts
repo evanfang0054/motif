@@ -23,3 +23,16 @@ export function mailerFieldVisible(item: { key: string }, mailerChannel: string 
   const allowed = MAILER_FIELDS[mailerChannel ?? 'console'] ?? []
   return allowed.includes(item.key)
 }
+
+const PAYMENT_FIELDS: Record<string, readonly string[]> = {
+  mock: [],
+  epay: ['EPAY_API_URL', 'EPAY_PID', 'EPAY_KEY'],
+  stripe: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
+}
+
+/** payment 组显隐：站点地址与套餐价格恒显示；渠道凭据随传入渠道值显隐（接线传草稿优先值） */
+export function paymentFieldVisible(item: { key: string }, channel: string | null): boolean {
+  if (!item.key.startsWith('EPAY_') && !item.key.startsWith('STRIPE_')) return true
+  const allowed = PAYMENT_FIELDS[channel ?? 'mock'] ?? []
+  return allowed.includes(item.key)
+}
