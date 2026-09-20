@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Alert, Button, Card, Input, InputGroup, Label, Link, TextField } from '@heroui/react'
+import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField } from '@heroui/react'
 import { api } from '@/lib/client'
 
 type Mode = 'login' | 'register' | 'reset'
@@ -13,10 +13,11 @@ function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 }
 
-interface AuthCardProps {
-  /** 模式由 Landing 持有：落地页默认 login，各 CTA 可显式切到 register */
+interface AuthModalProps {
+  /** 模式由 Landing 持有：默认 login，注册意图 CTA 显式切 register */
   mode: Mode
   onModeChange: (m: Mode) => void
+  onClose: () => void
 }
 
 /** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
@@ -70,8 +71,8 @@ function PasswordInput({
   )
 }
 
-/** 登录 / 注册 / 找回密码 三合一卡片 */
-function AuthCard({ mode, onModeChange }: AuthCardProps) {
+/** 登录 / 注册 / 找回密码 三合一弹窗（原 AuthCard 表单逻辑零改动，外壳 Card → HeroUI Modal） */
+function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -88,8 +89,15 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
   const emailRef = useRef<HTMLInputElement>(null)
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（复用 P2 dialogs GDD L4-2-G1-A1 模式）
+  const restoreRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    // 邀请链接（/?invite=CODE）自动填充邀请码；落地页初始模式由 Landing 根据 URL 决定
+    restoreRef.current = document.activeElement as HTMLElement | null
+    return () => restoreRef.current?.focus?.()
+  }, [])
+
+  useEffect(() => {
+    // 邀请链接（/?invite=CODE）自动填充邀请码
     const invite = new URLSearchParams(window.location.search).get('invite')
     if (invite) setInviteCode(invite.trim().toUpperCase())
   }, [])
@@ -184,110 +192,126 @@ function AuthCard({ mode, onModeChange }: AuthCardProps) {
     setCooldown(0)
   }, [])
 
+  const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
+  const subtitle =
+    mode === 'reset' ? '输入注册邮箱与验证码设置新密码。' : mode === 'register' ? '注册即送 3 张生成额度，无需绑卡。' : '登录后继续你的生成任务。'
+
   return (
-    <Card id="auth" className="p-6" style={{ scrollMarginTop: 96 }}>
-      <h2 className="text-lg font-bold">{mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'}</h2>
-      <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
-        {mode === 'reset' ? '输入注册邮箱与验证码设置新密码。' : mode === 'register' ? '注册即送 3 张生成额度，无需绑卡。' : '登录后继续你的生成任务。'}
-      </p>
+    <HeroModal.Backdrop
+      isOpen
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <HeroModal.Container>
+        <HeroModal.Dialog aria-label={title}>
+          <HeroModal.Header>
+            <HeroModal.Heading>{title}</HeroModal.Heading>
+            <HeroModal.CloseTrigger aria-label="关闭">✕</HeroModal.CloseTrigger>
+          </HeroModal.Header>
+          <HeroModal.Body>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>{subtitle}</p>
 
-      <form onSubmit={submit} className="mt-2">
-        {mode === 'register' && (
-          <TextField className="mt-3.5" value={name} onChange={setName}>
-            <Label>昵称</Label>
-            <Input placeholder="用于头像和任务列表展示" autoComplete="nickname" />
-          </TextField>
-        )}
+            <form onSubmit={submit} className="mt-2">
+              {mode === 'register' && (
+                <TextField className="mt-3.5" value={name} onChange={setName}>
+                  <Label>昵称</Label>
+                  <Input placeholder="用于头像和任务列表展示" autoComplete="nickname" />
+                </TextField>
+              )}
 
-        <TextField
-          className="mt-3.5"
-          value={email}
-          onChange={(v) => {
-            setEmail(v)
-            if (codeMsg) setCodeMsg(null)
-          }}
-        >
-          <Label>邮箱</Label>
-          <Input ref={emailRef} type="email" placeholder="you@example.com" autoComplete="email" />
-        </TextField>
-
-        {mode === 'register' && (
-          <TextField className="mt-3.5" value={inviteCode} onChange={setInviteCode}>
-            <Label>邀请码（选填）</Label>
-            <Input placeholder="选填" />
-          </TextField>
-        )}
-
-        {mode !== 'login' && (
-          <>
-            <div className="mt-3.5 flex items-end gap-2">
-              <TextField className="min-w-0 flex-1" value={code} onChange={setCode}>
-                <Label>邮箱验证码</Label>
-                <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
+              <TextField
+                className="mt-3.5"
+                value={email}
+                onChange={(v) => {
+                  setEmail(v)
+                  if (codeMsg) setCodeMsg(null)
+                }}
+              >
+                <Label>邮箱</Label>
+                <Input ref={emailRef} type="email" placeholder="you@example.com" autoComplete="email" />
               </TextField>
-              <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
-                {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
+
+              {mode === 'register' && (
+                <TextField className="mt-3.5" value={inviteCode} onChange={setInviteCode}>
+                  <Label>邀请码（选填）</Label>
+                  <Input placeholder="选填" />
+                </TextField>
+              )}
+
+              {mode !== 'login' && (
+                <>
+                  <div className="mt-3.5 flex items-end gap-2">
+                    <TextField className="min-w-0 flex-1" value={code} onChange={setCode}>
+                      <Label>邮箱验证码</Label>
+                      <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
+                    </TextField>
+                    <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
+                      {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
+                    </Button>
+                  </div>
+                  {codeMsg && (
+                    <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
+                      {codeMsg.text}
+                    </p>
+                  )}
+                </>
+              )}
+
+              <div className="mt-3.5">
+                <PasswordInput
+                  label={mode === 'reset' ? '新密码' : '密码'}
+                  ariaBase="密码"
+                  value={password}
+                  onChange={setPassword}
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                />
+              </div>
+
+              {mode === 'register' && (
+                <div className="mt-3.5">
+                  <PasswordInput label="确认密码" ariaBase="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
+                </div>
+              )}
+
+              {error && (
+                <Alert status="danger" role="alert" className="mt-3">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{error}</Alert.Title>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {notice && (
+                <Alert status="success" className="mt-3">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{notice}</Alert.Title>
+                  </Alert.Content>
+                </Alert>
+              )}
+
+              <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
+                {busy ? '处理中…' : mode === 'login' ? '登录并开始生成' : mode === 'register' ? '注册并领取 3 张额度' : '重置密码'}
               </Button>
+            </form>
+
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+              {mode === 'login' ? (
+                <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
+              ) : (
+                <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
+              )}
+              {mode !== 'reset' && (
+                <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
+              )}
             </div>
-            {codeMsg && (
-              <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
-                {codeMsg.text}
-              </p>
-            )}
-          </>
-        )}
-
-        <div className="mt-3.5">
-          <PasswordInput
-            label={mode === 'reset' ? '新密码' : '密码'}
-            ariaBase="密码"
-            value={password}
-            onChange={setPassword}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-        </div>
-
-        {mode === 'register' && (
-          <div className="mt-3.5">
-            <PasswordInput label="确认密码" ariaBase="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
-          </div>
-        )}
-
-        {error && (
-          <Alert status="danger" role="alert" className="mt-3">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>{error}</Alert.Title>
-            </Alert.Content>
-          </Alert>
-        )}
-        {notice && (
-          <Alert status="success" className="mt-3">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>{notice}</Alert.Title>
-            </Alert.Content>
-          </Alert>
-        )}
-
-        <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
-          {busy ? '处理中…' : mode === 'login' ? '登录并开始生成' : mode === 'register' ? '注册并领取 3 张额度' : '重置密码'}
-        </Button>
-      </form>
-
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-        {mode === 'login' ? (
-          <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
-        ) : (
-          <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
-        )}
-        {mode !== 'reset' && (
-          <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
-        )}
-      </div>
-    </Card>
+          </HeroModal.Body>
+        </HeroModal.Dialog>
+      </HeroModal.Container>
+    </HeroModal.Backdrop>
   )
 }
 
-export { AuthCard }
+export { AuthModal }
 export type { Mode }

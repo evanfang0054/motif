@@ -4,45 +4,60 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Button, Card } from '@heroui/react'
 import { BrandMark } from '@/components/BrandMark'
-import { AuthCard, type Mode } from './AuthCard'
-import { anchorRender } from '@/components/ui/anchor-button'
+import { AuthModal, type Mode } from './AuthModal'
 
-/** 未登录落地页：导航 + 主视觉 + 登录卡 + 案例 + 功能 + 页脚 */
+/** 未登录落地页：导航 + 主视觉 + 登录弹窗 + 案例 + 功能 + 页脚 */
 function Landing() {
-  // 默认登录模式（回访/老用户主路径）；「免费注册」「注册送额度」等注册意图入口显式切换
+  // 弹窗模式由 Landing 持有：默认 login（回访/老用户主路径）；注册意图入口显式切 register
   const [authMode, setAuthMode] = useState<Mode>('login')
+  const [authOpen, setAuthOpen] = useState(false)
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
+  // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」（spec §3.1）
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const mode = params.get('mode')
-    if (mode === 'register' || mode === 'login') setAuthMode(mode)
-    if (params.get('invite')) setAuthMode('register')
+    if (mode === 'register' || mode === 'login') {
+      setAuthMode(mode)
+      setAuthOpen(true)
+    }
+    if (params.get('invite')) {
+      setAuthMode('register')
+      setAuthOpen(true)
+    }
   }, [])
 
-  /** 注册意图 CTA：切到注册模式并滚动到卡片 */
-  const goRegister = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    setAuthMode('register')
-    e.preventDefault()
-    document.getElementById('auth')?.scrollIntoView({ behavior: 'smooth' })
+  /** 弹窗入口：设置模式并打开 */
+  const openAuth = (m: Mode) => {
+    setAuthMode(m)
+    setAuthOpen(true)
   }
 
-  /** 登录意图 CTA：确保卡片处于登录模式 */
-  const goLogin = () => setAuthMode('login')
+  /** 锚点平滑滚动到色带（section）顶部：配合 scroll-margin-top 让整段模块完整入画 */
+  const smoothScrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  /** 锚点 onClick 包装（React Aria PressEvent 无 preventDefault，锚点与按钮分两路写） */
+  const anchorScroll = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault()
+    smoothScrollTo(id)
+  }
 
   return (
     <div className="lp-shell" id="top">
       <header className="lp-nav">
-        <Link href="#top" className="lp-brand">
+        <Link href="#top" className="lp-brand" onClick={anchorScroll('top')}>
           <BrandMark />
           Motif
         </Link>
         <nav className="lp-nav-links hidden md:flex">
-          <a href="#showcase">案例一览</a>
-          <a href="#features">核心能力</a>
-          <a href="#auth" onClick={goRegister}>注册送额度</a>
+          <a href="#showcase" onClick={anchorScroll('showcase')}>案例一览</a>
+          <a href="#features" onClick={anchorScroll('features')}>核心能力</a>
+          <a href="#register" onClick={(e) => { e.preventDefault(); openAuth('register') }}>注册送额度</a>
         </nav>
-        <Button variant="primary" render={anchorRender({ href: '#auth', onClick: goLogin })}>开始体验</Button>
+        {/* 文案映射（契约 A2）：开始体验 → 立即生成 */}
+        <Button variant="primary" onPress={() => openAuth('login')}>立即生成</Button>
       </header>
 
       <main className="lp-main">
@@ -59,8 +74,9 @@ function Landing() {
               生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
             </p>
             <div className="lp-actions">
-              <Button variant="primary" render={anchorRender({ href: '#auth', onClick: goLogin })}>立即开始</Button>
-              <Button variant="outline" render={anchorRender({ href: '#showcase' })}>先看效果</Button>
+              {/* 文案映射（契约 A2）：立即开始 → 开始生成 */}
+              <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
+              <Button variant="outline" onPress={() => smoothScrollTo('showcase')}>先看效果</Button>
             </div>
             <div className="lp-hero-points">
               <span>✓ 注册即送 3 张额度</span>
@@ -68,7 +84,7 @@ function Landing() {
               <span>✓ 云端队列不占本地算力</span>
             </div>
           </div>
-          <AuthCard mode={authMode} onModeChange={setAuthMode} />
+          {/* Task 3 起右侧换 banner 图层；本任务先移除内嵌卡片，单栏为可接受中间态 */}
         </section>
 
         <section id="showcase" className="lp-showcase">
@@ -144,7 +160,7 @@ function Landing() {
             />
             <h2 className="lp-section-title">准备好开始了吗？</h2>
             <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
-            <Button variant="primary" className="mt-5" render={anchorRender({ href: '#auth', onClick: goRegister })}>免费注册</Button>
+            <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
           </Card>
         </section>
       </main>
@@ -156,6 +172,10 @@ function Landing() {
         </span>
         <span>© 2026 Motif · AI 商业图片批量生成工作台</span>
       </footer>
+
+      {authOpen && (
+        <AuthModal mode={authMode} onModeChange={setAuthMode} onClose={() => setAuthOpen(false)} />
+      )}
     </div>
   )
 }
