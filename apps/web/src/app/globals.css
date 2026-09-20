@@ -261,12 +261,46 @@ body {
   margin: -8px -10px;
 }
 
-.lp-main {
+.lp-container {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 clamp(16px, 5vw, 48px);
-  flex: 1;
+}
+
+/* 满幅色带：锚点落在带上，scroll-margin = 导航高 + 余量，点击后整段模块完整入画 */
+.lp-band {
+  scroll-margin-top: 72px;
+}
+
+.lp-band-showcase {
+  padding: 30px 0 64px;
+  background: #ffffff; /* 亮色亮白：实测 --surface-primary 与页面底同为 #faf9f5，直接用无区分度（spec §3.3 实测注） */
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+html[data-theme="dark"] .lp-band-showcase {
+  background: var(--surface-primary); /* 暗 #1f1e1b vs 页面 #181715 */
+}
+
+.lp-band-features {
+  padding: 64px 0;
+  background: var(--surface-secondary);
+}
+
+.lp-band-cta {
+  padding: 72px 0 80px;
+  background: color-mix(in srgb, var(--brand-warm) 7%, var(--surface-primary));
+}
+
+.lp-cta-inner {
+  text-align: center;
+}
+
+.lp-cta-inner img {
+  display: block;
+  margin: 0 auto 20px;
 }
 
 .lp-hero {
@@ -347,12 +381,7 @@ body {
 
 
 
-/* 展示区 */
-
-.lp-showcase {
-  padding: 30px 0 64px;
-  scroll-margin-top: 72px;
-}
+/* 展示区（色带职责已移入 .lp-band-showcase） */
 
 .lp-showcase-grid {
   display: grid;
@@ -369,7 +398,7 @@ body {
 
 .lp-demo-card {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: var(--surface-primary);
+  background: var(--surface-secondary); /* 带内可辨：暗色下与 showcase 带拉开一档（spec §3.5 连带修正） */
   border-radius: 18px;
   padding: 20px;
 }
@@ -419,12 +448,7 @@ body {
   color: var(--muted);
 }
 
-/* 功能区 */
-
-.lp-features {
-  padding: 0 0 64px;
-  scroll-margin-top: 72px;
-}
+/* 功能区（色带职责已移入 .lp-band-features） */
 
 .lp-section-title {
   font-size: clamp(22px, 3vw, 30px);

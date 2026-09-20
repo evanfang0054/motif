@@ -2,11 +2,11 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Button, Card } from '@heroui/react'
+import { Button } from '@heroui/react'
 import { BrandMark } from '@/components/BrandMark'
 import { AuthModal, type Mode } from './AuthModal'
 
-/** 未登录落地页：导航 + 主视觉 + 登录弹窗 + 案例 + 功能 + 页脚 */
+/** 未登录落地页：导航 + 主视觉（hero）+ 三段满幅色带 + 页脚 + 登录弹窗 */
 function Landing() {
   // 弹窗模式由 Landing 持有：默认 login（回访/老用户主路径）；注册意图入口显式切 register
   const [authMode, setAuthMode] = useState<Mode>('login')
@@ -60,7 +60,7 @@ function Landing() {
         <Button variant="primary" onPress={() => openAuth('login')}>立即生成</Button>
       </header>
 
-      <main className="lp-main">
+      <main>
         <section className="lp-hero">
           <div>
             <span className="lp-hero-badge">✦ Motif · AI 商业图片批量工作台</span>
@@ -84,71 +84,75 @@ function Landing() {
               <span>✓ 云端队列不占本地算力</span>
             </div>
           </div>
-          {/* Task 3 起右侧换 banner 图层；本任务先移除内嵌卡片，单栏为可接受中间态 */}
+          {/* Task 3 起右侧换 banner 图层；本任务先保持单栏中间态 */}
         </section>
 
-        <section id="showcase" className="lp-showcase">
-          <h2 className="lp-section-title">一次任务，一套可用素材</h2>
-          <p className="lp-section-sub">从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。</p>
-          <div className="lp-showcase-grid" style={{ marginTop: 26 }}>
-            <div className="lp-demo-card">
-              <h3 style={{ fontSize: 16, fontWeight: 700 }}>示例 · 香薰蜡烛上新</h3>
-              <p className="mt-2 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-                以蜡烛实拍图为主体，产出电商详情页素材：白底主图、餐桌场景与材质特写，
-                保持同一支蜡烛的形态与香色氛围。
-              </p>
-              <div className="mt-3">
-                <div className="lp-step"><span className="lp-step-dot" /><span>已解析参考图主体与光线特征</span></div>
-                <div className="lp-step"><span className="lp-step-dot" /><span>已套用「电商商品全套图」模板</span></div>
-                <div className="lp-step"><span className="lp-step-dot" /><span>4 张图片进入云端队列生成</span></div>
+        <section id="showcase" className="lp-band lp-band-showcase">
+          <div className="lp-container">
+            <h2 className="lp-section-title">一次任务，一套可用素材</h2>
+            <p className="lp-section-sub">从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。</p>
+            <div className="lp-showcase-grid" style={{ marginTop: 26 }}>
+              <div className="lp-demo-card">
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>示例 · 香薰蜡烛上新</h3>
+                <p className="mt-2 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                  以蜡烛实拍图为主体，产出电商详情页素材：白底主图、餐桌场景与材质特写，
+                  保持同一支蜡烛的形态与香色氛围。
+                </p>
+                <div className="mt-3">
+                  <div className="lp-step"><span className="lp-step-dot" /><span>已解析参考图主体与光线特征</span></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><span>已套用「电商商品全套图」模板</span></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><span>4 张图片进入云端队列生成</span></div>
+                </div>
+              </div>
+              <div className="lp-shot">
+                <figure>
+                  <img src="/templates/ecommerce-suite.jpg" alt="商品套图示例" width={1536} height={1024} />
+                  <figcaption>电商商品全套图 · 示例成片</figcaption>
+                </figure>
+                <figure>
+                  <img src="/templates/portrait-editorial.jpg" alt="人物写真示例" width={1536} height={1024} />
+                  <figcaption>个人形象写真 · 示例成片</figcaption>
+                </figure>
+                <figure>
+                  <img src="/templates/world-landmarks.jpg" alt="旅拍示例" width={1536} height={1024} />
+                  <figcaption>环球地标旅拍 · 示例成片</figcaption>
+                </figure>
+                <figure>
+                  <img src="/templates/wedding-portrait.jpg" alt="婚纱样片示例" width={1536} height={1024} />
+                  <figcaption>婚纱旅拍样片 · 示例成片</figcaption>
+                </figure>
               </div>
             </div>
-            <div className="lp-shot">
-              <figure>
-                <img src="/templates/ecommerce-suite.jpg" alt="商品套图示例" width={1536} height={1024} />
-                <figcaption>电商商品全套图 · 示例成片</figcaption>
-              </figure>
-              <figure>
-                <img src="/templates/portrait-editorial.jpg" alt="人物写真示例" width={1536} height={1024} />
-                <figcaption>个人形象写真 · 示例成片</figcaption>
-              </figure>
-              <figure>
-                <img src="/templates/world-landmarks.jpg" alt="旅拍示例" width={1536} height={1024} />
-                <figcaption>环球地标旅拍 · 示例成片</figcaption>
-              </figure>
-              <figure>
-                <img src="/templates/wedding-portrait.jpg" alt="婚纱样片示例" width={1536} height={1024} />
-                <figcaption>婚纱旅拍样片 · 示例成片</figcaption>
-              </figure>
+          </div>
+        </section>
+
+        <section id="features" className="lp-band lp-band-features">
+          <div className="lp-container">
+            <h2 className="lp-section-title">为什么选 Motif</h2>
+            <p className="lp-section-sub">从参考图到成套素材的完整工作流。</p>
+            <div className="lp-feature-grid">
+              <div className="lp-feature">
+                <h3>参考图驱动</h3>
+                <p>上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。</p>
+              </div>
+              <div className="lp-feature">
+                <h3>成套批量出图</h3>
+                <p>一次任务产出多张、多角度、多场景素材，主图、场景图与特写一次配齐。</p>
+              </div>
+              <div className="lp-feature">
+                <h3>云端队列生成</h3>
+                <p>任务在服务端排队执行，关掉页面也不中断，回来直接取图。</p>
+              </div>
+              <div className="lp-feature">
+                <h3>历史沉淀迭代</h3>
+                <p>每轮生成自动存档，可以换提示词、换风格在原有基础上继续打磨。</p>
+              </div>
             </div>
           </div>
         </section>
 
-        <section id="features" className="lp-features">
-          <h2 className="lp-section-title">为什么选 Motif</h2>
-          <p className="lp-section-sub">从参考图到成套素材的完整工作流。</p>
-          <div className="lp-feature-grid">
-            <div className="lp-feature">
-              <h3>参考图驱动</h3>
-              <p>上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。</p>
-            </div>
-            <div className="lp-feature">
-              <h3>成套批量出图</h3>
-              <p>一次任务产出多张、多角度、多场景素材，主图、场景图与特写一次配齐。</p>
-            </div>
-            <div className="lp-feature">
-              <h3>云端队列生成</h3>
-              <p>任务在服务端排队执行，关掉页面也不中断，回来直接取图。</p>
-            </div>
-            <div className="lp-feature">
-              <h3>历史沉淀迭代</h3>
-              <p>每轮生成自动存档，可以换提示词、换风格在原有基础上继续打磨。</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="lp-showcase" style={{ paddingBottom: 80 }}>
-          <Card className="p-6" style={{ textAlign: 'center' }}>
+        <section className="lp-band lp-band-cta">
+          <div className="lp-container lp-cta-inner">
             {/* 完整纹样版印章（含墨色小 m 变奏）：只在 ≥64px 的大画幅出场，
                 顶栏/favicon 用减法版 BrandMark，分层约定见 docs/brand/README.md */}
             <img
@@ -156,12 +160,11 @@ function Landing() {
               alt="Motif 印章"
               width={96}
               height={96}
-              style={{ display: 'block', margin: '0 auto 20px' }}
             />
             <h2 className="lp-section-title">准备好开始了吗？</h2>
             <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
             <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
-          </Card>
+          </div>
         </section>
       </main>
 
