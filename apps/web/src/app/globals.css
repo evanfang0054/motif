@@ -224,15 +224,6 @@ body {
 /* 自定义组件类归入 components 层：Tailwind v4 cascade layers 中 utilities 恒在其上，
    断点工具类（hidden/md:flex/lg:hidden 等）才能覆盖这些类的 display（issue #6 根因修复） */
 @layer components {
-  .lp-nav-links {
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    font-size: 14px;
-    color: var(--muted-strong);
-  }
-
-
   .ws-badge {
     display: inline-flex;
     align-items: center;
@@ -261,28 +252,152 @@ body {
   margin: -8px -10px;
 }
 
-.lp-main {
+.lp-container {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 clamp(16px, 5vw, 48px);
-  flex: 1;
+}
+
+/* 满幅色带：锚点落在带上，scroll-margin 恰为导航实测高 65px（留 1px 藏边，零 hero 缝隙——冒烟反馈修订） */
+.lp-band {
+  scroll-margin-top: 64px;
+}
+
+.lp-band-showcase {
+  padding: 30px 0 64px;
+  background: #ffffff; /* 亮色亮白：实测 --surface-primary 与页面底同为 #faf9f5，直接用无区分度（spec §3.3 实测注） */
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+html[data-theme="dark"] .lp-band-showcase {
+  background: var(--surface-primary); /* 暗 #1f1e1b vs 页面 #181715 */
+}
+
+.lp-band-features {
+  padding: 64px 0;
+  background: var(--surface-secondary);
+}
+
+.lp-band-cta {
+  padding: 72px 0 80px;
+  background: color-mix(in srgb, var(--brand-warm) 7%, var(--surface-primary));
+}
+
+.lp-cta-inner {
+  text-align: center;
+}
+
+.lp-cta-inner img {
+  display: block;
+  margin: 0 auto 20px;
 }
 
 .lp-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: clamp(24px, 4vw, 56px);
+  /* hero 局部令牌（--lp-* 前缀经 HeroUI 变量清单查重无冲突） */
+  --lp-hero-bg: #161310;
+  --lp-hero-fg: #f5efe6;
+  --lp-hero-muted: #b9b0a2;
+  --lp-hero-border: color-mix(in srgb, #f5efe6 40%, transparent);
+
+  position: relative;
+  overflow: hidden;
+  background: var(--lp-hero-bg);
+  min-height: 100vh; /* 满视口 hero（用户 2026-09-20 冒烟反馈） */
+  min-height: 100svh; /* svh 兜底移动端地址栏收起不跳动（沿袭 issue #7） */
+  display: flex;
   align-items: center;
-  padding: clamp(48px, 8vh, 96px) 0 56px;
-  min-height: 100vh;
-  min-height: 100svh; /* 稳定小视口：移动端地址栏收起不跳动（issue #7） */
 }
 
-@media (max-width: 960px) {
+/* 暗色主题提亮一档：避免与页面 #181715 融片（契约 C3 计算断言） */
+html[data-theme="dark"] .lp-hero {
+  --lp-hero-bg: #221b15;
+}
+
+/* banner 图层：desktop 右置 ~52%，接缝 270° 渐变融合（dragonpass 手法） */
+.lp-hero-visual {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48%;
+  right: 0;
+}
+
+.lp-hero-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lp-hero-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(270deg, transparent 51.62%, var(--lp-hero-bg) 100%);
+}
+
+/* 左侧暗色块外扩 4px 盖住接缝，防小数边缘渗亮线（dragonpass 同款兜底） */
+.lp-hero-solid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(48% + 4px);
+  background: var(--lp-hero-bg);
+}
+
+.lp-hero-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.lp-hero-copy {
+  max-width: 46%;
+}
+
+/* hero 文字反白（scoped 覆盖自有 lp-* 类，非 HeroUI 内部样式） */
+.lp-hero .lp-hero-badge {
+  border-color: var(--lp-hero-border);
+  background: color-mix(in srgb, #f5efe6 8%, transparent);
+  color: var(--lp-hero-muted);
+}
+
+.lp-hero .lp-hero-title { color: var(--lp-hero-fg); }
+.lp-hero .lp-hero-sub { color: var(--lp-hero-muted); }
+.lp-hero .lp-hero-points { color: var(--lp-hero-muted); }
+
+/* 平板/移动：banner 全幅垫顶 + 底部 180° 渐变融合，内容贴底（dragonpass overlay 结构） */
+@media (max-width: 1023px) {
   .lp-hero {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    justify-content: flex-end;
   }
+
+  .lp-hero-visual { left: 0; right: 0; }
+
+  /* 文字压图区需要足够暗度：三段坡（内容贴底锚定，底部 ~40% 是文字区），
+     42% 处 62% 暗、64% 处全暗——否则 badge/副文压亮图不可读（响应式冒烟发现） */
+  .lp-hero-fade {
+    background: linear-gradient(
+      180deg,
+      transparent 20%,
+      color-mix(in srgb, var(--lp-hero-bg) 62%, transparent) 42%,
+      var(--lp-hero-bg) 64%
+    );
+  }
+
+  .lp-hero-solid { display: none; }
+
+  .lp-hero-copy {
+    max-width: none;
+    padding-bottom: 56px;
+  }
+}
+
+/* 移动：间距收紧 */
+@media (max-width: 639px) {
+  .lp-hero-copy { padding-bottom: 40px; }
 }
 
 .lp-hero-badge {
@@ -321,6 +436,19 @@ body {
   align-items: center;
 }
 
+/* 移动 CTA 纵向堆叠全宽：必须位于基础 .lp-actions 之后（unlayered 同 specificity 源顺序后者胜，评审 B3）。
+   子项 width:100% 用于顶掉 HeroUI Button 自带的 w-fit 显式宽度——stretch 对显式宽度无效 */
+@media (max-width: 639px) {
+  .lp-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lp-actions > * {
+    width: 100%;
+  }
+}
+
 .lp-hero-points {
   margin-top: 22px;
   display: flex;
@@ -347,12 +475,7 @@ body {
 
 
 
-/* 展示区 */
-
-.lp-showcase {
-  padding: 30px 0 64px;
-  scroll-margin-top: 72px;
-}
+/* 展示区（色带职责已移入 .lp-band-showcase） */
 
 .lp-showcase-grid {
   display: grid;
@@ -369,7 +492,7 @@ body {
 
 .lp-demo-card {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: var(--surface-primary);
+  background: var(--surface-secondary); /* 带内可辨：暗色下与 showcase 带拉开一档（spec §3.5 连带修正） */
   border-radius: 18px;
   padding: 20px;
 }
@@ -419,12 +542,7 @@ body {
   color: var(--muted);
 }
 
-/* 功能区 */
-
-.lp-features {
-  padding: 0 0 64px;
-  scroll-margin-top: 72px;
-}
+/* 功能区（色带职责已移入 .lp-band-features） */
 
 .lp-section-title {
   font-size: clamp(22px, 3vw, 30px);
