@@ -13,6 +13,19 @@ function Landing() {
   const [authOpen, setAuthOpen] = useState(false)
   // hero 引用：Task 4 的 IntersectionObserver（导航两态）消费
   const heroRef = useRef<HTMLElement>(null)
+  // 导航两态：hero 可见时透明反白，滚过 hero（底边越过 72px 导航线）后切回毛玻璃（契约 C2）
+  const [navSolid, setNavSolid] = useState(false)
+
+  useEffect(() => {
+    const hero = heroRef.current
+    if (!hero) return
+    const obs = new IntersectionObserver(
+      ([entry]) => setNavSolid(!entry.isIntersecting),
+      { rootMargin: '-72px 0px 0px 0px', threshold: 0 }
+    )
+    obs.observe(hero)
+    return () => obs.disconnect()
+  }, [])
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
   // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」（spec §3.1）
@@ -48,7 +61,7 @@ function Landing() {
 
   return (
     <div className="lp-shell" id="top">
-      <header className="lp-nav">
+      <header className={navSolid ? 'lp-nav' : 'lp-nav lp-nav-onhero'}>
         <Link href="#top" className="lp-brand" onClick={anchorScroll('top')}>
           <BrandMark />
           Motif

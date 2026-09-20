@@ -208,8 +208,10 @@ body {
 }
 
 .lp-nav {
-  position: sticky;
+  position: fixed; /* fixed 化：透明态才能叠在暗 hero 之上（sticky 的文档流占位会露出米底，spec §3.2 评审 S8 回写） */
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -219,6 +221,26 @@ body {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   backdrop-filter: blur(10px);
   background: color-mix(in srgb, var(--home-background) 82%, transparent);
+}
+
+/* hero 可见时的透明反白态（契约 C2）；滚动态即上方现有毛玻璃，两主题自动适配 */
+.lp-nav-onhero {
+  background: transparent;
+  border-bottom-color: transparent;
+  backdrop-filter: none;
+}
+
+.lp-nav-onhero .lp-brand {
+  color: var(--lp-hero-fg);
+}
+
+.lp-nav-onhero .lp-nav-links a {
+  color: color-mix(in srgb, #f5efe6 82%, transparent);
+}
+
+.lp-nav-onhero .lp-nav-links a:hover,
+.lp-nav-onhero .lp-nav-links a:focus-visible {
+  color: var(--lp-hero-fg);
 }
 
 /* 自定义组件类归入 components 层：Tailwind v4 cascade layers 中 utilities 恒在其上，
