@@ -3,12 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   SIGNUP_BONUS_CREDITS,
+  allocateSlots,
+  displaySize,
   inviteRewardFor,
+  placementRect,
   validateEmail,
   validateName,
   validatePassword,
   validatePrompt,
+  validateReferenceCount,
   validateSize,
+  viewportOrigin,
   type CanvasImage,
   type CreditPackage,
   type GenerateImagesInput,
@@ -201,6 +206,9 @@ export async function enqueueGeneration(
     if (id.startsWith('refu_')) stagedIds.push(id)
     else canvasRefIds.push(id)
   }
+  // 上限兜底（客户端已按张准入，这里防绕过）：必须在扣费之前，否则超限会先扣额度再失败
+  const refCountError = validateReferenceCount(stagedIds.length + canvasRefIds.length)
+  if (refCountError) throw new ServiceError(400, refCountError)
   // 画布参考：校验归属（必须存在、属于当前用户与当前任务）
   for (const id of canvasRefIds) {
     const img = store.getCanvasImage(id)
@@ -279,6 +287,10 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
 
     // 断点续跑：崩溃重排后从已生成数继续，只补剩余张数（额度守恒，防超发）
     const alreadyDone = store.countGeneratedInMessage(messageId)
+    // 落位上下文：新产出落进「当前视口内的空位槽」。视口以 topics.canvas_meta 为准
+    // （服务端唯一能读到的「用户当前看到的区域」），故生成的图不会堆在 (0,0)。
+    const placementOrigin = viewportOrigin(store.getCanvasMeta(msg.topicId).viewport)
+    const occupied = store.listCanvasPlacements(msg.topicId).map(placementRect)
     for (let i = alreadyDone; i < msg.requestedCount; i++) {
       // 取消检查：canceling 状态时停止并把剩余张数退回
       const current = store.getMessage(messageId)
@@ -296,6 +308,11 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       const abs = storagePathFor(dataDir, imageKey)
       mkdirSync(dirname(abs), { recursive: true })
       writeFileSync(abs, img.buffer)
+      // 位置列与图片行在**同一条 INSERT** 落库：不存在「有图无位置」的中间态。
+      // ⚠️ 不要拆成「先插图、再 UPDATE 位置」两步。
+      const size = displaySize(img.width, img.height)
+      const [slot] = allocateSlots(occupied, [size], placementOrigin)
+      occupied.push(slot)
       store.insertCanvasImage({
         topicId: msg.topicId,
         userId: msg.userId,
@@ -307,6 +324,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
         bytes: img.buffer.length,
         width: img.width,
         height: img.height,
+        placement: { x: slot.x, y: slot.y, width: slot.w, height: slot.h },
       })
     }
 
@@ -384,9 +402,16 @@ export function resolveStagedReferences(
   stagedIds: string[]
 ): string[] {
   const out: string[] = []
+  // 落位上下文：转正的参考图也进「当前视口内的空位槽」，与生成产出共用同一套分配规则
+  const origin = viewportOrigin(store.getCanvasMeta(topicId).viewport)
+  const occupied = store.listCanvasPlacements(topicId).map(placementRect)
   for (const id of stagedIds) {
     const ref = store.getReferenceUpload(id)
     if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
+    // 上传参考图没有原图尺寸（width/height 为 0）→ displaySize 回退正方形槽位
+    const size = displaySize(0, 0)
+    const [slot] = allocateSlots(occupied, [size], origin)
+    occupied.push(slot)
     const img = store.insertCanvasImage({
       topicId,
       userId: user.id,
@@ -398,6 +423,7 @@ export function resolveStagedReferences(
       bytes: ref.bytes,
       width: 0,
       height: 0,
+      placement: { x: slot.x, y: slot.y, width: slot.w, height: slot.h },
     })
     store.deleteReferenceUpload(id)
     out.push(img.id)

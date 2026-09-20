@@ -1,0 +1,206 @@
+/**
+ * 画布内核类型：服务端与客户端共享。
+ *
+ * 画布 = 升级后的 topic，零新表：图片的摆放写回 `canvas_images` 的 5 个新列，
+ * 视口/背景写回 `topics.canvas_meta`（JSON）。血缘/版本链/批量聚簇不落表，由
+ * `lib/canvas/lineage.ts` 从既有 message_id 与 reference_ids 推导。
+ *
+ * 参考 `.infinite-canvas-ref/src/types/canvas.ts`（Position/ViewportTransform/SelectionBox
+ * 的类型组织方式），以及 `.infinite-canvas-ref/src/lib/canvas/canvas-node-size.ts`
+ * 的 `fitNodeSize`（本文件 `displaySize` 的来源）与
+ * `.infinite-canvas-ref/src/lib/canvas/canvas-node-factory.ts`（空位槽落位思路）。
+ * 适配改动：上游的节点类型（text/config/video/audio/group）全部不要 —— Motif 只有图片节点；
+ * 上游按「节点中心点」定位，这里按「视口左上角起 4 列网格找空位」定位。
+ */
+
+/** 画布上图片的摆放。⚠️ canvasWidth/canvasHeight 是**画布上的显示尺寸**，
+ * 与 CanvasImage.width/height（**原图像素尺寸**）是两回事，命名刻意区分。 */
+export interface CanvasImagePlacement {
+  id: string
+  canvasX: number
+  canvasY: number
+  canvasWidth: number
+  canvasHeight: number
+  /** 图片级 LWW 的版本依据（ISO 时间）；空串 = 升级库的老行，待补位 */
+  updatedAt: string
+}
+
+/** 背景图案三态。与上游 infinite-canvas 的 CanvasBackgroundMode 一致，默认 lines。 */
+export type CanvasBackgroundMode = 'dots' | 'lines' | 'blank'
+
+export interface CanvasViewport {
+  x: number
+  y: number
+  k: number
+}
+
+export interface CanvasMeta {
+  viewport: CanvasViewport
+  background: CanvasBackgroundMode
+  version: 1
+}
+
+/**
+ * 允许「只给部分字段」的元信息（含只给部分视口字段）。
+ * 归一函数本就逐字段容错，故类型也如实放宽 —— 这样「只改背景」「只改缩放」都能直接表达。
+ */
+export interface CanvasMetaInput {
+  viewport?: Partial<CanvasViewport>
+  background?: CanvasBackgroundMode
+  version?: 1
+}
+
+/** PATCH 增量补丁：贴合「防抖批量提交」的形态，天然避免整画布覆盖 */
+export interface CanvasPatch {
+  images?: { upsert?: CanvasImagePlacement[]; delete?: string[] }
+  meta?: CanvasMetaInput
+}
+
+export interface CanvasSnapshot {
+  images: CanvasImagePlacement[]
+  meta: CanvasMeta
+}
+
+/**
+ * 结构校验：一条摆放是否形状合法 —— id 非空、位置/尺寸是有限数字、尺寸为正、
+ * 版本为非空字符串（空串是「升级库老行待补位」的哨兵，客户端不得用它落位）。
+ *
+ * ⚠️ 服务端写入（`/api/topics/[id]/canvas` 的 PATCH）与画布文件导入
+ * （`lib/canvas/serialization.ts`）**共用这一条判据** —— 两处各写一份必然漂移
+ * （曾经就是路由严、导入松：导入能塞进 `canvasX: "abc"` 这种值）。
+ */
+export function isCanvasImagePlacement(v: unknown): v is CanvasImagePlacement {
+  if (!v || typeof v !== 'object') return false
+  const p = v as Partial<CanvasImagePlacement>
+  if (typeof p.id !== 'string' || !p.id) return false
+  const nums = [p.canvasX, p.canvasY, p.canvasWidth, p.canvasHeight]
+  if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return false
+  if (!(p.canvasWidth! > 0) || !(p.canvasHeight! > 0)) return false
+  return typeof p.updatedAt === 'string' && p.updatedAt.trim() !== ''
+}
+
+export const DEFAULT_CANVAS_META: CanvasMeta = {
+  viewport: { x: 0, y: 0, k: 1 },
+  background: 'lines',
+  version: 1,
+}
+
+const BACKGROUND_MODES: CanvasBackgroundMode[] = ['dots', 'lines', 'blank']
+
+function finiteNumber(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
+/** 归一：任何缺字段/坏值都回退默认，绝不抛错（脏 JSON 不能把画布打不开） */
+export function normalizeCanvasMeta(input: CanvasMetaInput | null | undefined): CanvasMeta {
+  const vp = input?.viewport
+  const background = BACKGROUND_MODES.includes(input?.background as CanvasBackgroundMode)
+    ? (input!.background as CanvasBackgroundMode)
+    : DEFAULT_CANVAS_META.background
+  // k 必须为正：k<=0 会让 viewportOrigin 除零 → NaN 位置 → 写进 NOT NULL 列直接抛错，
+  // 之后每次 GET 都 500（画布再也打不开）。故非正值一律回退默认缩放。
+  const k = finiteNumber(vp?.k, DEFAULT_CANVAS_META.viewport.k)
+  return {
+    viewport: {
+      x: finiteNumber(vp?.x, DEFAULT_CANVAS_META.viewport.x),
+      y: finiteNumber(vp?.y, DEFAULT_CANVAS_META.viewport.y),
+      k: k > 0 ? k : DEFAULT_CANVAS_META.viewport.k,
+    },
+    background,
+    version: 1,
+  }
+}
+
+/** 容错解析 topics.canvas_meta 列（升级库默认 '{}'，脏数据回退默认值） */
+export function parseCanvasMeta(raw: string | null | undefined): CanvasMeta {
+  try {
+    const v = JSON.parse(raw || '{}')
+    return normalizeCanvasMeta(v && typeof v === 'object' ? (v as CanvasMetaInput) : null)
+  } catch {
+    return { ...DEFAULT_CANVAS_META }
+  }
+}
+
+// ---------- 空位槽与显示尺寸（服务端补位与客户端落位共用，故实现在 core） ----------
+
+/** 空位槽几何：槽宽 240，槽间距 40，步长 280；显示尺寸钳制在 240×240 内，
+ * 因此任意两个不同槽位永不重叠（240 < 280）。 */
+export const SLOT_W = 240
+export const SLOT_GAP = 40
+export const SLOT_STEP = SLOT_W + SLOT_GAP
+export const SLOT_COLS = 4
+
+export interface CanvasRect { x: number; y: number; w: number; h: number }
+
+export function placementRect(p: CanvasImagePlacement): CanvasRect {
+  return { x: p.canvasX, y: p.canvasY, w: p.canvasWidth, h: p.canvasHeight }
+}
+
+export function rectToPlacement(id: string, r: CanvasRect, updatedAt: string): CanvasImagePlacement {
+  return { id, canvasX: r.x, canvasY: r.y, canvasWidth: r.w, canvasHeight: r.h, updatedAt }
+}
+
+/** 视口可见区域的左上角（世界坐标）——新图片落位到用户当前看到的地方。
+ * ⚠️ 必须是**全函数**：k 非正/非有限时按 1 处理，绝不产出 NaN/Infinity ——
+ * NaN 写进 canvas_x 这类 NOT NULL 列会被 SQLite 当成 NULL 而直接抛错，
+ * 让「旧库补位」在 GET 里炸掉，画布从此打不开。-0 也归一成 0，避免负零漏进库与 JSON。 */
+export function viewportOrigin(v: CanvasViewport): { x: number; y: number } {
+  const raw = finiteNumber(v.k, 1)
+  const k = raw > 0 ? raw : 1
+  const x = -finiteNumber(v.x, 0) / k
+  const y = -finiteNumber(v.y, 0) / k
+  return { x: x === 0 ? 0 : x, y: y === 0 ? 0 : y }
+}
+
+/**
+ * 显示尺寸：按原图比例缩放到 max 内，**不放大、不拉伸**。
+ * 原图尺寸未知（上传参考图 width/height 为 0）时回退正方形槽位。
+ * 照抄 `.infinite-canvas-ref/src/lib/canvas/canvas-node-size.ts` 的 fitNodeSize。
+ */
+export function displaySize(naturalWidth: number, naturalHeight: number, maxW = SLOT_W, maxH = SLOT_W): { width: number; height: number } {
+  if (!(naturalWidth > 0) || !(naturalHeight > 0)) return { width: maxW, height: maxH }
+  const scale = Math.min(1, maxW / naturalWidth, maxH / naturalHeight)
+  return { width: naturalWidth * scale, height: naturalHeight * scale }
+}
+
+function intersects(a: CanvasRect, b: CanvasRect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+/**
+ * 空位槽分配：从 origin 起按 4 列网格找与 occupied/已分配矩形都不相交的槽。
+ * 上限 10000 次尝试；耗尽则退化为「在所有矩形下方另起一行」，保证确定性且不重叠。
+ */
+export function allocateSlots(
+  occupied: CanvasRect[],
+  sizes: Array<{ width: number; height: number }>,
+  origin: { x: number; y: number }
+): CanvasRect[] {
+  const taken = [...occupied]
+  const out: CanvasRect[] = []
+  let i = 0
+  let tries = 0
+  while (out.length < sizes.length && tries < 10000) {
+    tries += 1
+    const size = sizes[out.length]
+    const cand: CanvasRect = {
+      x: origin.x + (i % SLOT_COLS) * SLOT_STEP,
+      y: origin.y + Math.floor(i / SLOT_COLS) * SLOT_STEP,
+      w: size.width,
+      h: size.height,
+    }
+    i += 1
+    if (taken.some((r) => intersects(r, cand))) continue
+    taken.push(cand)
+    out.push(cand)
+  }
+  if (out.length < sizes.length) {
+    let y = taken.reduce((m, r) => Math.max(m, r.y + r.h), origin.y) + SLOT_GAP
+    for (let k = out.length; k < sizes.length; k += 1) {
+      const size = sizes[k]
+      out.push({ x: origin.x, y, w: size.width, h: size.height })
+      y += size.height + SLOT_GAP
+    }
+  }
+  return out
+}

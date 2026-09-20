@@ -83,6 +83,13 @@ export interface CanvasImage {
   bytes: number
   width: number
   height: number
+  /** 画布摆放：位置与显示尺寸（⚠️ 与上面 width/height 的原图像素尺寸显式区分） */
+  canvasX: number
+  canvasY: number
+  canvasWidth: number
+  canvasHeight: number
+  /** 位置最后一次变更时间（图片级 LWW）；空串 = 升级库的老行，待首次 GET 补位 */
+  updatedAt: string
   messageId: string | null
   createdAt: string
 }

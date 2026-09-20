@@ -3,6 +3,12 @@ import { mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
+  allocateSlots,
+  displaySize,
+  parseCanvasMeta,
+  placementRect,
+  rectToPlacement,
+  viewportOrigin,
   newCanvasImageId,
   newCdkCode,
   newMessageId,
@@ -14,6 +20,8 @@ import {
   newSessionToken,
   newOrderId,
   type CanvasImage,
+  type CanvasImagePlacement,
+  type CanvasMeta,
   type CreditPackage,
   type CreditSource,
   type Message,
@@ -349,6 +357,11 @@ interface CanvasImageRow {
   bytes: number
   width: number
   height: number
+  canvas_x: number
+  canvas_y: number
+  canvas_w: number
+  canvas_h: number
+  updated_at: string
   created_at: string
 }
 
@@ -413,6 +426,11 @@ function rowToCanvasImage(r: CanvasImageRow): CanvasImage {
     bytes: r.bytes,
     width: r.width,
     height: r.height,
+    canvasX: r.canvas_x,
+    canvasY: r.canvas_y,
+    canvasWidth: r.canvas_w,
+    canvasHeight: r.canvas_h,
+    updatedAt: r.updated_at,
     messageId: r.message_id,
     createdAt: r.created_at,
   }
@@ -886,15 +904,23 @@ export class MotifStore {
     bytes: number
     width: number
     height: number
+    /** 画布摆放；缺省则落 0 尺寸 0 位置 + 空 updated_at，由首次 GET 补位自愈 */
+    placement?: { x: number; y: number; width: number; height: number }
   }): CanvasImage {
     const id = newCanvasImageId()
     const serial = this.nextSerial(input.topicId)
+    const t = nowIso()
+    const p = input.placement
     this.db
       .prepare(
-        `INSERT INTO canvas_images (id, topic_id, user_id, message_id, origin, serial, name, image_key, mime_type, bytes, width, height, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO canvas_images (id, topic_id, user_id, message_id, origin, serial, name, image_key, mime_type, bytes, width, height, canvas_x, canvas_y, canvas_w, canvas_h, updated_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, input.topicId, input.userId, input.messageId, input.origin, serial, input.name, input.imageKey, input.mimeType, input.bytes, input.width, input.height, nowIso())
+      .run(
+        id, input.topicId, input.userId, input.messageId, input.origin, serial, input.name, input.imageKey,
+        input.mimeType, input.bytes, input.width, input.height,
+        p ? p.x : 0, p ? p.y : 0, p ? p.width : 0, p ? p.height : 0, p ? t : '', t
+      )
     return this.getCanvasImage(id)!
   }
 
@@ -906,6 +932,109 @@ export class MotifStore {
   listCanvasImages(topicId: string): CanvasImage[] {
     const rows = this.db.prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial').all(topicId) as CanvasImageRow[]
     return rows.map(rowToCanvasImage)
+  }
+
+  // ---------- 画布摆放与元信息（画布升级） ----------
+
+  /** 画布元信息（视口/背景）：JSON 列，脏数据回退默认值 */
+  getCanvasMeta(topicId: string): CanvasMeta {
+    const row = this.db.prepare('SELECT canvas_meta FROM topics WHERE id = ?').get(topicId) as
+      | { canvas_meta: string }
+      | undefined
+    return parseCanvasMeta(row?.canvas_meta)
+  }
+
+  /**
+   * 写画布元信息。
+   * ⚠️ **刻意不更新 topics.updated_at**：视口变更会防抖落库，若撞 updated_at，
+   * watchTopic 长轮询会把每次平移判为「任务有变化」，导致整份 detail 重取 —— 平移变网络风暴。
+   */
+  setCanvasMeta(topicId: string, meta: CanvasMeta): void {
+    this.db.prepare('UPDATE topics SET canvas_meta = ? WHERE id = ?').run(JSON.stringify(meta), topicId)
+  }
+
+  listCanvasPlacements(topicId: string): CanvasImagePlacement[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id, canvas_x, canvas_y, canvas_w, canvas_h, updated_at FROM canvas_images WHERE topic_id = ? ORDER BY serial'
+      )
+      .all(topicId) as Array<{
+      id: string
+      canvas_x: number
+      canvas_y: number
+      canvas_w: number
+      canvas_h: number
+      updated_at: string
+    }>
+    return rows.map((r) => ({
+      id: r.id,
+      canvasX: r.canvas_x,
+      canvasY: r.canvas_y,
+      canvasWidth: r.canvas_w,
+      canvasHeight: r.canvas_h,
+      updatedAt: r.updated_at,
+    }))
+  }
+
+  /**
+   * 批量 upsert 画布位置，**图片级 LWW**（比较 updated_at），单事务。
+   * 返回 applied/rejected：rejected 含「图不存在」与「库中更新」两种，客户端据此回滚。
+   * 归属校验由调用方（route）先做，此处再用 topic_id 兜一层，防跨任务写入。
+   */
+  upsertCanvasPlacements(
+    topicId: string,
+    placements: CanvasImagePlacement[]
+  ): { applied: string[]; rejected: string[] } {
+    const applied: string[] = []
+    const rejected: string[] = []
+    const read = this.db.prepare('SELECT updated_at FROM canvas_images WHERE id = ? AND topic_id = ?')
+    const write = this.db.prepare(
+      'UPDATE canvas_images SET canvas_x = ?, canvas_y = ?, canvas_w = ?, canvas_h = ?, updated_at = ? WHERE id = ? AND topic_id = ?'
+    )
+    const tx = this.db.transaction(() => {
+      for (const p of placements) {
+        const row = read.get(p.id, topicId) as { updated_at: string } | undefined
+        if (!row) {
+          rejected.push(p.id)
+          continue
+        }
+        // 图片级 LWW：库中版本更新（且非空）时拒绝更旧的写入
+        if (row.updated_at && row.updated_at > p.updatedAt) {
+          rejected.push(p.id)
+          continue
+        }
+        write.run(p.canvasX, p.canvasY, p.canvasWidth, p.canvasHeight, p.updatedAt, p.id, topicId)
+        applied.push(p.id)
+      }
+    })
+    tx()
+    return { applied, rejected }
+  }
+
+  /**
+   * 旧库补位：`updated_at` 为空的行（升级库的老行）按 serial 顺序分配空位槽并写回。
+   * 幂等：写完 updated_at 非空，重复调用不再命中；已有非零位置的行不参与分配。
+   */
+  backfillCanvasPlacements(topicId: string): number {
+    const pending = this.db
+      .prepare(
+        "SELECT id, width, height FROM canvas_images WHERE topic_id = ? AND updated_at = '' ORDER BY serial"
+      )
+      .all(topicId) as Array<{ id: string; width: number; height: number }>
+    if (pending.length === 0) return 0
+    const origin = viewportOrigin(this.getCanvasMeta(topicId).viewport)
+    const occupied = this.listCanvasPlacements(topicId)
+      .filter((p) => !pending.some((x) => x.id === p.id))
+      .map(placementRect)
+    const sizes = pending.map((p) => displaySize(p.width, p.height))
+    const slots = allocateSlots(occupied, sizes, origin)
+    const t = nowIso()
+    // 逐行调 upsertCanvasPlacements：每行本身就是一条原子 UPDATE，且本方法幂等，
+    // 故不再套一层外层事务（避免嵌套事务的语义负担）
+    pending.forEach((row, i) => {
+      this.upsertCanvasPlacements(topicId, [rectToPlacement(row.id, slots[i], t)])
+    })
+    return pending.length
   }
 
   // ---------- 暂存参考图（上传后、生成前；开始生成时转正为画布图） ----------

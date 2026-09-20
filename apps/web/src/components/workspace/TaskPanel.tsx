@@ -3,6 +3,7 @@
 import { useRef } from 'react'
 import { Alert, Button, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
 import { SIZE_PRESETS } from '@/lib/templates'
+import { MAX_REFERENCE_IMAGES } from '@motif/core'
 import type { StagedReference } from '@motif/core'
 import { StatusBadge } from './TopNav'
 
@@ -41,6 +42,8 @@ function TaskPanel(p: Props) {
   const insufficient = typeof credits === 'number' && credits < p.count
   // 可移除的暂存参考（上传后、生成前）；「@ 引用」进来的画布图不进暂存列表，但仍计入 referenceCount
   const stagedOnly = p.staged
+  // 上传与「@ 引用」共用同一个上限：这里只看总量，满了就不让再选文件
+  const atReferenceCap = p.referenceCount >= MAX_REFERENCE_IMAGES
 
   return (
     <section className="ws-panel">
@@ -67,8 +70,8 @@ function TaskPanel(p: Props) {
       <div>
         <div className="ws-panel-label mb-1.5">参考图</div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onPress={() => fileRef.current?.click()}>
-            ⬆ 上传参考图{p.referenceCount > 0 ? `（${p.referenceCount}）` : ''}
+          <Button variant="secondary" isDisabled={atReferenceCap} onPress={() => fileRef.current?.click()}>
+            ⬆ 上传参考图（{p.referenceCount}／{MAX_REFERENCE_IMAGES}）
           </Button>
           <input
             ref={fileRef}
@@ -81,7 +84,9 @@ function TaskPanel(p: Props) {
               e.target.value = ''
             }}
           />
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>PNG / JPG / WebP ≤10MB</span>
+          <span className="text-xs" style={{ color: 'var(--muted)' }}>
+            {atReferenceCap ? `已达上限 ${MAX_REFERENCE_IMAGES} 张，移除一张后可继续上传` : 'PNG / JPG / WebP ≤10MB'}
+          </span>
         </div>
         {stagedOnly.length > 0 && (
           <div className="mt-2 flex flex-col gap-1.5">
