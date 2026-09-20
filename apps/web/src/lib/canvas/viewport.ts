@@ -71,23 +71,33 @@ export function fitView(bounds: Rect, viewportW: number, viewportH: number, padd
 export const TOOLBAR_LIFT = 12
 
 /**
- * 浮动工具栏的定位：被选矩形（世界坐标）包围盒的**顶部居中**，转成容器内屏幕坐标。
+ * 浮动工具栏的定位：被选矩形（世界坐标）包围盒的**顶部居中**，转成容器内屏幕坐标；
+ * **贴顶时自动翻到包围盒下方**（首行卡片 `y = 0` 时 `top` 会是 -12，被画布 `overflow-hidden` 裁掉上沿）。
  *
  * ⚠️ 返回的键名必须是 **`left`/`top`** —— 直接返回 `worldToScreen(...)` 的 `{x, y}` 会被
  * React 当成 CSS 属性 `x`/`y`（那是 SVG 语义，对绝对定位元素不生效），
  * 于是工具栏拿不到 left/top，只能落在容器左上角再被 `translateX(-50%)` 推出屏幕。
  * 这正是「框选多张后工具栏跑到别处」的成因，故此处把键名钉死。
+ * 也**刻意不加 `placement` 之类的新字段**：既有单测用 `toEqual` 精确匹配键名，加字段会变红，
+ * 而 `.canvas-toolbar` 只有 `translateX(-50%)`，锚到下方本身就落在卡片下，不需要样式微调。
  */
 export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: number } | null {
   if (rects.length === 0) return null
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
+  let maxY = -Infinity
   for (const r of rects) {
     minX = Math.min(minX, r.x)
     minY = Math.min(minY, r.y)
     maxX = Math.max(maxX, r.x + r.w)
+    maxY = Math.max(maxY, r.y + r.h)
   }
-  const s = worldToScreen((minX + maxX) / 2, minY, v)
-  return { left: s.x, top: s.y - TOOLBAR_LIFT }
+  const cx = (minX + maxX) / 2
+  const above = worldToScreen(cx, minY, v)
+  const top = above.y - TOOLBAR_LIFT
+  // 贴顶（首行卡片 y=0 时 top 会为负）→ 改为锚到包围盒**下方**，否则会被画布 `overflow-hidden` 裁掉上沿
+  if (top >= 0) return { left: above.x, top }
+  const below = worldToScreen(cx, maxY, v)
+  return { left: below.x, top: below.y + TOOLBAR_LIFT }
 }

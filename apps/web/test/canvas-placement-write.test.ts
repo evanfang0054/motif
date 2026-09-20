@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import sharp from 'sharp'
 import { MotifStore } from '@motif/db'
 import { allocateSlots, displaySize, placementRect, viewportOrigin } from '@motif/core'
 import { rectsIntersect } from '@/lib/canvas/geometry'
@@ -114,16 +115,46 @@ describe('生成产出自动带位置（C2 / L4-3-G2-A1）', () => {
 })
 
 describe('暂存参考转正也带位置（C1 / L4-3-G2-A1）', () => {
-  it('上传后画布为空；转正后该图有非零位置且 origin=uploaded', () => {
+  it('上传后画布为空；转正后该图有非零位置、origin=uploaded，且读的是原图真实尺寸', async () => {
     const user = store.getUserById(userId)!
     const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: '参考图.png' })
     expect(store.listCanvasImages(topicId)).toHaveLength(0) // 上传不进画布
-    const ids = resolveStagedReferences(store, user, topicId, [ref.id])
+    // 上传的是坏字节（只有 PNG 头）：读尺寸失败 → 回退 0，仍要能转正
+    const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     const img = store.getCanvasImage(ids[0])!
     expect(img.origin).toBe('uploaded')
-    // 上传参考图没有原图尺寸（width/height=0）→ 回退正方形槽位
+    expect(img.width).toBe(0)
+    expect(img.height).toBe(0)
     expect(img.canvasWidth).toBe(240)
     expect(img.canvasHeight).toBe(240)
     expect(img.updatedAt).not.toBe('')
+  })
+
+  it('转正时按原图真实像素尺寸落库并据此分配显示尺寸（横版 400×300）', async () => {
+    const user = store.getUserById(userId)!
+    const file = join(dir, 'landscape.png')
+    await sharp({ create: { width: 400, height: 300, channels: 3, background: '#fff' } }).png().toFile(file)
+    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '横版.png' })
+    const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
+    const img = store.getCanvasImage(ids[0])!
+    expect(img.width).toBe(400)
+    expect(img.height).toBe(300)
+    // 长边压到 240 → 240×180
+    expect(img.canvasWidth).toBeCloseTo(240, 6)
+    expect(img.canvasHeight).toBeCloseTo(180, 6)
+  })
+
+  it('竖版参考图（300×400）落库后高 > 宽 —— 这正是「渲染按原图比例、模型按 240 方形」分歧的成因', async () => {
+    const user = store.getUserById(userId)!
+    const file = join(dir, 'portrait.png')
+    await sharp({ create: { width: 300, height: 400, channels: 3, background: '#fff' } }).png().toFile(file)
+    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '竖版.png' })
+    const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
+    const img = store.getCanvasImage(ids[0])!
+    expect(img.width).toBe(300)
+    expect(img.height).toBe(400)
+    expect(img.canvasHeight).toBeCloseTo(240, 6)
+    expect(img.canvasWidth).toBeCloseTo(180, 6)
+    expect(img.canvasHeight).toBeGreaterThan(img.canvasWidth)
   })
 })

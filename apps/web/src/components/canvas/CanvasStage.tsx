@@ -14,21 +14,36 @@
  * 唯一的语义变化：**整理布局**从「重置到网格」升级为「重排进空位槽并落库」。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Modal, Toolbar } from '@heroui/react'
-import type { CanvasImage } from '@motif/core'
+import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar } from '@heroui/react'
+import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMeta } from '@motif/core'
 import { anchorRender } from '@/components/ui/anchor-button'
 import { boundsOf, hitTest, toWorld } from '@/lib/canvas/geometry'
 import { backgroundGesture } from '@/lib/canvas/gesture'
 import { gridStyle } from '@/lib/canvas/grid'
 import { zipEntriesFor, zipFileName } from '@/lib/canvas/download'
-import { buildZip } from '@/lib/zip'
+import { buildZip, readZip } from '@/lib/zip'
+import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
 import { allocateSlots, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
 import { createCloudDriver, createLocalDriver, createCanvasPersistence, type CanvasSync } from '@/stores/canvas/persistence'
+import { MiniMap } from './MiniMap'
+import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
 import { ZOOM_STEP, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
+import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import { showToast } from '@/components/ui/toast'
 
 const CLICK_THRESHOLD = 3
+
+/**
+ * 背景图案三态。取值域与默认值见 `@motif/core` 的 `CanvasBackgroundMode` / `DEFAULT_CANVAS_META`。
+ * 文案照抄上游 `.infinite-canvas-ref/src/components/canvas/canvas-toolbar.tsx` 的 zh-CN 词条
+ * （点 / 线 / 空白），分组标题「网格样式」同源；上游用 AntD Segmented，这里按 HeroUI 重写。
+ */
+const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string }> = [
+  { key: 'dots', label: '点' },
+  { key: 'lines', label: '线' },
+  { key: 'blank', label: '空白' },
+]
 
 interface Props {
   topicId: string
@@ -57,6 +72,35 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   // 最新图片集合：首屏 init 是异步的，init 之后要用「当前」的图片对账，不能靠闭包里的旧值
   const imagesRef = useRef(images)
   imagesRef.current = images
+  // 选中集同理：键盘 effect 只挂一次（[] 依赖），要用「当前」的选中集
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+  // 删除回调同理：父级传的是内联箭头（每次渲染换新引用），进依赖数组会让 keydown 监听每帧重挂
+  const onRemoveImagesRef = useRef(onRemoveImages)
+  onRemoveImagesRef.current = onRemoveImages
+
+  /**
+   * ⚠️ 首屏 init 完成前**不得**提交 meta。
+   *
+   * 挂载时 store 里是默认 meta（`background: 'lines'`），而 init 是异步的；若此时就提交，
+   * 会把服务端已存的图案/视口用默认值覆盖掉 —— 实测复现：切到「空白」→ 刷新 → 又回到「线」，
+   * 服务端 `canvas_meta` 被回写成 `lines`。位置不受影响（`dirty` 初始为空，不会提交），
+   * 只有 meta 会在挂载瞬间被写一次。
+   */
+  const metaReadyRef = useRef(false)
+  /** 刚从快照灌入的 meta：引用相等说明是服务端值的回显，无需回写 */
+  const loadedMetaRef = useRef<CanvasMeta | null>(null)
+  /** 画布容器尺寸：小地图的视口矩形与跳转居中都要用（ResizeObserver 维护） */
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
+  /** 小地图开关：瞬态视图偏好，**默认关、不落库**（照抄上游默认关；要跨刷新保留得扩 CanvasMeta 白名单） */
+  const [miniMapOpen, setMiniMapOpen] = useState(false)
+  /** 右键菜单：锚点是容器内屏幕坐标（与 marquee 同类，属瞬态，不入 store） */
+  const [menu, setMenu] = useState<{ x: number; y: number; image: CanvasImage } | null>(null)
+  /** 导入进行中 */
+  const [importing, setImporting] = useState(false)
+  /** 打包 zip 中（批量下载与画布归档共用） */
+  const [zipping, setZipping] = useState(false)
+  const importRef = useRef<HTMLInputElement | null>(null)
 
   // 首屏：cloud 为准；cloud 为空或离线才用本地草稿，并在画布上提示「本地草稿」
   useEffect(() => {
@@ -67,6 +111,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
     // 网络恢复或下次加载时云端可用，会把草稿里的位置补交给服务端
     const sync = createCanvasPersistence(cloud, 400, local)
     syncRef.current = sync
+    metaReadyRef.current = false
     void (async () => {
       let snapshot = null
       try {
@@ -87,6 +132,9 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
       // 这里显式再对一次账，是因为下面的 `[images]` effect 在挂载时跑在 init 之前，会被 init 清掉。
       const after = useCanvasStore.getState()
       after.syncImages(imagesRef.current, viewportOrigin(after.meta.viewport))
+      // 快照已就位：此后 meta 的变化才是「用户改的」，可以提交
+      loadedMetaRef.current = useCanvasStore.getState().meta
+      metaReadyRef.current = true
     })()
     // 网络恢复：把断网期间攒下的位置补交给服务端
     const onOnline = () => {
@@ -98,6 +146,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
       window.removeEventListener('online', onOnline)
       void sync.flush() // 切任务/卸载前把待提交的位置冲掉
       syncRef.current = null
+      metaReadyRef.current = false
     }
   }, [topicId])
 
@@ -139,6 +188,8 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   useEffect(() => {
     const sync = syncRef.current
     if (!sync) return
+    if (!metaReadyRef.current) return // 快照未就位：默认 meta 不能回写（见 metaReadyRef 注释）
+    if (loadedMetaRef.current === meta) return // 服务端值的回显，无需回写
     sync.commitMeta(topicId, meta)
   }, [meta, topicId])
 
@@ -314,24 +365,71 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
     else store.cancelGesture()
   }, [])
 
+  /**
+   * 右键菜单的关闭兜底：点弹层外任意处、或按 Esc 都关。
+   *
+   * 为什么不让 HeroUI 弹层自己处理：实测「受控 `isOpen` + 0 尺寸 fixed trigger」这套组合下，
+   * 点外部与 Esc 不总会触发 `onOpenChange`（菜单曾关不掉）。这里补一道确定性兜底，
+   * 判据用库自己的 `data-slot="dropdown-popover"`，不猜类名；用捕获阶段保证先于画布手势执行。
+   */
+  useEffect(() => {
+    if (!menu) return
+    const onDown = (e: PointerEvent) => {
+      if ((e.target as Element | null)?.closest('[data-slot="dropdown-popover"]')) return
+      setMenu(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey, true)
+    }
+  }, [menu])
+
   // ---------- 键盘：Esc 清空 / Ctrl+Z / Ctrl+Shift+Z ----------
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      const typing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
-      if (e.key === 'Escape') {
+      // 键位判定与豁免都收在纯函数里（`lib/canvas/shortcuts.ts`，有单测）
+      const action = shortcutFor({
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        typing: isTypingTarget(e.target),
+      })
+      if (!action) return
+      const store = useCanvasStore.getState()
+      if (action === 'escape') {
+        // Esc 不 preventDefault（照抄上游）
         setPreview(null)
-        useCanvasStore.getState().clearSelection()
+        setMenu(null)
+        store.clearSelection()
         return
       }
-      if (typing) return // 输入框内不拦截（照抄上游 lib/keyboard-event.ts 的豁免思路）
-      if (!(e.ctrlKey || e.metaKey)) return
-      if (e.key.toLowerCase() === 'z') {
+      if (action === 'undo') {
         e.preventDefault()
-        if (e.shiftKey) useCanvasStore.getState().redo()
-        else useCanvasStore.getState().undo()
+        store.undo()
+        return
       }
+      if (action === 'redo') {
+        e.preventDefault()
+        store.redo()
+        return
+      }
+      if (action === 'select-all') {
+        e.preventDefault()
+        store.setSelected(imagesRef.current.map((i) => i.id))
+        return
+      }
+      // delete：**必须 preventDefault** —— 上游漏了这一句，Backspace 会触发浏览器「后退」
+      e.preventDefault()
+      const ids = selectedRef.current
+      if (ids.length > 0) onRemoveImagesRef.current(imagesRef.current.filter((i) => ids.includes(i.id)))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -342,6 +440,17 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   const viewport = meta.viewport
   const grid = useMemo(() => gridStyle(meta.background, viewport), [meta.background, viewport])
 
+  // 容器尺寸：小地图的视口矩形与跳转都要按容器算
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const update = () => setStageSize({ w: el.clientWidth, h: el.clientHeight })
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const zoomAtCenter = useCallback((factor: number) => {
     const el = containerRef.current
     if (!el) return
@@ -350,6 +459,135 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
 
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
 
+  /** 当前摆放（导出与导入比对共用）：store 里是稀疏表，这里转成 placement 列表 */
+  const currentPlacements = useCallback((): CanvasImagePlacement[] => {
+    const store = useCanvasStore.getState()
+    const now = new Date().toISOString()
+    return Object.entries(store.placements).map(([id, r]) => rectToPlacement(id, r, now))
+  }, [])
+
+  /**
+   * 导出画布归档：`canvas.json` + 每张图的字节 → 一个 zip。
+   * **任一张取不到即整单失败**（不产出「只有 canvas.json 的半截归档」）。
+   */
+  const onExportArchive = useCallback(async () => {
+    if (zipping) return
+    setZipping(true)
+    try {
+      const store = useCanvasStore.getState()
+      const entries = canvasArchiveEntries({
+        topicId,
+        meta: store.meta,
+        images: currentPlacements(),
+        archiveImages: images.map((i) => ({ id: i.id, serial: i.serial, name: i.name, src: i.src, mimeType: i.mimeType })),
+        exportedAt: new Date().toISOString(),
+      })
+      const enc = new TextEncoder()
+      const files: Array<{ name: string; data: Uint8Array }> = []
+      for (const e of entries) {
+        if (e.text !== undefined) {
+          files.push({ name: e.name, data: enc.encode(e.text) })
+          continue
+        }
+        const res = await fetch(e.src ?? '')
+        if (!res.ok) throw new Error(`导出失败：有图片取不到（HTTP ${res.status}）。`)
+        files.push({ name: e.name, data: new Uint8Array(await res.arrayBuffer()) })
+      }
+      const url = URL.createObjectURL(new Blob([buildZip(files)], { type: 'application/zip' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = zipFileName(topicId, images.length)
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      showToast({ tone: 'success', message: `已导出画布归档（${images.length} 张图的布局与图片）。` })
+    } catch (err) {
+      showToast({ tone: 'danger', message: err instanceof Error ? err.message : '导出失败。' })
+    } finally {
+      setZipping(false)
+    }
+  }, [topicId, images, zipping, currentPlacements])
+
+  /** 导入画布归档：**只恢复布局**（摆放 + 同任务时的视口/图案），不新建画布图 */
+  const onImportFile = useCallback(
+    async (file: File | null) => {
+      if (importRef.current) importRef.current.value = '' // 允许重复导入同一文件
+      if (!file) return
+      setImporting(true)
+      try {
+        const parsed = parseCanvasArchive(readZip(new Uint8Array(await file.arrayBuffer())))
+        const store = useCanvasStore.getState()
+        // ⚠️ 时间戳重盖为当前时间：沿用归档里的旧戳会被服务端图片级 LWW 整批拒掉
+        const { applied, skipped } = mergeImportedPlacements(currentPlacements(), parsed.images, new Date().toISOString())
+        if (applied.length > 0) {
+          store.applyPlacements(applied)
+          // 视口/图案只在**确实恢复了图片**且归档属于当前任务时才动：
+          // 否则「导入失败」也会把视口与图案改掉，而 meta 是会被提交落库的
+          if (parsed.topicId === topicId) {
+            store.setViewport(parsed.meta.viewport)
+            store.setBackground(parsed.meta.background)
+          }
+        }
+        if (applied.length === 0) showToast({ tone: 'danger', message: '没有可恢复的图片（归档里的图不在当前任务）。' })
+        else if (skipped.length > 0) showToast({ tone: 'warning', message: `已恢复 ${applied.length} 张，${skipped.length} 张因图片不存在被跳过。` })
+        // 位置落库走共用防抖队列（约 400ms 后发一次 PATCH），所以这里只说「已恢复」，
+        // 不承诺已写进服务端；被 LWW 拒掉的情况由提交回调单独提示
+        else showToast({ tone: 'success', message: `已恢复 ${applied.length} 张图的位置。` })
+      } catch (err) {
+        showToast({ tone: 'danger', message: err instanceof Error ? err.message : '导入失败。' })
+      } finally {
+        setImporting(false)
+      }
+    },
+    [topicId, currentPlacements]
+  )
+
+  const onArchiveAction = useCallback(
+    async (key: string) => {
+      if (key === 'export') await onExportArchive()
+      else if (key === 'import') importRef.current?.click()
+    },
+    [onExportArchive]
+  )
+
+  /** 单图下载：与批量下载同源手法（造一个 `<a download>` 点一下），不另引依赖 */
+  const downloadImage = useCallback((img: CanvasImage) => {
+    const a = document.createElement('a')
+    a.href = img.src
+    a.download = img.name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }, [])
+
+  /** 图片上右键：先只选它（与左键点选语义一致），再把菜单钉在指针处（用视口坐标，见 CanvasContextMenu 注释） */
+  const onCardContextMenu = useCallback((e: React.MouseEvent, img: CanvasImage) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!useCanvasStore.getState().selected.includes(img.id)) useCanvasStore.getState().setSelected([img.id])
+    setMenu({ x: e.clientX, y: e.clientY, image: img })
+  }, [])
+
+  /** 空白处右键：关菜单，且**不 preventDefault**（保留浏览器原生菜单，照抄上游语义） */
+  const onStageContextMenu = useCallback((e: React.MouseEvent) => {
+    if ((e.target as Element | null)?.closest('.canvas-img-card')) return
+    setMenu(null)
+  }, [])
+
+  const onMenuAction = useCallback(
+    (action: ContextMenuAction) => {
+      const target = menu?.image
+      setMenu(null)
+      if (!target) return
+      if (action === 'preview') setPreview(target)
+      else if (action === 'reference') onAddReferences([target])
+      else if (action === 'download') downloadImage(target)
+      else onRemoveImages([target]) // 删除：走 Workspace 的二次确认
+    },
+    [menu, onAddReferences, onRemoveImages, downloadImage]
+  )
+
   /**
    * 批量下载：把所选图片的字节取回，打包成一个 zip 再触发一次下载。
    *
@@ -357,7 +595,6 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
    * 12 张就会变成 12 个文件 + 一次拦截；合成一个 zip 只下载一次。
    * zip 由 `lib/zip.ts` 手写（仅 store 不压缩，零新依赖 —— 依赖白名单只允许 zustand）。
    */
-  const [zipping, setZipping] = useState(false)
   const downloadSelectedAsZip = useCallback(async () => {
     if (selectedImages.length === 0 || zipping) return
     setZipping(true)
@@ -390,6 +627,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
       <div
         ref={containerRef}
         className="canvas-stage relative h-full w-full overflow-hidden touch-none"
+        onContextMenu={onStageContextMenu}
         style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grab' : undefined }}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}
@@ -400,6 +638,11 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
           // 上游列的是 .ant-* 选择器，Motif 用 HeroUI，故改为这两个语义选择器）
           const target = e.target instanceof Element ? e.target : null
           if (target?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
+          // ⚠️ 只看 e.target 不够：Chrome 对一次滚轮手势做「latching」，同一手势的后续事件会
+          // 重定向到滚动链上的容器（实测第一发 target 是小地图、后两发变成画布容器），
+          // 于是「在小地图上滚轮」仍会缩放。再按指针位置判一次，与 target 无关。
+          const under = typeof document !== 'undefined' ? document.elementFromPoint(e.clientX, e.clientY) : null
+          if (under?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
           e.preventDefault()
           const el = containerRef.current
           if (!el) return
@@ -428,6 +671,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
                 onPointerMove={onCardPointerMove}
                 onPointerUp={endCardDrag}
                 onDoubleClick={() => setPreview(img)}
+                onContextMenu={(e) => onCardContextMenu(e, img)}
                 aria-label={`#${String(img.serial).padStart(3, '0')} ${img.name}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -575,10 +819,53 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         >
           整理布局
         </Button>
+        {/* 画布归档（导出/导入）。⚠️ 外层是 pointer-events-none，新控件必须显式 pointer-events-auto
+            + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动） */}
+        <Dropdown>
+          <Dropdown.Trigger>
+            <Button variant="secondary" className="pointer-events-auto" data-canvas-no-zoom isDisabled={zipping || importing}>
+              {zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
+            </Button>
+          </Dropdown.Trigger>
+          <Dropdown.Popover placement="bottom end">
+            <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
+              <Dropdown.Item id="export" textValue="导出画布（zip）">
+                <Label>导出画布（zip）</Label>
+              </Dropdown.Item>
+              <Dropdown.Item id="import" textValue="导入画布（zip）">
+                <Label>导入画布（zip）</Label>
+              </Dropdown.Item>
+              {/* 说明用禁用项承载：菜单里只允许 menuitem/group/separator，裸 Label 不是合法菜单内容 */}
+              <Dropdown.Item id="import-hint" textValue="导入只恢复布局与视口，不会把图片导进来" isDisabled>
+                <Label>导入只恢复布局与视口，不会把图片导进来</Label>
+              </Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown.Popover>
+        </Dropdown>
+        <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
       </div>
 
-      {/* 右下缩放控件 */}
-      <Toolbar className="canvas-zoombar" aria-label="缩放" data-canvas-no-zoom>
+      {/* 小地图：默认关，开关在右下视图簇；窄屏不渲染（240px 宽在手机上占掉近半屏） */}
+      {miniMapOpen && stageSize.w > 0 && (
+        <MiniMap
+          rects={Object.values(placements)}
+          viewport={viewport}
+          size={stageSize}
+          onJump={(v) => useCanvasStore.getState().setViewport(v)}
+        />
+      )}
+
+      {/* 图片右键菜单：锚点用容器内坐标（Dropdown 自己负责贴边翻转） */}
+      <CanvasContextMenu
+        anchor={menu ? { x: menu.x, y: menu.y } : null}
+        onClose={() => setMenu(null)}
+        onAction={onMenuAction}
+      />
+
+      {/* 右下视图控件：缩放 + 小地图开关 + 背景图案三态（都是「视图」而非「内容」，故同簇）。
+          窄屏这一簇会超过画布宽度，而画布是 overflow-hidden（会被裁掉而不是出滚动条）→
+          必须允许换行并限制最大宽度，否则左侧按钮在手机上点不到 */}
+      <Toolbar className="canvas-zoombar max-w-[calc(100%-24px)] flex-wrap justify-end" aria-label="画布视图" data-canvas-no-zoom>
         <ButtonGroup>
           <Button isIconOnly size="sm" variant="secondary" aria-label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>−</Button>
           <Button size="sm" variant="secondary" aria-label="重置为 100%" onPress={() => useCanvasStore.getState().setViewport({ ...viewport, k: 1 })}>
@@ -601,6 +888,32 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         >
           适应
         </Button>
+        <span className="canvas-tool-divider" />
+        <Button
+          size="sm"
+          variant={miniMapOpen ? 'primary' : 'ghost'}
+          aria-label="小地图"
+          aria-pressed={miniMapOpen}
+          onPress={() => setMiniMapOpen((v) => !v)}
+        >
+          小地图
+        </Button>
+        <span className="canvas-tool-divider" />
+        <ToggleButtonGroup
+          aria-label="网格样式"
+          selectionMode="single"
+          selectedKeys={new Set([meta.background])}
+          onSelectionChange={(keys) => {
+            const next = BACKGROUND_OPTIONS.find((o) => o.key === [...keys][0])
+            if (next) useCanvasStore.getState().setBackground(next.key)
+          }}
+        >
+          {BACKGROUND_OPTIONS.map((o) => (
+            <ToggleButton key={o.key} id={o.key} size="sm">
+              {o.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
       </Toolbar>
 
       {/* 屏幕阅读器图片清单 */}
@@ -627,7 +940,9 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
               </Modal.Body>
               <Modal.Footer className="justify-center">
                 <p className="canvas-lightbox-caption">
-                  #{String(preview.serial).padStart(3, '0')} {preview.name} · {preview.width}×{preview.height}
+                  #{String(preview.serial).padStart(3, '0')} {preview.name}
+                  {/* 升级前转正的历史行 width/height 仍是 0：不显示「0×0」 */}
+                  {preview.width > 0 && preview.height > 0 && ` · ${preview.width}×${preview.height}`}
                 </p>
               </Modal.Footer>
             </Modal.Dialog>

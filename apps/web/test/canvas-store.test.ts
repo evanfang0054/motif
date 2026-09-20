@@ -197,3 +197,30 @@ describe('画布 store：视口与选择', () => {
     expect(s.getState().selected).toEqual([])
   })
 })
+
+describe('画布 store：背景图案三态', () => {
+  it('setBackground 三态都能切，且**不动 viewport / version**', () => {
+    const s = seed()
+    s.getState().panBy(30, -20)
+    const before = { ...s.getState().meta.viewport }
+    for (const mode of ['dots', 'blank', 'lines'] as const) {
+      s.getState().setBackground(mode)
+      expect(s.getState().meta.background).toBe(mode)
+      expect(s.getState().meta.viewport).toEqual(before)
+      expect(s.getState().meta.version).toBe(1)
+    }
+  })
+
+  it('切到同一态是幂等的（值不变）', () => {
+    const s = seed()
+    s.getState().setBackground('dots')
+    s.getState().setBackground('dots')
+    expect(s.getState().meta.background).toBe('dots')
+  })
+
+  it('切图案不产生待提交的位置（背景不是位置变更）', () => {
+    const s = seed()
+    s.getState().setBackground('blank')
+    expect(s.getState().dirty).toEqual([])
+  })
+})

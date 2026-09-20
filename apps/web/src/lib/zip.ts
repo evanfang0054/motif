@@ -130,3 +130,63 @@ export function buildZip(entries: ZipEntry[], modifiedAt: Date = new Date()): Ui
   out.set(eocd, p)
   return out
 }
+
+const dec = new TextDecoder('utf-8')
+/** zip64 哨兵：字段填成这两个值表示「真值在 zip64 扩展字段里」 */
+const ZIP64_U32 = 0xffffffff
+const ZIP64_U16 = 0xffff
+
+/**
+ * 解包（读侧，与 `buildZip` 对称）。
+ *
+ * 能力边界（遇到就抛错，**不静默返回空**）：
+ * - 只支持 `method = 0`（store）—— 写侧本来就只产 store，外部工具压出来的 deflate zip 会明确报错；
+ * - 不支持 zip64（体量远不到 4GB 门槛，写侧也不产）。
+ *
+ * 实现按 central directory 走（不扫 local header）：中央目录是权威索引，含条目名与偏移。
+ */
+export function readZip(buf: Uint8Array): Map<string, Uint8Array> {
+  // 比 EOCD 本身还短：直接判非法，否则下面的回扫会以负偏移读 DataView 抛 RangeError
+  if (buf.length < 22) throw new Error('读取失败：不是合法的 zip（找不到中央目录结尾记录）。')
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+  // EOCD 在尾部，注释段最长 65535 字节，故只需回扫这么多
+  const stop = Math.max(0, buf.length - (22 + 0xffff))
+  let eocd = -1
+  for (let i = buf.length - 22; i >= stop; i -= 1) {
+    if (view.getUint32(i, true) === SIG_EOCD) {
+      eocd = i
+      break
+    }
+  }
+  if (eocd < 0) throw new Error('读取失败：不是合法的 zip（找不到中央目录结尾记录）。')
+  const total = view.getUint16(eocd + 10, true)
+  const centralOffset = view.getUint32(eocd + 16, true)
+  if (total === ZIP64_U16 || centralOffset === ZIP64_U32) throw new Error('读取失败：暂不支持 zip64 归档。')
+
+  const files = new Map<string, Uint8Array>()
+  let p = centralOffset
+  for (let n = 0; n < total; n += 1) {
+    // 中央目录项固定 46 字节：越界即结构损坏（否则 DataView 会抛 RangeError 直给用户）
+    if (p + 46 > buf.length) throw new Error('读取失败：中央目录结构损坏。')
+    if (view.getUint32(p, true) !== SIG_CENTRAL) throw new Error('读取失败：中央目录结构损坏。')
+    const method = view.getUint16(p + 10, true)
+    const compressedSize = view.getUint32(p + 20, true)
+    const uncompressedSize = view.getUint32(p + 24, true)
+    const nameLen = view.getUint16(p + 28, true)
+    const extraLen = view.getUint16(p + 30, true)
+    const commentLen = view.getUint16(p + 32, true)
+    const localOffset = view.getUint32(p + 42, true)
+    if (method !== 0) throw new Error('读取失败：不支持的压缩方式（仅支持不压缩的 zip）。')
+    if (compressedSize === ZIP64_U32 || uncompressedSize === ZIP64_U32 || localOffset === ZIP64_U32) {
+      throw new Error('读取失败：暂不支持 zip64 归档。')
+    }
+    const name = dec.decode(buf.subarray(p + 46, p + 46 + nameLen))
+    if (localOffset + 30 > buf.length) throw new Error('读取失败：条目头部损坏。')
+    if (view.getUint32(localOffset, true) !== SIG_LOCAL) throw new Error('读取失败：条目头部损坏。')
+    // 数据起点要按 local header 自己的名字/扩展长度算（与中央目录的长度可能不同）
+    const dataStart = localOffset + 30 + view.getUint16(localOffset + 26, true) + view.getUint16(localOffset + 28, true)
+    files.set(name, buf.slice(dataStart, dataStart + compressedSize))
+    p += 46 + nameLen + extraLen + commentLen
+  }
+  return files
+}
