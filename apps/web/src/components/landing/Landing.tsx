@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import { BrandMark } from '@/components/BrandMark'
 import { AuthModal, type Mode } from './AuthModal'
@@ -11,6 +11,8 @@ function Landing() {
   // 弹窗模式由 Landing 持有：默认 login（回访/老用户主路径）；注册意图入口显式切 register
   const [authMode, setAuthMode] = useState<Mode>('login')
   const [authOpen, setAuthOpen] = useState(false)
+  // hero 引用：Task 4 的 IntersectionObserver（导航两态）消费
+  const heroRef = useRef<HTMLElement>(null)
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
   // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」（spec §3.1）
@@ -61,30 +63,44 @@ function Landing() {
       </header>
 
       <main>
-        <section className="lp-hero">
-          <div>
-            <span className="lp-hero-badge">✦ Motif · AI 商业图片批量工作台</span>
-            <h1 className="lp-hero-title">
-              一张参考图，
-              <br />
-              成套产出商业图片
-            </h1>
-            <p className="lp-hero-sub">
-              把你的参考图交给模板，Motif 负责成套出图：商品主图、人像写真、旅拍大片一次到位。
-              生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
-            </p>
-            <div className="lp-actions">
-              {/* 文案映射（契约 A2）：立即开始 → 开始生成 */}
-              <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
-              <Button variant="outline" onPress={() => smoothScrollTo('showcase')}>先看效果</Button>
-            </div>
-            <div className="lp-hero-points">
-              <span>✓ 注册即送 3 张额度</span>
-              <span>✓ 单任务多张成套</span>
-              <span>✓ 云端队列不占本地算力</span>
+        <section className="lp-hero" ref={heroRef}>
+          {/* banner 图层：desktop 右置 ~52% 渐变融合；tablet/mobile 全幅垫顶（dragonpass 手法，见 globals.css lp-hero 段） */}
+          <div className="lp-hero-visual" aria-hidden>
+            <img src="/landing/hero-banner.jpg" alt="" />
+            <div className="lp-hero-fade" />
+          </div>
+          {/* 左侧暗色块外扩 4px 盖住接缝防亮线（仅 desktop 出场） */}
+          <div className="lp-hero-solid" aria-hidden />
+          <div className="lp-container lp-hero-grid">
+            <div className="lp-hero-copy">
+              <span className="lp-hero-badge">✦ Motif · AI 商业图片批量工作台</span>
+              <h1 className="lp-hero-title">
+                一张参考图，
+                <br />
+                成套产出商业图片
+              </h1>
+              <p className="lp-hero-sub">
+                把你的参考图交给模板，Motif 负责成套出图：商品主图、人像写真、旅拍大片一次到位。
+                生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
+              </p>
+              <div className="lp-actions">
+                {/* 文案映射（契约 A2）：立即开始 → 开始生成 */}
+                <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
+                <Button
+                  variant="outline"
+                  className="text-[color:var(--lp-hero-fg)] border-[color:color-mix(in_srgb,var(--lp-hero-fg)_45%,transparent)]"
+                  onPress={() => smoothScrollTo('showcase')}
+                >
+                  先看效果
+                </Button>
+              </div>
+              <div className="lp-hero-points">
+                <span>✓ 注册即送 3 张额度</span>
+                <span>✓ 单任务多张成套</span>
+                <span>✓ 云端队列不占本地算力</span>
+              </div>
             </div>
           </div>
-          {/* Task 3 起右侧换 banner 图层；本任务先保持单栏中间态 */}
         </section>
 
         <section id="showcase" className="lp-band lp-band-showcase">

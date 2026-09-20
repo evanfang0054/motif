@@ -304,19 +304,103 @@ html[data-theme="dark"] .lp-band-showcase {
 }
 
 .lp-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: clamp(24px, 4vw, 56px);
+  /* hero 局部令牌（--lp-* 前缀经 HeroUI 变量清单查重无冲突） */
+  --lp-hero-bg: #161310;
+  --lp-hero-fg: #f5efe6;
+  --lp-hero-muted: #b9b0a2;
+  --lp-hero-border: color-mix(in srgb, #f5efe6 40%, transparent);
+
+  position: relative;
+  overflow: hidden;
+  background: var(--lp-hero-bg);
+  min-height: clamp(560px, 92svh, 820px);
+  display: flex;
   align-items: center;
-  padding: clamp(48px, 8vh, 96px) 0 56px;
-  min-height: 100vh;
-  min-height: 100svh; /* 稳定小视口：移动端地址栏收起不跳动（issue #7） */
 }
 
-@media (max-width: 960px) {
+/* 暗色主题提亮一档：避免与页面 #181715 融片（契约 C3 计算断言） */
+html[data-theme="dark"] .lp-hero {
+  --lp-hero-bg: #221b15;
+}
+
+/* banner 图层：desktop 右置 ~52%，接缝 270° 渐变融合（dragonpass 手法） */
+.lp-hero-visual {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48%;
+  right: 0;
+}
+
+.lp-hero-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lp-hero-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(270deg, transparent 51.62%, var(--lp-hero-bg) 100%);
+}
+
+/* 左侧暗色块外扩 4px 盖住接缝，防小数边缘渗亮线（dragonpass 同款兜底） */
+.lp-hero-solid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(48% + 4px);
+  background: var(--lp-hero-bg);
+}
+
+.lp-hero-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.lp-hero-copy {
+  max-width: 46%;
+}
+
+/* hero 文字反白（scoped 覆盖自有 lp-* 类，非 HeroUI 内部样式） */
+.lp-hero .lp-hero-badge {
+  border-color: var(--lp-hero-border);
+  background: color-mix(in srgb, #f5efe6 8%, transparent);
+  color: var(--lp-hero-muted);
+}
+
+.lp-hero .lp-hero-title { color: var(--lp-hero-fg); }
+.lp-hero .lp-hero-sub { color: var(--lp-hero-muted); }
+.lp-hero .lp-hero-points { color: var(--lp-hero-muted); }
+
+/* 平板/移动：banner 全幅垫顶 + 底部 180° 渐变融合，内容贴底（dragonpass overlay 结构） */
+@media (max-width: 1023px) {
   .lp-hero {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    justify-content: flex-end;
+    min-height: 88svh;
   }
+
+  .lp-hero-visual { left: 0; right: 0; }
+
+  .lp-hero-fade {
+    background: linear-gradient(180deg, transparent 34%, var(--lp-hero-bg) 88%);
+  }
+
+  .lp-hero-solid { display: none; }
+
+  .lp-hero-copy {
+    max-width: none;
+    padding-bottom: 56px;
+  }
+}
+
+/* 移动：hero 收紧 */
+@media (max-width: 639px) {
+  .lp-hero { min-height: 82svh; }
+  .lp-hero-copy { padding-bottom: 40px; }
 }
 
 .lp-hero-badge {
@@ -353,6 +437,19 @@ html[data-theme="dark"] .lp-band-showcase {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+/* 移动 CTA 纵向堆叠全宽：必须位于基础 .lp-actions 之后（unlayered 同 specificity 源顺序后者胜，评审 B3）。
+   子项 width:100% 用于顶掉 HeroUI Button 自带的 w-fit 显式宽度——stretch 对显式宽度无效 */
+@media (max-width: 639px) {
+  .lp-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lp-actions > * {
+    width: 100%;
+  }
 }
 
 .lp-hero-points {
