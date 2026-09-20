@@ -224,15 +224,6 @@ body {
 /* 自定义组件类归入 components 层：Tailwind v4 cascade layers 中 utilities 恒在其上，
    断点工具类（hidden/md:flex/lg:hidden 等）才能覆盖这些类的 display（issue #6 根因修复） */
 @layer components {
-  .lp-nav-links {
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    font-size: 14px;
-    color: var(--muted-strong);
-  }
-
-
   .ws-badge {
     display: inline-flex;
     align-items: center;

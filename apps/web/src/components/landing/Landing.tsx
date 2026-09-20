@@ -51,12 +51,7 @@ function Landing() {
           <BrandMark />
           Motif
         </Link>
-        <nav className="lp-nav-links hidden md:flex">
-          <a href="#showcase" onClick={anchorScroll('showcase')}>案例一览</a>
-          <a href="#features" onClick={anchorScroll('features')}>核心能力</a>
-          <a href="#register" onClick={(e) => { e.preventDefault(); openAuth('register') }}>注册送额度</a>
-        </nav>
-        {/* 文案映射（契约 A2）：开始体验 → 立即生成 */}
+        {/* 文案映射（契约 A2）：开始体验 → 立即生成；导航锚点链接已按用户裁决移除（2026-09-20） */}
         <Button variant="primary" onPress={() => openAuth('login')}>立即生成</Button>
       </header>
 
