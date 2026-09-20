@@ -3,6 +3,9 @@
 import type {
   BillingPackagesResponse,
   CanvasImage,
+  CanvasMeta,
+  CanvasPatch,
+  CanvasSnapshot,
   GenerateImagesInput,
   GenerateImagesResponse,
   StagedReference,
@@ -188,6 +191,14 @@ export const api = {
     call<{ ok: true; deleted: number }>('/api/canvas-images/delete-batch', {
       method: 'POST',
       body: JSON.stringify({ ids }),
+    }),
+  /** 画布快照（含旧库补位）：GET /api/topics/[id]/canvas */
+  canvasSnapshot: (topicId: string) => call<CanvasSnapshot>(`/api/topics/${topicId}/canvas`),
+  /** 画布增量补丁：返回 applied/rejected/meta（rejected 用于客户端回滚） */
+  patchCanvas: (topicId: string, patch: CanvasPatch) =>
+    call<{ applied: string[]; rejected: string[]; meta: CanvasMeta }>(`/api/topics/${topicId}/canvas`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
     }),
   billingPackages: () => call<BillingPackagesResponse>('/api/billing/packages'),
   checkout: (packageId: string) =>

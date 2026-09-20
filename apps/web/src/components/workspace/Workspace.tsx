@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
+import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
 import { api } from '@/lib/client'
 import { TEMPLATES } from '@/lib/templates'
 import { TopNav } from './TopNav'
 import { TemplateGallery } from './TemplateGallery'
-import { CanvasBoard } from './CanvasBoard'
+import { CanvasStage } from '@/components/canvas/CanvasStage'
 import { deleteImageConfirmText } from './canvas-geometry'
 import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
@@ -313,22 +314,48 @@ function Workspace({ initialUser }: { initialUser: User }) {
     if (activeId) await refreshDetail(activeId)
   }, [activeId, refreshDetail])
 
-  /** 画布「@ 引用」：把图片加入参考图，并把 #编号 写进提示词 */
-  const addReferenceFromCanvas = useCallback(
-    (img: CanvasImage) => {
-      const serial = `#${String(img.serial).padStart(3, '0')}`
-      setPanel((p) => {
-        if (p.referenceIds.includes(img.id)) return p
-        const prompt = p.prompt.includes(serial) ? p.prompt : `${p.prompt ? p.prompt.replace(/\s+$/, '') + ' ' : ''}${serial} 作为参考图保持主体一致。`
-        return { ...p, referenceIds: [...p.referenceIds, img.id], prompt }
-      })
-      showToast({ tone: 'info', message: `已引用 ${serial} 为参考图` })
+  /** 画布「@ 引用」：把图片加入参考图，并把 #编号 写进提示词（单张/批量同一条路径，按张准入） */
+  const addReferencesFromCanvas = useCallback(
+    (imgs: CanvasImage[]) => {
+      if (imgs.length === 0) return
+      const markerOf = (i: CanvasImage) => `#${String(i.serial).padStart(3, '0')}`
+      // 在 setPanel 之外先算出准入结果：toast 文案要立刻用到它（不能依赖 updater 被同步调用）
+      const plan = planReferenceAdd(panel.referenceIds, imgs.map((i) => i.id))
+      if (plan.accepted.length > 0) {
+        const admitted = new Set(plan.accepted)
+        const freshMarkers = imgs.filter((i) => admitted.has(i.id)).map(markerOf)
+        // 已写进提示词的编号不重复追加（与单图时的去重口径一致）
+        const missing = freshMarkers.filter((m) => !panel.prompt.includes(m))
+        const append = missing.map((m) => `${m} 作为参考图保持主体一致。`).join(' ')
+        const prompt = append ? `${panel.prompt ? panel.prompt.replace(/\s+$/, '') + ' ' : ''}${append}` : panel.prompt
+        setPanel((p) => ({ ...p, referenceIds: [...p.referenceIds, ...plan.accepted], prompt }))
+      }
+      // 逐张准入的三种结果分别给话：加进去了 / 本来就在 / 名额不够
+      const parts: string[] = []
+      if (plan.accepted.length > 0) {
+        parts.push(
+          plan.accepted.length === 1 && imgs.length === 1
+            ? `已引用 ${markerOf(imgs[0])} 为参考图`
+            : `已引用 ${plan.accepted.length} 张为参考图`
+        )
+      }
+      if (plan.alreadyReferenced.length > 0 && plan.accepted.length === 0) parts.push('所选图片都已在参考图里了')
+      if (plan.rejected.length > 0) {
+        parts.push(`参考图最多 ${MAX_REFERENCE_IMAGES} 张，${plan.rejected.length} 张未加入`)
+      }
+      if (parts.length === 0) return
+      showToast({ tone: 'info', message: parts.join('；') })
     },
-    []
+    [panel.referenceIds, panel.prompt]
   )
 
   const uploadReference = useCallback(
     async (file: File) => {
+      // 上限是「上传 + 引用」共用的总量：满了就先别让文件进服务端
+      if (panel.referenceIds.length >= MAX_REFERENCE_IMAGES) {
+        showToast({ tone: 'info', message: `参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先移除一张再上传` })
+        return
+      }
       // 自动建任务：用户不必理解「任务」概念，上传动作本身就该可用
       const tid = await ensureTopic()
       if (!tid) {
@@ -350,7 +377,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         showToast({ tone: 'danger', message: e instanceof Error ? e.message : '上传失败' })
       }
     },
-    [ensureTopic]
+    [ensureTopic, panel.referenceIds.length]
   )
 
   /** 移除暂存参考（服务端删除 + 面板同步） */
@@ -402,11 +429,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
       <div className="ws-grid">
         <section className="ws-canvas">
           {detail && detail.canvasImages.length > 0 ? (
-            <CanvasBoard
+            <CanvasStage
               key={detail.topic.id}
+              topicId={detail.topic.id}
               images={detail.canvasImages}
               onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
-              onAddReference={(img) => addReferenceFromCanvas(img)}
+              onAddReferences={addReferencesFromCanvas}
             />
           ) : (
             <TemplateGallery onSelect={selectTemplate} />

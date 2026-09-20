@@ -13,6 +13,9 @@
   --canvas-background: #ffffff;
   --canvas-foreground: #141413;
   --canvas-muted: #6c6a64;
+  /* 画布背景图案色：纯黑 alpha，配中性白底 —— 不得改成暖色（AGENTS.md 守护线） */
+  --canvas-grid-line: rgba(0, 0, 0, 0.08);
+  --canvas-grid-dot: rgba(0, 0, 0, 0.22);
   --surface-primary: #faf9f5;
   --surface-secondary: #f5f0e8;
   --surface-tertiary: #efe9de;
@@ -61,6 +64,9 @@ html[data-theme="dark"] {
     --canvas-background: #181818;
     --canvas-foreground: #faf9f5;
     --canvas-muted: #a09d96;
+    /* 暗色下的中性图案色：纯白 alpha（中性，不暖化） */
+    --canvas-grid-line: rgba(255, 255, 255, 0.1);
+    --canvas-grid-dot: rgba(255, 255, 255, 0.24);
     --surface-primary: #1f1e1b;
     --surface-secondary: #252320;
     --surface-tertiary: #32302b;

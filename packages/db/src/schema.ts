@@ -59,6 +59,7 @@ export function applySchema(db: Database): void {
       status TEXT NOT NULL DEFAULT 'idle',
       active_message_id TEXT,
       active_prompt TEXT,
+      canvas_meta TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -99,6 +100,11 @@ export function applySchema(db: Database): void {
       bytes INTEGER NOT NULL,
       width INTEGER NOT NULL,
       height INTEGER NOT NULL,
+      canvas_x REAL NOT NULL DEFAULT 0,
+      canvas_y REAL NOT NULL DEFAULT 0,
+      canvas_w REAL NOT NULL DEFAULT 0,
+      canvas_h REAL NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_canvas_topic ON canvas_images(topic_id, serial);
@@ -187,6 +193,15 @@ export function applySchema(db: Database): void {
     'ALTER TABLE feedback ADD COLUMN resolved_at TEXT',
     'ALTER TABLE feedback ADD COLUMN resolved_by TEXT',
     "ALTER TABLE orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'mock'",
+    // 画布升级：图片摆放 + 图片级 LWW 版本（新列名刻意避开 width/height ——
+    // 那两列表示原图像素尺寸，不能复用）
+    'ALTER TABLE canvas_images ADD COLUMN canvas_x REAL NOT NULL DEFAULT 0',
+    'ALTER TABLE canvas_images ADD COLUMN canvas_y REAL NOT NULL DEFAULT 0',
+    'ALTER TABLE canvas_images ADD COLUMN canvas_w REAL NOT NULL DEFAULT 0',
+    'ALTER TABLE canvas_images ADD COLUMN canvas_h REAL NOT NULL DEFAULT 0',
+    "ALTER TABLE canvas_images ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
+    // 画布元信息（视口/背景）
+    "ALTER TABLE topics ADD COLUMN canvas_meta TEXT NOT NULL DEFAULT '{}'",
   ]) {
     try {
       db.exec(ddl)
