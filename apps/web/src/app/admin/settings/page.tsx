@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Checkbox, Input, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
+import { Button, Checkbox, Input, Label, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { useConfirm } from '@/components/admin/confirm'
@@ -224,25 +224,21 @@ export default function AdminSettingsPage() {
           </div>
         ))}
         {group !== 'data' && (
-          <button className="ws-btn" disabled={saving} onClick={() => void save(group)}>
+          <Button variant="secondary" isDisabled={saving} onPress={() => void save(group)}>
             保存
-          </button>
+          </Button>
         )}
         {group === 'mailer' && (
           <div className="admin-field">
-            <label htmlFor="test-mail-to">发送测试邮件到（需超级管理员）</label>
-            <input
-              id="test-mail-to"
-              value={testTo}
-              onChange={(e) => setTestTo(e.target.value)}
-              placeholder="you@example.com"
-              aria-label="测试收件邮箱"
-            />
-            <button
-              className="ws-btn"
+            <TextField aria-label="测试收件邮箱" value={testTo} onChange={setTestTo}>
+              <Label>发送测试邮件到（需超级管理员）</Label>
+              <Input placeholder="you@example.com" />
+            </TextField>
+            <Button
+              variant="secondary"
               aria-busy={testing}
-              disabled={testing || !testTo.trim()}
-              onClick={async () => {
+              isDisabled={testing || !testTo.trim()}
+              onPress={async () => {
                 setTesting(true)
                 setTestResult(null)
                 try {
@@ -260,7 +256,7 @@ export default function AdminSettingsPage() {
               }}
             >
               {testing ? '发送中…' : '发送测试邮件'}
-            </button>
+            </Button>
             <p className="admin-field-hint">先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。</p>
             {testResult && (
               <div className={testResult.ok ? 'admin-alert-ok' : 'admin-alert-err'} role="status">
