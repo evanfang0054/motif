@@ -385,8 +385,15 @@ html[data-theme="dark"] .lp-hero {
 
   .lp-hero-visual { left: 0; right: 0; }
 
+  /* 文字压图区需要足够暗度：三段坡（内容贴底锚定，底部 ~40% 是文字区），
+     42% 处 62% 暗、64% 处全暗——否则 badge/副文压亮图不可读（响应式冒烟发现） */
   .lp-hero-fade {
-    background: linear-gradient(180deg, transparent 34%, var(--lp-hero-bg) 88%);
+    background: linear-gradient(
+      180deg,
+      transparent 20%,
+      color-mix(in srgb, var(--lp-hero-bg) 62%, transparent) 42%,
+      var(--lp-hero-bg) 64%
+    );
   }
 
   .lp-hero-solid { display: none; }
