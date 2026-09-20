@@ -268,9 +268,9 @@ body {
   padding: 0 clamp(16px, 5vw, 48px);
 }
 
-/* 满幅色带：锚点落在带上，scroll-margin = 导航高 + 余量，点击后整段模块完整入画 */
+/* 满幅色带：锚点落在带上，scroll-margin 恰为导航实测高 65px（留 1px 藏边，零 hero 缝隙——冒烟反馈修订） */
 .lp-band {
-  scroll-margin-top: 72px;
+  scroll-margin-top: 64px;
 }
 
 .lp-band-showcase {
