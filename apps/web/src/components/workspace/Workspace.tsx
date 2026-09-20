@@ -7,7 +7,7 @@ import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
 import { api } from '@/lib/client'
 import { TEMPLATES } from '@/lib/templates'
 import { TopNav } from './TopNav'
-import { TemplateGallery } from './TemplateGallery'
+import { CanvasEmptyGuide } from './CanvasEmptyGuide'
 import { CanvasStage } from '@/components/canvas/CanvasStage'
 import { deleteImageConfirmText } from './canvas-geometry'
 import { TaskPanel } from './TaskPanel'
@@ -50,6 +50,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [detail, setDetail] = useState<TopicDetail | null>(null)
   const [panel, setPanel] = useState<PanelState>(IDLE_PANEL)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** 任务列表是否已加载完：用于区分「还在加载」与「确实一个任务都没有」 */
+  const [topicsLoaded, setTopicsLoaded] = useState(false)
+  /** 详情拉取失败：不能一直转圈（长轮询会继续重试，成功后自动复位） */
+  const [detailFailed, setDetailFailed] = useState(false)
   const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<
@@ -112,6 +116,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
         }
       } catch {
         // 未登录时由页面服务端组件兜底
+      } finally {
+        // 加载结束才置位：新手（一个任务都没有）也要落到空态引导，而不是一直转圈
+        if (!cancelled) setTopicsLoaded(true)
       }
     })()
     return () => {
@@ -127,6 +134,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
     }
     void refreshDetail(activeId)
       .then((fresh) => {
+        setDetailFailed(false)
         // 暂存参考以服务端为准同步进面板（本地预览 URL 不跨会话，只保留名称）
         const staged = fresh.staged ?? []
         setPanel((p) => ({
@@ -136,8 +144,27 @@ function Workspace({ initialUser }: { initialUser: User }) {
           stagedPreviews: {},
         }))
       })
-      .catch(() => setDetail(null))
+      .catch(() => {
+        setDetailFailed(true)
+        setDetail(null)
+      })
   }, [activeId, refreshDetail])
+
+  /**
+   * 画布图被别处删掉时，面板里的参考关系要跟着摘掉。
+   *
+   * 本端删除走 `removeImages` 已同步清理，但别的标签页/会话删图只会经由长轮询把 detail 换掉：
+   * 不在这里对账的话，残留的 `cimg_` 会让 `referenceCount` 虚高（可能误触上限），
+   * 而且面板上根本没有入口能删掉它 —— 之后每次生成都返回 400「参考图不存在或不属于当前任务。」
+   */
+  useEffect(() => {
+    if (!detail) return
+    const alive = new Set(detail.canvasImages.map((i) => i.id))
+    setPanel((p) => {
+      const next = p.referenceIds.filter((id) => !id.startsWith('cimg_') || alive.has(id))
+      return next.length === p.referenceIds.length ? p : { ...p, referenceIds: next }
+    })
+  }, [detail])
 
   // 长轮询 watch：任务状态变化时立即刷新（替代固定间隔轮询）
   useEffect(() => {
@@ -311,6 +338,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   const removeImages = useCallback(async (imgs: CanvasImage[]) => {
     await api.deleteCanvasImages(imgs.map((i) => i.id))
+    // 图片一删，引用关系就必须同步摘掉：服务端校验「参考图必须存在且属于本任务」，
+    // 残留的 cimg_ 会让之后每一次生成都返回 400。
+    const gone = new Set(imgs.map((i) => i.id))
+    setPanel((p) => ({ ...p, referenceIds: p.referenceIds.filter((id) => !gone.has(id)) }))
     if (activeId) await refreshDetail(activeId)
   }, [activeId, refreshDetail])
 
@@ -393,6 +424,17 @@ function Workspace({ initialUser }: { initialUser: User }) {
     []
   )
 
+  /** 取消画布引用：只摘参考关系，画布里的图仍在（与删图是两件事） */
+  const removeCanvasReference = useCallback((id: string) => {
+    setPanel((p) => ({ ...p, referenceIds: p.referenceIds.filter((x) => x !== id) }))
+  }, [])
+
+  /** 面板里要展示的画布引用：已在参考图里、且不在暂存区的画布图 */
+  const canvasReferences = useMemo(() => {
+    const stagedIds = new Set(panel.staged.map((s) => s.id))
+    return (detail?.canvasImages ?? []).filter((i) => panel.referenceIds.includes(i.id) && !stagedIds.has(i.id))
+  }, [detail, panel.referenceIds, panel.staged])
+
   const logout = useCallback(async () => {
     await api.logout()
     router.refresh()
@@ -428,7 +470,14 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
       <div className="ws-grid">
         <section className="ws-canvas">
-          {detail && detail.canvasImages.length > 0 ? (
+          {/* 三态：等列表/等详情 → Spinner；有图 → 画布；无图（含新手一个任务都没有）→ 新手引导。
+              详情拉取失败时不再一直转圈（长轮询会继续重试），落引导保证界面可用。
+              模板入口已收敛到右侧表单，空态不再放模板画廊。 */}
+          {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
+            <div className="flex h-full items-center justify-center">
+              <Spinner />
+            </div>
+          ) : detail && detail.canvasImages.length > 0 ? (
             <CanvasStage
               key={detail.topic.id}
               topicId={detail.topic.id}
@@ -437,7 +486,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               onAddReferences={addReferencesFromCanvas}
             />
           ) : (
-            <TemplateGallery onSelect={selectTemplate} />
+            <CanvasEmptyGuide onSelectTemplate={selectTemplate} />
           )}
           {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
           {busy && (
@@ -480,7 +529,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
             referenceCount={panel.referenceIds.length}
             staged={panel.staged}
             stagedPreviews={panel.stagedPreviews}
+            canvasReferences={canvasReferences}
             onRemoveStaged={removeStaged}
+            onRemoveCanvasReference={removeCanvasReference}
             busy={!!busy}
             credits={user.credits}
             lastError={lastError}
@@ -489,6 +540,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
             onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
             onUploadReference={(f) => void uploadReference(f)}
+            onSelectTemplate={selectTemplate}
             onGenerate={() => void submitGenerate()}
             onCancel={() => void cancelRunning()}
             onNewTask={() => void createTopic()}

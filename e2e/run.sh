@@ -4,6 +4,11 @@
 # 覆盖：落地页渲染 → 注册（开发模式验证码）→ 工作台 → 模板出图 → 任务管理 → 充值 → 登出
 #
 # 用法：bash e2e/run.sh
+#
+# ⚠️ 已知遗留（非本轮引入）：HeroUI 迁移（P1–P6）之后本脚本只做过局部修补，Rounds 3–6 仍残留
+# 迁移前的选择器（`.ws-toast` / `.ws-size-chip` / `.ws-modal` / `.ws-drawer` 在 src 里已不存在），
+# 所以它本来就跑不到底；本轮只顺手修了被 UI 调整直接影响的判据（模板入口）。完整修复另开一轮。
+# 注意本脚本从不在 CI 里跑，日常门禁是 typecheck + 单测。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -120,14 +125,14 @@ await js(String.raw`(() => {
 })()`)
 await wait(4)
 
-// 注册成功后应进入工作台
+// 注册成功后应进入工作台（空画布的任务显示新手引导，不再是模板画廊）
 const ws = await js(String.raw`(() => ({
   shell: !!document.querySelector('.ws-shell'),
-  gallery: document.body.innerText.includes('选一个模板，成套出图'),
+  guide: !!document.querySelector('[data-testid="canvas-empty-guide"]'),
   credits: (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1] || null,
 }))()`)
 cliLog('WORKSPACE ' + JSON.stringify(ws))
-if (!ws.shell || !ws.gallery) throw new Error('注册后未进入工作台')
+if (!ws.shell || !ws.guide) throw new Error('注册后未进入工作台')
 if (ws.credits !== '3') throw new Error('注册赠送额度应为 3，实际: ' + ws.credits)
 EOF
 echo "[e2e] Round 2 ✅"
@@ -138,31 +143,34 @@ ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 
-// 点击第一个模板卡
+// 模板入口已搬到表单侧：空态引导底部的「从模板开始」与表单里的下拉走同一个 selectTemplate
 const clicked = await js(String.raw`(() => {
-  const card = [...document.querySelectorAll('.tpl-card')][0]
-  if (!card) throw new Error('模板卡未找到')
-  const title = card.querySelector('.tpl-card-title').innerText
-  card.click()
-  return title
+  const guide = document.querySelector('[data-testid="canvas-empty-guide"]')
+  if (!guide) throw new Error('空态引导未找到')
+  const b = [...guide.querySelectorAll('button')].find(x => x.innerText.trim() === '从模板开始')
+  if (!b) throw new Error('「从模板开始」按钮未找到')
+  b.click()
+  return '从模板开始'
 })()`)
 cliLog('TEMPLATE ' + clicked)
 await wait(1)
 
-// 断言模板写入了提示词 / 张数 / 尺寸
+// 断言模板写入了提示词 / 张数 / 尺寸（HeroUI 侧的落点：NumberField 的 input 带 aria-label，
+// 选中的尺寸是 ToggleButtonGroup 里 data-selected="true" 的 role=radio 按钮）
 const panel = await js(String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
-  const num = document.querySelector('.ws-panel input[type="number"]')
-  const active = document.querySelector('.ws-size-chip[data-active="true"]')
-  return { promptLen: ta.value.length, count: num.value, size: active ? active.innerText.split('\n')[0] : null }
+  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
+  const active = document.querySelector('.ws-panel [role="radio"][data-selected="true"]')
+  return { promptLen: ta.value.length, count: num ? num.value : null, size: active ? active.innerText.split('\n')[0] : null }
 })()`)
 cliLog('PANEL ' + JSON.stringify(panel))
 if (panel.promptLen < 50) throw new Error('模板提示词未写入')
 if (panel.count !== '8') throw new Error('模板张数未写入: ' + panel.count)
+if (panel.size !== '方图') throw new Error('模板尺寸未写入: ' + panel.size)
 
 // 改为 2 张（赠送额度 3，留余量）
 await js(String.raw`(() => {
-  const num = document.querySelector('.ws-panel input[type="number"]')
+  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
   num.dispatchEvent(new Event('input', { bubbles: true }))
   return true
@@ -178,7 +186,7 @@ await js(String.raw`(() => {
 
 // 提交生成
 await js(String.raw`(() => {
-  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim() === '生成')
+  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
   if (!btn) throw new Error('生成按钮未找到')
   btn.click()
   return true

@@ -136,6 +136,35 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
     expect(a.left).toBe(100 * 2 + 40 + 240) // 中心 x=220 → 220*2+40
     expect(a.top).toBe(50 * 2 - 20 - 12)
   })
+
+  it('贴顶（首行 y=0）翻到卡片下方：top = 底边屏幕 y + 12，且不为负', () => {
+    const a = toolbarAnchor([{ x: 100, y: 0, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })!
+    expect(a.top).toBe(240 + 12)
+    expect(a.top).toBeGreaterThanOrEqual(0)
+    expect(a.left).toBe(220) // 水平仍是中心
+  })
+
+  it('刚好不贴顶时不翻转（y=30 → top=18 仍在上方）', () => {
+    expect(toolbarAnchor([{ x: 100, y: 30, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({ left: 220, top: 18 })
+  })
+
+  it('多矩形贴顶时按包围盒底边翻转', () => {
+    const a = toolbarAnchor(
+      [
+        { x: 100, y: 0, w: 240, h: 240 },
+        { x: 340, y: 0, w: 240, h: 300 },
+      ],
+      { x: 0, y: 0, k: 1 }
+    )!
+    expect(a.left).toBe(340)
+    expect(a.top).toBe(300 + 12) // 底边取最高的那张（h=300）
+  })
+
+  it('翻转也随视口缩放换算', () => {
+    const a = toolbarAnchor([{ x: 100, y: 0, w: 240, h: 240 }], { x: 0, y: -30, k: 2 })!
+    // 底边世界 y=240 → 屏幕 240*2-30=450，再 +12
+    expect(a.top).toBe(450 + 12)
+  })
 })
 
 describe('背景图案（L4-2-G1-A4、L1-1-G2-A4）', () => {

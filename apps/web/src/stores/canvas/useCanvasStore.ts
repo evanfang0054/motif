@@ -10,7 +10,7 @@
 'use client'
 
 import { create } from 'zustand'
-import type { CanvasImagePlacement, CanvasMeta, CanvasSnapshot } from '@motif/core'
+import type { CanvasBackgroundMode, CanvasImagePlacement, CanvasMeta, CanvasSnapshot } from '@motif/core'
 import { DEFAULT_CANVAS_META } from '@motif/core'
 import type { Rect } from '@/lib/canvas/geometry'
 import { createCanvasHistory, type CanvasHistory } from '@/lib/canvas/history'
@@ -97,6 +97,8 @@ export interface CanvasState {
   setViewport(v: Viewport): void
   zoomAt(factor: number, anchorX: number, anchorY: number): void
   panBy(dx: number, dy: number): void
+  /** 背景图案三态：只改 `meta.background`，**不动 viewport / version** */
+  setBackground(background: CanvasBackgroundMode): void
 
   setSelected(ids: string[]): void
   toggleSelect(id: string): void
@@ -219,6 +221,10 @@ export function createCanvasStore() {
     },
     panBy(dx, dy) {
       set((s) => ({ meta: { ...s.meta, viewport: panBy(s.meta.viewport, dx, dy) } }))
+    },
+    setBackground(background) {
+      // 落库零新增管线：meta 变化由 CanvasStage 的 [meta] effect → commitMeta → 400ms 防抖队列 → PATCH 完成
+      set((s) => ({ meta: { ...s.meta, background } }))
     },
 
     setSelected(ids) {

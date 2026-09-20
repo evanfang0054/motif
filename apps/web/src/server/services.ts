@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
+import sharp from 'sharp'
 import {
   SIGNUP_BONUS_CREDITS,
   allocateSlots,
@@ -223,8 +224,16 @@ export async function enqueueGeneration(
   const updated = store.deductCredits(user.id, cost, { source: 'generation_charge', refId: null, note: '入队扣费' })
   if (!updated) throw new ServiceError(402, '额度不足，请先充值。')
 
-  // 扣费成功后才把暂存参考转正为画布图：画布只在生成真正发生时被触及
-  const stagedCanvasIds = resolveStagedReferences(store, user, topic.id, stagedIds)
+  // 扣费成功后才把暂存参考转正为画布图：画布只在生成真正发生时被触及。
+  // ⚠️ 转正会抛（参考图已被别处删掉等）：钱已经扣了、消息还没建，worker 不会替我们退 ——
+  // 这里必须自己退，否则用户「没出图却掉了额度」。
+  let stagedCanvasIds: string[]
+  try {
+    stagedCanvasIds = await resolveStagedReferences(store, dataDir, user, topic.id, stagedIds)
+  } catch (e) {
+    store.addCredits(user.id, cost, { source: 'generation_refund', refId: null, note: '参考图转正失败退额' })
+    throw e
+  }
   const validRefs = [...canvasRefIds, ...stagedCanvasIds]
 
   const size = sizeCheck.value
@@ -392,15 +401,31 @@ export function saveReferenceImage(
 }
 
 /**
+ * 读原图像素尺寸；失败一律回退 0（调用方走 `displaySize(0,0)` 的正方形兜底）。
+ * 转正不能因为读图失败而失败，所以这里吞掉所有异常。
+ */
+async function readImageSize(filePath: string): Promise<{ width: number; height: number }> {
+  try {
+    const meta = await sharp(filePath).metadata()
+    const w = meta.width ?? 0
+    const h = meta.height ?? 0
+    return w > 0 && h > 0 ? { width: w, height: h } : { width: 0, height: 0 }
+  } catch {
+    return { width: 0, height: 0 }
+  }
+}
+
+/**
  * 暂存参考转正：把 refu_ 暂存图逐张落为画布图（origin=uploaded），返回可用的画布参考 id 列表。
  * 归属校验失败（不存在/非本人/非本任务）直接抛错，绝不静默跳过。
  */
-export function resolveStagedReferences(
+export async function resolveStagedReferences(
   store: MotifStore,
+  dataDir: string,
   user: User,
   topicId: string,
   stagedIds: string[]
-): string[] {
+): Promise<string[]> {
   const out: string[] = []
   // 落位上下文：转正的参考图也进「当前视口内的空位槽」，与生成产出共用同一套分配规则
   const origin = viewportOrigin(store.getCanvasMeta(topicId).viewport)
@@ -408,9 +433,9 @@ export function resolveStagedReferences(
   for (const id of stagedIds) {
     const ref = store.getReferenceUpload(id)
     if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
-    // 上传参考图没有原图尺寸（width/height 为 0）→ displaySize 回退正方形槽位
-    const size = displaySize(0, 0)
-    const [slot] = allocateSlots(occupied, [size], origin)
+    // 读真实像素尺寸再分配槽位：写死 0 会让渲染按原图比例、模型按 240 方形，两边对不上
+    const size = await readImageSize(storagePathFor(dataDir, ref.imageKey))
+    const [slot] = allocateSlots(occupied, [displaySize(size.width, size.height)], origin)
     occupied.push(slot)
     const img = store.insertCanvasImage({
       topicId,
@@ -421,8 +446,8 @@ export function resolveStagedReferences(
       imageKey: ref.imageKey,
       mimeType: ref.mimeType,
       bytes: ref.bytes,
-      width: 0,
-      height: 0,
+      width: size.width,
+      height: size.height,
       placement: { x: slot.x, y: slot.y, width: slot.w, height: slot.h },
     })
     store.deleteReferenceUpload(id)

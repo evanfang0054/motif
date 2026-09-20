@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildZip, crc32 } from '@/lib/zip'
+import { buildZip, crc32, readZip as readZipLib } from '@/lib/zip'
 import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 
 const bytes = (s: string) => new TextEncoder().encode(s)
@@ -147,5 +147,73 @@ describe('zipFileName', () => {
     expect(zipFileName('top_3a727e09c4f911f175b0d4d2d05afd28', 4, new Date('2026-09-20T10:00:00Z'))).toBe(
       'motif-canvas-3a727e09-4张-2026-09-20.zip'
     )
+  })
+})
+
+describe('readZip（库的读侧，与写侧对称）', () => {
+  it('往返自洽：条目名与字节逐字节一致（含中文名与空文件）', () => {
+    const entries = [
+      { name: 'canvas.json', data: bytes('{"app":"motif"}') },
+      { name: 'files/003-参考图.png', data: bytes('PNG-BYTES') },
+      { name: 'empty.bin', data: new Uint8Array(0) },
+    ]
+    const files = readZipLib(buildZip(entries, new Date('2026-09-20T10:00:00Z')))
+    expect([...files.keys()].sort()).toEqual(['canvas.json', 'empty.bin', 'files/003-参考图.png'])
+    for (const e of entries) expect(files.get(e.name)).toEqual(e.data)
+  })
+
+  it('拒收压缩条目（method = 8）并给出可判文案', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    const central = dv.getUint32(zip.length - 22 + 16, true)
+    dv.setUint16(central + 10, 8, true) // 把中央目录的 method 改成 deflate
+    expect(() => readZipLib(zip)).toThrow(/压缩/)
+  })
+
+  it('拒收 zip64（EOCD 条目数哨兵）', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    dv.setUint16(zip.length - 22 + 10, 0xffff, true)
+    expect(() => readZipLib(zip)).toThrow(/zip64/)
+  })
+
+  it('缺 EOCD 时明确报错（不是静默返回空）', () => {
+    expect(() => readZipLib(new Uint8Array(64).fill(7))).toThrow(/不是合法的 zip/)
+  })
+
+  it('中央目录签名损坏时报错', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    dv.setUint32(dv.getUint32(zip.length - 22 + 16, true), 0x11111111, true)
+    expect(() => readZipLib(zip)).toThrow(/中央目录/)
+  })
+
+  // 越界的畸形输入必须给可判文案：不能把 DataView 的 RangeError 直接抛给用户
+  it('短于 EOCD 的输入：明确报错而不是 RangeError', () => {
+    for (const n of [0, 1, 21]) {
+      let msg = ''
+      try {
+        readZipLib(new Uint8Array(n))
+      } catch (e) {
+        msg = e instanceof Error ? e.message : String(e)
+      }
+      expect(msg).toMatch(/不是合法的 zip/)
+      expect(msg).not.toMatch(/Offset is outside/)
+    }
+  })
+
+  it('中央目录偏移越界：明确报错而不是 RangeError', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    dv.setUint32(zip.length - 22 + 16, zip.length + 500, true) // 指向缓冲区之外
+    expect(() => readZipLib(zip)).toThrow(/中央目录/)
+  })
+
+  it('local header 偏移越界：明确报错而不是 RangeError', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    const central = dv.getUint32(zip.length - 22 + 16, true)
+    dv.setUint32(central + 42, zip.length + 500, true) // localOffset 指向缓冲区之外
+    expect(() => readZipLib(zip)).toThrow(/条目头部损坏/)
   })
 })

@@ -1,10 +1,10 @@
 'use client'
 
 import { useRef } from 'react'
-import { Alert, Button, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
-import { SIZE_PRESETS } from '@/lib/templates'
+import { Alert, Button, Dropdown, Label, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
+import { SIZE_PRESETS, TEMPLATES } from '@/lib/templates'
 import { MAX_REFERENCE_IMAGES } from '@motif/core'
-import type { StagedReference } from '@motif/core'
+import type { CanvasImage, StagedReference } from '@motif/core'
 import { StatusBadge } from './TopNav'
 
 interface Props {
@@ -17,6 +17,8 @@ interface Props {
   referenceCount: number
   staged: StagedReference[]
   stagedPreviews: Record<string, string>
+  /** 画布「@ 引用」进来的参考图（已在画布里，可单独取消引用而不删图） */
+  canvasReferences: CanvasImage[]
   busy: boolean
   /** 当前余额：用于生成前的消耗提示与不足预警 */
   credits?: number
@@ -28,6 +30,10 @@ interface Props {
   onCustomSizeChange: (w: number, h: number) => void
   onUploadReference: (file: File) => void
   onRemoveStaged: (id: string) => void
+  /** 取消引用画布图（只摘掉参考关系，画布里的图仍在） */
+  onRemoveCanvasReference: (id: string) => void
+  /** 套用模板：一次填好提示词、张数与尺寸（模板入口按 D-2 收敛到表单侧） */
+  onSelectTemplate: (key: string) => void
   onGenerate: () => void
   onCancel: () => void
   onNewTask: () => void
@@ -42,6 +48,8 @@ function TaskPanel(p: Props) {
   const insufficient = typeof credits === 'number' && credits < p.count
   // 可移除的暂存参考（上传后、生成前）；「@ 引用」进来的画布图不进暂存列表，但仍计入 referenceCount
   const stagedOnly = p.staged
+  const canvasOnly = p.canvasReferences
+  const hasReferenceRows = canvasOnly.length > 0 || stagedOnly.length > 0
   // 上传与「@ 引用」共用同一个上限：这里只看总量，满了就不让再选文件
   const atReferenceCap = p.referenceCount >= MAX_REFERENCE_IMAGES
 
@@ -88,8 +96,25 @@ function TaskPanel(p: Props) {
             {atReferenceCap ? `已达上限 ${MAX_REFERENCE_IMAGES} 张，移除一张后可继续上传` : 'PNG / JPG / WebP ≤10MB'}
           </span>
         </div>
-        {stagedOnly.length > 0 && (
+        {hasReferenceRows && (
           <div className="mt-2 flex flex-col gap-1.5">
+            {canvasOnly.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={c.src} alt={c.name} width={34} height={34} style={{ borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)' }} />
+                <span className="truncate" style={{ flex: 1, minWidth: 0 }}>
+                  #{String(c.serial).padStart(3, '0')} {c.name}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`移除画布引用 ${c.name}`}
+                  onPress={() => p.onRemoveCanvasReference(c.id)}
+                >
+                  移除
+                </Button>
+              </div>
+            ))}
             {stagedOnly.map((s) => (
               <div key={s.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
                 {p.stagedPreviews[s.id] ? (
@@ -114,7 +139,11 @@ function TaskPanel(p: Props) {
                 </Button>
               </div>
             ))}
-            <p className="text-xs" style={{ color: 'var(--muted)' }}>已暂存 {stagedOnly.length} 张：点「开始生成」后进入画布</p>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              {canvasOnly.length > 0 && `已引用画布图 ${canvasOnly.length} 张（移除只取消引用，不删图）`}
+              {canvasOnly.length > 0 && stagedOnly.length > 0 && '；'}
+              {stagedOnly.length > 0 && `已暂存 ${stagedOnly.length} 张：点「开始生成」后进入画布`}
+            </p>
           </div>
         )}
       </div>
@@ -183,6 +212,19 @@ function TaskPanel(p: Props) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="ws-panel-label mb-1.5">提示词</div>
+        {/* 模板入口在表单侧：套用会一次填好提示词 / 张数 / 尺寸，用户再按需改 */}
+        <Dropdown>
+          <Button variant="secondary" className="mb-2 w-full" aria-label="从模板开始">从模板开始</Button>
+          <Dropdown.Popover placement="bottom start" offset={4}>
+            <Dropdown.Menu onAction={(key) => p.onSelectTemplate(String(key))}>
+              {TEMPLATES.map((t) => (
+                <Dropdown.Item key={t.key} id={t.key} textValue={t.title}>
+                  <Label>{t.title}</Label>
+                </Dropdown.Item>
+              ))}
+            </Dropdown.Menu>
+          </Dropdown.Popover>
+        </Dropdown>
         <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
           <TextArea
             placeholder="描述你要生成的图片，或选择模板快速开始…"
