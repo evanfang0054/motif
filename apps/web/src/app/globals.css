@@ -232,22 +232,6 @@ body {
     color: var(--muted-strong);
   }
 
-  .ws-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border-radius: 10px;
-    border: 1px solid var(--border-strong);
-    background: var(--surface-secondary);
-    color: var(--foreground);
-    font-size: 13.5px;
-    padding: 8px 14px;
-    cursor: pointer;
-    transition: background 0.12s ease;
-    /* 按钮文字永不折行：窄顶栏下宁可压缩数量也不出「任/务」竖排（平板体验走查） */
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
 
   .ws-badge {
     display: inline-flex;
@@ -346,115 +330,22 @@ body {
   color: var(--muted);
 }
 
-.lp-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 999px;
-  font-size: 14.5px;
-  font-weight: 600;
-  padding: 11px 22px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
-}
 
-.lp-btn:active {
-  transform: translateY(1px);
-}
 
-.lp-btn-primary {
-  background: var(--brand-warm);
-  color: var(--brand-warm-text);
-}
 
-.lp-btn-primary:hover {
-  background: var(--brand-warm-hover);
-}
 
-.lp-btn-ghost {
-  background: transparent;
-  color: var(--foreground);
-  border-color: color-mix(in srgb, var(--border-strong) 80%, transparent);
-}
 
-.lp-btn-ghost:hover {
-  background: var(--surface-hover);
-}
 
-/* 登录卡片 */
 
-.lp-card {
-  background: color-mix(in srgb, var(--surface-primary) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 20px;
-  box-shadow: var(--shadow-soft);
-  padding: 26px;
-  scroll-margin-top: 96px;
-}
 
-.lp-field {
-  margin-top: 14px;
-}
 
-.lp-label {
-  display: block;
-  font-size: 13px;
-  color: var(--muted-strong);
-  margin-bottom: 6px;
-  font-weight: 600;
-}
 
-.lp-input {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-secondary);
-  color: var(--foreground);
-  padding: 10px 12px;
-  font-size: 14px;
-  outline: none;
-}
 
-.lp-input:focus {
-  border-color: color-mix(in srgb, var(--brand-warm) 70%, var(--border-strong));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-warm) 25%, transparent);
-}
 
-.lp-alert {
-  margin-top: 12px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.5;
-}
 
-.lp-alert-error {
-  background: var(--danger-soft);
-  color: var(--danger);
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-}
 
-.lp-alert-ok {
-  background: var(--success-soft);
-  color: var(--success);
-  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
-}
 
-.lp-link-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0;
-}
 
-.lp-link-btn:hover {
-  color: var(--foreground);
-  text-decoration: underline;
-}
 
 /* 展示区 */
 
@@ -607,45 +498,12 @@ body {
   background: var(--surface-primary);
 }
 
-/* 顶栏 <768 汉堡菜单面板（issue #6） */
-.ws-nav-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 8px;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  min-width: 160px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-primary);
-  box-shadow: var(--shadow-soft);
-}
 
-/* .ws-btn 已移入文件顶部 @layer components（issue #6 层叠修复） */
 
-.ws-btn:hover {
-  background: var(--surface-hover);
-}
 
-.ws-btn-primary {
-  background: var(--brand-warm);
-  color: var(--brand-warm-text);
-  border-color: transparent;
-  font-weight: 700;
-}
 
-.ws-btn-primary:hover {
-  background: var(--brand-warm-hover);
-}
 
-.ws-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+
 
 /* .ws-badge 已移入文件顶部 @layer components（issue #6 层叠修复；顺带修复 ≥lg 余额双显） */
 
@@ -700,41 +558,9 @@ body {
   gap: 8px;
 }
 
-.ws-size-chip {
-  border: 1px solid var(--border-strong);
-  background: var(--surface-secondary);
-  color: var(--foreground);
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-size: 12.5px;
-  cursor: pointer;
-  text-align: left;
-  line-height: 1.4;
-}
 
-.ws-size-chip[data-active='true'] {
-  border-color: color-mix(in srgb, var(--brand-warm) 75%, var(--border-strong));
-  background: color-mix(in srgb, var(--brand-warm) 16%, var(--surface-secondary));
-  font-weight: 700;
-}
 
-.ws-textarea {
-  width: 100%;
-  min-height: 120px;
-  resize: vertical;
-  border-radius: 12px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-secondary);
-  color: var(--foreground);
-  padding: 10px 12px;
-  font-size: 13.5px;
-  line-height: 1.7;
-  outline: none;
-}
 
-.ws-textarea:focus {
-  border-color: color-mix(in srgb, var(--brand-warm) 70%, var(--border-strong));
-}
 
 /* 模板画廊 */
 
@@ -745,28 +571,8 @@ body {
   padding: 8px 24px 32px;
 }
 
-.tpl-card {
-  text-align: left;
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  background: var(--surface-primary);
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease;
-}
 
-.tpl-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--brand-warm) 60%, var(--border));
-}
 
-.tpl-card img {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-  display: block;
-  background: var(--surface-secondary);
-}
 
 .tpl-card-body {
   padding: 12px 14px 14px;
@@ -795,14 +601,6 @@ body {
   gap: 6px;
 }
 
-.tpl-tag {
-  font-size: 11.5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--muted-strong);
-  background: var(--surface-secondary);
-}
 
 /* 画布图片 */
 
@@ -870,41 +668,10 @@ body {
   box-shadow: var(--shadow-soft);
 }
 
-.canvas-tool-btn {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--foreground);
-  cursor: pointer;
-  transition: background 0.12s ease;
-  text-decoration: none;
-}
 
-.canvas-tool-btn:hover {
-  background: var(--surface-hover);
-}
 
-.canvas-tool-btn-text {
-  width: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-}
 
-.canvas-tool-btn-danger {
-  color: var(--danger);
-}
 
-.canvas-tool-btn-danger:hover {
-  background: var(--danger-soft);
-}
 
 .canvas-tool-divider {
   width: 1px;
@@ -939,19 +706,7 @@ body {
   display: inline-block;
 }
 
-.canvas-pill-btn {
-  border: none;
-  background: none;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0;
-}
 
-.canvas-pill-btn:hover {
-  color: var(--danger);
-  text-decoration: underline;
-}
 
 /* 右下缩放工具条 */
 .canvas-zoombar {
@@ -968,81 +723,15 @@ body {
   box-shadow: 0 2px 8px #00000014;
 }
 
-.canvas-zoom-btn {
-  display: grid;
-  place-items: center;
-  min-width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
 
-.canvas-zoom-btn:hover {
-  background: var(--surface-hover);
-}
 
-.canvas-zoom-btn-text {
-  font-size: 12px;
-  padding: 0 8px;
-}
 
-.canvas-zoom-value {
-  min-width: 48px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-}
 
-.canvas-zoom-value:hover {
-  background: var(--surface-hover);
-}
 
-/* 灯箱预览 */
-.canvas-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: color-mix(in srgb, #000 88%, transparent);
-  display: grid;
-  place-items: center;
-  padding: 32px;
-}
 
-.canvas-lightbox img {
-  max-width: min(1100px, 92vw);
-  max-height: 82vh;
-  border-radius: 8px;
-  box-shadow: var(--shadow-soft);
-}
 
-.canvas-lightbox-close {
-  position: absolute;
-  top: 18px;
-  right: 22px;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, #fff 14%, transparent);
-  color: #fff;
-  font-size: 15px;
-  cursor: pointer;
-}
 
-.canvas-lightbox-close:hover {
-  background: color-mix(in srgb, #fff 26%, transparent);
-}
+
 
 .canvas-lightbox-caption {
   position: absolute;
@@ -1053,50 +742,9 @@ body {
   font-size: 12.5px;
 }
 
-/* 抽屉与弹层 */
 
-.ws-drawer-mask {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  z-index: 60;
-}
 
-.ws-drawer {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(360px, 88vw);
-  background: var(--surface-primary);
-  border-right: 1px solid var(--border);
-  z-index: 61;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  gap: 10px;
-}
 
-.ws-modal-mask {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  z-index: 70;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-}
-
-.ws-modal {
-  width: min(460px, 100%);
-  max-height: 86dvh;
-  overflow: auto;
-  background: var(--surface-primary);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-soft);
-  padding: 20px;
-}
 
 .ws-topic-item {
   display: flex;
@@ -1113,26 +761,8 @@ body {
   border-color: color-mix(in srgb, var(--brand-warm) 65%, var(--border));
 }
 
-.ws-toast {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 90;
-  background: color-mix(in srgb, var(--foreground) 92%, transparent);
-  color: var(--background);
-  font-size: 13.5px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  box-shadow: var(--shadow-soft);
-}
 
-/* 画布「云端生成中」浮层 spinner */
-@keyframes ws-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+
 
 .ws-status-dot {
   width: 8px;
@@ -1180,59 +810,12 @@ body {
   border-radius: 8px;
   overflow: hidden;
 }
-.ws-theme-opt {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1;
-  padding: 10px 10px; /* 点击目标 ≥32px */
-  cursor: pointer;
-}
-.ws-theme-opt + .ws-theme-opt {
-  border-left: 1px solid var(--border);
-}
-.ws-theme-opt:hover {
-  color: var(--foreground);
-  background: var(--surface-hover);
-}
-.ws-theme-opt.is-active {
-  background: var(--surface-active);
-  color: var(--foreground);
-  font-weight: 600;
-}
 
-/* 强制改密软提示横幅 */
-.ws-password-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--warning-soft, var(--surface-secondary));
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
 
-.ws-password-hint-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
 
-.ws-password-hint-primary {
-  border: none;
-  border-radius: 6px;
-  padding: 4px 12px;
-  cursor: pointer;
-  background: var(--surface-accent);
-  color: var(--button-text, #fff);
-}
 
-.ws-password-hint-dismiss {
-  border: none;
-  background: transparent;
-  color: var(--muted-strong);
-  cursor: pointer;
-  padding: 4px 8px;
-}
+
+
+
+
+
