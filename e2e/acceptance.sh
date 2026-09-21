@@ -150,7 +150,8 @@ await ensureRealTab()
 
 // 新建任务并上传参考图（1×1 PNG）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.includes('新任务'))
+  // 图标化后该按钮无可见文字，改用 aria-label（2026-09-21）
+  const b = document.querySelector('.ws-nav button[aria-label="新任务"]')
   b.click(); return true
 })()`)
 await wait(2)
@@ -159,7 +160,8 @@ await wait(2)
 await uploadFile('.ws-panel input[type="file"]', '/tmp/motif-accept-ref.png')
 await wait(2)
 
-const refUploaded = await js(String.raw`(() => document.body.innerText.includes('参考图已上传') || document.querySelector('.ws-panel button')?.innerText.includes('（1）'))()`)
+// 上传按钮图标化后计数进了 aria-label（原先是可见文字「上传参考图（1／6）」），故按前缀匹配
+const refUploaded = await js(String.raw`(() => document.body.innerText.includes('参考图已上传') || [...document.querySelectorAll('.ws-panel button')].some(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图（1')))()`)
 cliLog('refUploaded=' + refUploaded)
 
 // 提交 2 张生成
@@ -418,7 +420,7 @@ await js(String.raw`(() => {
 await wait(1)
 const refState = await js(String.raw`(() => ({
   promptHasSerial: /#\d{3}/.test(document.querySelector('.ws-panel textarea').value),
-  refBtn: [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.includes('上传参考图'))?.innerText.trim() || null
+  refBtn: [...document.querySelectorAll('.ws-panel button')].find(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图'))?.getAttribute('aria-label') || null
 }))()`)
 cliLog('reference: ' + JSON.stringify(refState))
 if (!refState.promptHasSerial) throw new Error('@ 引用未把编号写入提示词')
@@ -436,7 +438,7 @@ if (!lightboxClosed) throw new Error('Esc 未关闭灯箱')
 
 // 整理布局 → 位置吸附回网格
 const arrangeBtn = await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '整理布局')
+  const b = document.querySelector('button[aria-label="整理布局"]')
   const r = b.getBoundingClientRect()
   return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]
 })()`)

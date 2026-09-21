@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Button } from '@heroui/react'
+import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
 import { AuthModal, type Mode } from './AuthModal'
 
@@ -66,7 +67,10 @@ function Landing() {
           <div className="lp-hero-solid" aria-hidden />
           <div className="lp-container lp-hero-grid">
             <div className="lp-hero-copy">
-              <span className="lp-hero-badge">✦ Motif · AI 商业图片批量工作台</span>
+              <span className="lp-hero-badge">
+                <Sparkles aria-hidden />
+                Motif · AI 商业图片批量工作台
+              </span>
               <h1 className="lp-hero-title">
                 一张参考图，
                 <br />
@@ -87,10 +91,11 @@ function Landing() {
                   先看效果
                 </Button>
               </div>
+              {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <span>✓ 注册即送 3 张额度</span>
-                <span>✓ 单任务多张成套</span>
-                <span>✓ 云端队列不占本地算力</span>
+                <span><CircleCheck aria-hidden />注册即送 3 张额度</span>
+                <span><CircleCheck aria-hidden />单任务多张成套</span>
+                <span><CircleCheck aria-hidden />云端队列不占本地算力</span>
               </div>
             </div>
           </div>

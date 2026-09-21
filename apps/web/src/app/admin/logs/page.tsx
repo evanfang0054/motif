@@ -3,6 +3,8 @@ import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Drawer, NumberField, SearchField, Select, ListBox, Table } from '@heroui/react'
+import { Eye } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminLogRow } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
@@ -156,9 +158,9 @@ export default function AdminLogsPage() {
                     <Table.Cell data-label="重试">{m.attempts}</Table.Cell>
                     <Table.Cell data-label="失败原因">{m.error ? <span className="admin-mono">{m.error}</span> : '—'}</Table.Cell>
                     <Table.Cell data-label="提示词">
-                      <Button size="sm" variant="secondary" onPress={() => setDetail(m)}>
-                        查看详情
-                      </Button>
+                      <IconButton size="sm" variant="secondary" label="查看详情" onPress={() => setDetail(m)}>
+                        <Eye />
+                      </IconButton>
                     </Table.Cell>
                   </Table.Row>
                 ))
@@ -175,7 +177,7 @@ export default function AdminLogsPage() {
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>生成日志详情</Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+              <Drawer.CloseTrigger aria-label="关闭" />
             </Drawer.Header>
             <Drawer.Body>
               {detail && (

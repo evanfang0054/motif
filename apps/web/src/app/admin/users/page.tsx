@@ -255,7 +255,7 @@ export default function AdminUsersPage() {
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>调整额度 · {adjust?.user.name}</Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+              <Drawer.CloseTrigger aria-label="关闭" />
             </Drawer.Header>
             <Drawer.Body>
               {adjust && (
@@ -302,7 +302,7 @@ export default function AdminUsersPage() {
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>一次性密码 · {reset?.name}</Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+              <Drawer.CloseTrigger aria-label="关闭" />
             </Drawer.Header>
             <Drawer.Body>
               {reset && (

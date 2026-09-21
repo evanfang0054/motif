@@ -8,13 +8,42 @@
  *  - 弹层豁免选择器由上游的 `.ant-*` 改为 `[data-canvas-no-zoom]` / `[role="dialog"]`（Motif 用 HeroUI）
  *  - 底色取 `var(--canvas-background)`（中性，不抄上游的暖底）
  *
- * ⚠️ 保留既有 CanvasBoard 的**全部**控件与文案（用户 2026-09-20 裁决 J1）：
- * 顶部 pill（张数 / 已选 / 清空选择）、整理布局、单选工具栏（放大预览 / @ 引用 / 再生成 / 下载 / 删除）、
- * 多选工具栏（已选 N 张 / 批量删除）、缩放条（−/百分比/＋/适应）、sr-only 清单、灯箱。
- * 唯一的语义变化：**整理布局**从「重置到网格」升级为「重排进空位槽并落库」。
+ * ⚠️ 控件与文案经历过两次裁决，**后一次覆盖前一次**（留痕，勿按前一次回改）：
+ * - 2026-09-20 的裁决：保留既有 CanvasBoard 的**全部**控件与文案 ——
+ *   顶部 pill（张数 / 已选 / 清空选择）、整理布局、单选工具栏（放大预览 / @ 引用 / 再生成 / 下载 / 删除）、
+ *   多选工具栏（已选 N 张 / 批量删除）、缩放条（−/百分比/＋/适应）、sr-only 清单、灯箱。
+ *   语义变化：**整理布局**从「重置到网格」升级为「重排进空位槽并落库」。
+ * - 2026-09-21 的裁决：全站图标化。上一条里「保留文案」这一条对**次要 / 破坏性 / 视图类**
+ *   控件不再适用 —— 它们改为「图标 + Tooltip」（Tooltip 文案同时作 aria-label，见 ui/icon-button.tsx）；
+ *   而**承载数字或状态**的文案（「N 张图片」「已选 N 张」「100%」）、灯箱说明、引导提示一律保留文字。
+ *   ⚠️ 唯一加不了 HeroUI Tooltip 的是「画布归档」：它的触发件必须是 Dropdown 的直接子元素，
+ *   而 Tooltip 靠 clone 直接子元素注入 props、DropdownRoot 又是 MenuTrigger（不落 DOM、不透传 props），
+ *   两者结构上不能共存（源码 dist/components/tooltip/tooltip.js 与 dropdown/dropdown.js:19-30 实证）
+ *   → 该处退回原生 title 属性，是本文件唯一的例外。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
+import {
+  Archive,
+  ArrowDownToLine,
+  ArrowRotateLeft,
+  ArrowRotateRight,
+  ArrowsExpand,
+  At,
+  Bars,
+  CircleXmark,
+  Dots9,
+  Frame,
+  Hierarchy,
+  LayoutCellsLarge,
+  MapPin,
+  Minus,
+  Plus,
+  SquareDashed,
+  TrashBin,
+  Xmark,
+} from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMeta, Message } from '@motif/core'
 import { anchorRender } from '@/components/ui/anchor-button'
 import { boundsOf, hitTest, toWorld } from '@/lib/canvas/geometry'
@@ -39,11 +68,14 @@ const CLICK_THRESHOLD = 3
  * 背景图案三态。取值域与默认值见 `@motif/core` 的 `CanvasBackgroundMode` / `DEFAULT_CANVAS_META`。
  * 文案照抄上游 `.infinite-canvas-ref/src/components/canvas/canvas-toolbar.tsx` 的 zh-CN 词条
  * （点 / 线 / 空白），分组标题「网格样式」同源；上游用 AntD Segmented，这里按 HeroUI 重写。
+ *
+ * 图标化（2026-09-21）：三段各只有 1 个汉字，但它们处在**空间最紧的**画布缩放条里，
+ * 且语义有直接图形（点阵 / 横线 / 空框）→ 换成图标 + Tooltip，label 仍保留原词条。
  */
-const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string }> = [
-  { key: 'dots', label: '点' },
-  { key: 'lines', label: '线' },
-  { key: 'blank', label: '空白' },
+const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string; icon: React.ReactNode }> = [
+  { key: 'dots', label: '点', icon: <Dots9 /> },
+  { key: 'lines', label: '线', icon: <Bars /> },
+  { key: 'blank', label: '空白', icon: <SquareDashed /> },
 ]
 
 interface Props {
@@ -845,40 +877,40 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             data-canvas-no-zoom
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <Button isIconOnly size="sm" variant="secondary" aria-label="放大预览" onPress={() => setPreview(selectedImages[0])}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M15 3h6v6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /><path d="M9 21H3v-6" />
-              </svg>
-            </Button>
-            <Button size="sm" variant="secondary" aria-label="加入参考图，并把编号写进提示词" onPress={() => onAddReferences([selectedImages[0]])}>
-              @ 引用
-            </Button>
-            {/* 与「@ 引用」的区别：这是**替换**画布引用并把该轮原始提示词填回表单（不是追加） */}
-            <Button
+            <IconButton size="sm" variant="secondary" label="放大预览" onPress={() => setPreview(selectedImages[0])}>
+              <ArrowsExpand />
+            </IconButton>
+            <IconButton
               size="sm"
               variant="secondary"
-              aria-label="按这张图那一轮的提示词重新填好表单，并把它设为参考图"
+              label="@ 引用"
+              ariaLabel="加入参考图，并把编号写进提示词"
+              onPress={() => onAddReferences([selectedImages[0]])}
+            >
+              <At />
+            </IconButton>
+            {/* 与「@ 引用」的区别：这是**替换**画布引用并把该轮原始提示词填回表单（不是追加） */}
+            <IconButton
+              size="sm"
+              variant="secondary"
+              label="再生成"
+              ariaLabel="按这张图那一轮的提示词重新填好表单，并把它设为参考图"
               onPress={() => onRegenerate(selectedImages[0])}
             >
-              再生成
-            </Button>
-            <Button
-              isIconOnly
+              <ArrowRotateLeft />
+            </IconButton>
+            <IconButton
               size="sm"
               variant="secondary"
-              aria-label="下载"
+              label="下载"
               render={anchorRender({ href: selectedImages[0].src, download: selectedImages[0].name })}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" />
-              </svg>
-            </Button>
+              <ArrowDownToLine />
+            </IconButton>
             <span className="canvas-tool-divider" />
-            <Button isIconOnly size="sm" variant="danger" aria-label="删除所选图片" onPress={() => onRemoveImages([selectedImages[0]])}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </Button>
+            <IconButton size="sm" variant="danger" label="删除所选图片" onPress={() => onRemoveImages([selectedImages[0]])}>
+              <TrashBin />
+            </IconButton>
           </Toolbar>
         )}
 
@@ -891,40 +923,31 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             data-canvas-no-zoom
             onPointerDown={(e) => e.stopPropagation()}
           >
+            {/* 「已选 N 张」保留文字：它承载数字，换成图标会丢掉唯一的信息源 */}
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>已选 {selectedImages.length} 张</span>
             <span className="canvas-tool-divider" />
-            <Button
+            <IconButton
               size="sm"
               variant="secondary"
-              aria-label="把所选图片全部加入参考图"
+              label="@ 引用"
+              ariaLabel="把所选图片全部加入参考图"
               onPress={() => onAddReferences(selectedImages)}
             >
-              @ 引用
-            </Button>
-            <Button
-              isIconOnly
+              <At />
+            </IconButton>
+            <IconButton
               size="sm"
               variant="secondary"
-              aria-label="批量下载（打包为 zip）"
+              label="批量下载（打包为 zip）"
               isDisabled={zipping}
               onPress={downloadSelectedAsZip}
             >
-              {zipping ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                  <path d="M12 3a9 9 0 1 0 9 9" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 15V3" /><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" />
-                </svg>
-              )}
-            </Button>
+              {zipping ? <ArrowRotateRight className="animate-spin" /> : <ArrowDownToLine />}
+            </IconButton>
             <span className="canvas-tool-divider" />
-            <Button isIconOnly size="sm" variant="danger" aria-label="删除所选图片" onPress={() => onRemoveImages(selectedImages)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M10 11v6" /><path d="M14 11v6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </Button>
+            <IconButton size="sm" variant="danger" label="删除所选图片" onPress={() => onRemoveImages(selectedImages)}>
+              <TrashBin />
+            </IconButton>
           </Toolbar>
         )}
       </div>
@@ -943,7 +966,9 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             <>
               <span className="canvas-pill-divider" />
               <span className="canvas-pill-count">已选 {selected.length}</span>
-              <Button size="sm" variant="secondary" onPress={() => useCanvasStore.getState().clearSelection()}>清空选择</Button>
+              <IconButton size="sm" variant="secondary" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
+                <CircleXmark />
+              </IconButton>
             </>
           )}
         </div>
@@ -951,10 +976,11 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             中间那个（「整理布局」）被推到画布正中，与紧邻的归档菜单拉开半屏 */}
         <div className="pointer-events-none flex items-center gap-2">
           {/* 整理布局：沿用既有入口。语义从「重置到网格」升级为「把所有图重排进空位槽并落库」 */}
-          <Button
+          <IconButton
             variant="secondary"
             className="pointer-events-auto"
             data-canvas-no-zoom
+            label="整理布局"
             onPress={() => {
               const all = images.map((i) => i.id)
               useCanvasStore.getState().beginGesture('arrange')
@@ -967,16 +993,22 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
               useCanvasStore.getState().endGesture()
             }}
           >
-            整理布局
-          </Button>
+            <LayoutCellsLarge />
+          </IconButton>
           {/* 画布归档（导出/导入）。⚠️ 外层是 pointer-events-none，新控件必须显式 pointer-events-auto
               + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动）。
               ⚠️ 触发件用 Dropdown 的**直接子元素**（官方 default demo 的写法）：`Dropdown.Trigger`
               内部会再渲染一个 HeroUI Button，写成 `<Trigger><Button/></Trigger>` 会得到 `<button>` 套
               `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效） */}
           <Dropdown>
+            {/* ⚠️ 这一处**不能**用 IconButton（图标 + HeroUI Tooltip）：触发件必须是 Dropdown 的直接子元素，
+                而 Tooltip 靠 clone 直接子元素注入 props、DropdownRoot 又是 MenuTrigger（不落 DOM、不透传 props），
+                两者结构上无法共存（源码实证，详见文件头注释）；`title` 也不在 HeroUI Button 的 props 类型里
+                （ButtonRootProps 继承 RAC Button，不放开任意 HTML 属性）。
+                故这里保留**可见**的短标签「归档」+ 图标 —— 不用 hack 换悬停提示，可访问性反而更稳 */}
             <Button variant="secondary" className="pointer-events-auto" data-canvas-no-zoom isDisabled={zipping || importing}>
-              {zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
+              {zipping || importing ? <ArrowRotateRight className="animate-spin" /> : <Archive />}
+              {zipping ? '打包中…' : importing ? '导入中…' : '归档'}
             </Button>
             <Dropdown.Popover placement="bottom end">
               <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
@@ -1003,7 +1035,10 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           （连 pill 一起盖），浮层放那儿会点不到。 */}
       {showTreeHint && (
         <div className="pointer-events-none absolute bottom-3 left-3">
+          {/* 「布局与来源不一致」这句**是提示的正文**而不是按钮标签 —— 换成图标 + Tooltip 会把
+              「出问题了」这个信号藏进悬停里，正好废掉这条提示的作用。故保留文字，只补图标做视觉对齐 */}
           <Button size="sm" variant="secondary" className="pointer-events-auto" data-canvas-no-zoom onPress={arrangeByLineage}>
+            <LayoutCellsLarge />
             布局与来源不一致 · 按来源整理
           </Button>
         </div>
@@ -1032,16 +1067,23 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           必须允许换行并限制最大宽度，否则左侧按钮在手机上点不到 */}
       <Toolbar className="canvas-zoombar max-w-[calc(100%-24px)] flex-wrap justify-end" aria-label="画布视图" data-canvas-no-zoom>
         <ButtonGroup>
-          <Button isIconOnly size="sm" variant="secondary" aria-label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>−</Button>
+          <IconButton size="sm" variant="secondary" label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>
+            <Minus />
+          </IconButton>
+          {/* 百分比保留文字：它是**状态读数**，图标化等于把缩放比例删掉 */}
           <Button size="sm" variant="secondary" aria-label="重置为 100%" onPress={() => useCanvasStore.getState().setViewport({ ...viewport, k: 1 })}>
             {Math.round(viewport.k * 100)}%
           </Button>
-          <Button isIconOnly size="sm" variant="secondary" aria-label="放大" onPress={() => zoomAtCenter(ZOOM_STEP)}>＋</Button>
+          <IconButton size="sm" variant="secondary" label="放大" onPress={() => zoomAtCenter(ZOOM_STEP)}>
+            <Plus />
+          </IconButton>
         </ButtonGroup>
         <span className="canvas-tool-divider" />
-        <Button
+        <IconButton
           size="sm"
           variant="ghost"
+          label="适应"
+          tooltip="适应窗口"
           onPress={() => {
             const el = containerRef.current
             if (!el) return
@@ -1051,46 +1093,46 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             useCanvasStore.getState().setViewport(fitView(b, el.clientWidth, el.clientHeight))
           }}
         >
-          适应
-        </Button>
+          <Frame />
+        </IconButton>
         <span className="canvas-tool-divider" />
-        <Button
+        <IconButton
           size="sm"
           variant={miniMapOpen ? 'primary' : 'ghost'}
-          aria-label="小地图"
+          label="小地图"
           aria-pressed={miniMapOpen}
           /* hidden lg:inline-flex：与 MiniMap 自身的 `hidden lg:block` 对齐（见上方注释） */
           className="hidden lg:inline-flex"
           onPress={() => setMiniMapOpen((v) => !v)}
         >
-          小地图
-        </Button>
+          <MapPin />
+        </IconButton>
         <span className="canvas-tool-divider" />
         {/* 溯源层开关（UI 文案；代码里叫 lineage）：**不加 `hidden lg:inline-flex`** —— 它不是 240px 的面板，窄屏也能用
             （与小地图开关的区别就在这：那个开关必须与组件自身的断点对齐） */}
-        <Button
+        <IconButton
           size="sm"
           variant={lineageOpen ? 'primary' : 'ghost'}
-          aria-label="溯源"
+          label="溯源"
           aria-pressed={lineageOpen}
           onPress={() => setLineageOpen((v) => !v)}
         >
-          溯源
-        </Button>
+          <Hierarchy />
+        </IconButton>
         {/* 按来源整理：只在溯源打开时出现（不打开溯源就没必要谈「按来源排」）。
             它**不自动触发** —— 开关只管显示线，重排必须由用户点（切视图开关就偷改摆放是惊吓式行为） */}
         {lineageOpen && (
           <>
             <span className="canvas-tool-divider" />
-            <Button
+            <IconButton
               size="sm"
               variant={showTreeHint ? 'primary' : 'ghost'}
-              aria-label="按来源整理"
+              label="按来源整理"
               isDisabled={treePlan.length === 0}
               onPress={arrangeByLineage}
             >
-              按来源整理
-            </Button>
+              <LayoutCellsLarge />
+            </IconButton>
           </>
         )}
         <span className="canvas-tool-divider" />
@@ -1103,10 +1145,16 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             if (next) useCanvasStore.getState().setBackground(next.key)
           }}
         >
+          {/* ToggleButton 不走 IconButton：它是另一个组件（选中态由 ToggleButtonGroup 的 context 驱动），
+              但同样能被 Tooltip 直接包住 —— ToggleButtonGroup 不 clone 子元素、只提供 context
+              （toggle-button-group.js 的 Root 原样透传 children），context 会穿过 Tooltip，CSS 也仍按后代选择器命中 */}
           {BACKGROUND_OPTIONS.map((o) => (
-            <ToggleButton key={o.key} id={o.key} size="sm">
-              {o.label}
-            </ToggleButton>
+            <Tooltip key={o.key} delay={0}>
+              <ToggleButton id={o.key} size="sm" aria-label={o.label}>
+                {o.icon}
+              </ToggleButton>
+              <Tooltip.Content>{o.label}</Tooltip.Content>
+            </Tooltip>
           ))}
         </ToggleButtonGroup>
       </Toolbar>
@@ -1128,7 +1176,9 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         >
           <Modal.Container>
             <Modal.Dialog aria-label="图片预览" className="max-w-[min(920px,92vw)]">
-              <Modal.CloseTrigger aria-label="关闭预览">✕</Modal.CloseTrigger>
+              {/* 不写 children：HeroUI 的 CloseButton 缺省就渲染自带 CloseIcon（close-button.js 里
+                  `children ?? <CloseIcon/>`），手写「✕」字形属于自造图标 */}
+              <Modal.CloseTrigger aria-label="关闭预览" />
               <Modal.Body className="p-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={preview.src} alt={preview.name} onClick={(e) => e.stopPropagation()} style={{ display: 'block', maxWidth: '100%', maxHeight: '72vh' }} />

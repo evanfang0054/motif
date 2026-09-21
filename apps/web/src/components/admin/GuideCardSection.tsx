@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
+import { ArrowUpRightFromSquare } from '@gravity-ui/icons'
 import type { GuideCard } from '@/lib/guide-cards'
 
 /**
@@ -46,7 +47,7 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
             </span>
           )}
           <a className="admin-guide-link" href={c.linkUrl} target="_blank" rel="noreferrer">
-            {c.linkLabel} ↗
+            {c.linkLabel} <ArrowUpRightFromSquare className="ms-1 inline align-[-0.125em]" aria-hidden />
           </a>
           {c.note && <p className="admin-field-hint">{c.note}</p>}
         </div>

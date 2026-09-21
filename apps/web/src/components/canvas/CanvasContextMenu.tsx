@@ -15,6 +15,7 @@
 'use client'
 
 import { Dropdown, Label } from '@heroui/react'
+import { ArrowDownToLine, ArrowRotateLeft, ArrowsExpand, At, TrashBin } from '@gravity-ui/icons'
 
 export type ContextMenuAction = 'preview' | 'reference' | 'regenerate' | 'download' | 'delete'
 
@@ -25,12 +26,17 @@ interface Props {
   onAction: (action: ContextMenuAction) => void
 }
 
-const ITEMS: Array<{ id: ContextMenuAction; label: string; danger?: boolean }> = [
-  { id: 'preview', label: '放大预览' },
-  { id: 'reference', label: '@ 引用' },
-  { id: 'regenerate', label: '再生成' },
-  { id: 'download', label: '下载' },
-  { id: 'delete', label: '删除', danger: true },
+/**
+ * 菜单项一律「图标 + 文字」而不是图标 + Tooltip：菜单项按规范必须带可见标签
+ * （Dropdown.Item 也强制要 textValue），hover 才显字在菜单里既反直觉又拖慢扫读。
+ * 图标写法照抄官方 demos/cn/dropdown/with-icons.tsx（图标 + Label 并列）。
+ */
+const ITEMS: Array<{ id: ContextMenuAction; label: string; icon: React.ReactNode; danger?: boolean }> = [
+  { id: 'preview', label: '放大预览', icon: <ArrowsExpand className="size-4 shrink-0 text-muted" /> },
+  { id: 'reference', label: '@ 引用', icon: <At className="size-4 shrink-0 text-muted" /> },
+  { id: 'regenerate', label: '再生成', icon: <ArrowRotateLeft className="size-4 shrink-0 text-muted" /> },
+  { id: 'download', label: '下载', icon: <ArrowDownToLine className="size-4 shrink-0 text-muted" /> },
+  { id: 'delete', label: '删除', icon: <TrashBin className="size-4 shrink-0 text-danger" />, danger: true },
 ]
 
 function CanvasContextMenu({ anchor, onClose, onAction }: Props) {
@@ -56,6 +62,7 @@ function CanvasContextMenu({ anchor, onClose, onAction }: Props) {
         <Dropdown.Menu onAction={(key) => onAction(key as ContextMenuAction)}>
           {ITEMS.map((item) => (
             <Dropdown.Item key={item.id} id={item.id} textValue={item.label} variant={item.danger ? 'danger' : 'default'}>
+              {item.icon}
               <Label>{item.label}</Label>
             </Dropdown.Item>
           ))}

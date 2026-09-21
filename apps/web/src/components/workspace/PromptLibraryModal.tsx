@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup } from '@heroui/react'
+import { ArrowRotateRight } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { showToast } from '@/components/ui/toast'
 import { PromptDetailDialog } from './PromptDetailDialog'
@@ -294,9 +296,16 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 : `${failures.length} 个提示词源抓取失败，暂时没有可展示的内容`}
             </Alert.Title>
             <Alert.Description>{failures.map((f) => `${f.sourceName}：${f.error}`).join('；')}</Alert.Description>
-            <Button variant="secondary" size="sm" className="mt-2" isDisabled={retrying} onPress={() => void retry()}>
-              {retrying ? '重试中…' : '重试'}
-            </Button>
+            <IconButton
+              variant="secondary"
+              size="sm"
+              className="mt-2"
+              label={retrying ? '重试中…' : '重试'}
+              isDisabled={retrying}
+              onPress={() => void retry()}
+            >
+              <ArrowRotateRight className={retrying ? 'animate-spin' : undefined} />
+            </IconButton>
           </Alert.Content>
         </Alert>
       )}
@@ -361,9 +370,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
                 <span>{error}</span>
-                <Button variant="secondary" size="sm" onPress={() => void load(1, 'replace')}>
-                  重试
-                </Button>
+                <IconButton variant="secondary" size="sm" label="重试" onPress={() => void load(1, 'replace')}>
+                  <ArrowRotateRight />
+                </IconButton>
               </div>
             ) : items.length === 0 ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 px-4 text-center text-sm" style={{ color: 'var(--muted)' }}>
