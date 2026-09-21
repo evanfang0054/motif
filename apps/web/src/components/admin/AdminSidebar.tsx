@@ -8,7 +8,7 @@ import { Bars } from '@gravity-ui/icons'
 import type { AdminNavItem } from '@/app/admin/nav'
 
 /**
- * 管理后台侧边导航（heroui-migration P3 复查：整体迁至 HeroUI）。
+ * 管理后台侧边导航（已整体迁至 HeroUI）。
  *
  * - ≥1024：常驻左栏（由 CSS 决定断点），ListBox 单选语义 = 当前页高亮
  * - <1024：头部图标按钮打开 HeroUI Drawer（左侧抽屉），遮罩 / ✕ / 选菜单项关闭

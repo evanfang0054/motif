@@ -51,9 +51,9 @@ describe('验证码直出开关读配置', () => {
   const consoleMailer = { mailer: { name: 'console', sendVerificationCode: async () => {} }, isConsole: true }
 
   it('生产环境下默认不直出', async () => {
-    // 用 vi.stubEnv 而不是直接给 process.env.NODE_ENV 赋值：NODE_ENV 在类型里是 readonly
-    // 字面量联合，直接赋值要么报错、要么得挂 @ts-expect-error（而一旦它其实不报错，
-    // @ts-expect-error 自己就变成「未使用的指令」错误）。
+    // 用 vi.stubEnv 而不是直接给 process.env.NODE_ENV 赋值：NODE_ENV 在类型里是
+    // readonly 字面量联合，直接赋值要么报错、要么得挂一条 @ts-expect-error 指令
+    // （而一旦它其实不报错，那条指令自己就变成「未使用的指令」错误）。
     vi.stubEnv('NODE_ENV', 'production')
     const r = await sendCode(store, consoleMailer as never, 'register', 'a@b.co')
     expect(r.devCode).toBeUndefined()

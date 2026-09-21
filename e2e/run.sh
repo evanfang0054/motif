@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 #
 # Motif E2E —— 基于 ego-browser 的端到端测试
-# 覆盖：落地页渲染 → 注册（开发模式验证码）→ 工作台 → 模板出图 → 任务管理 → 充值 → 登出
+# 覆盖：落地页渲染 → 注册（开发模式验证码）→ 工作台 → 提示词库取词出图 → 任务管理 → 充值 → 登出
 #
 # 用法：bash e2e/run.sh
 #
-# ⚠️ 已知遗留（非本轮引入）：HeroUI 迁移（P1–P6）之后本脚本只做过局部修补，Rounds 3–6 仍残留
-# 迁移前的选择器（`.ws-toast` / `.ws-size-chip` / `.ws-modal` / `.ws-drawer` 在 src 里已不存在），
-# 所以它本来就跑不到底；本轮只顺手修了被 UI 调整直接影响的判据（模板入口）。完整修复另开一轮。
-# 注意本脚本从不在 CI 里跑，日常门禁是 typecheck + 单测。
+# ⚠️ 本脚本直连真实生图网关并消耗额度；且它与 dev 共用 apps/web/.next，运行前请先停掉 dev。
+# 它从不在 CI 里跑，日常门禁是 typecheck + 单测。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -62,10 +60,10 @@ await wait(1)
 const text = await js(String.raw`document.body.innerText`)
 const checks = {
   hero: text.includes('一张参考图'),
-  authCard: text.includes('欢迎回来') || text.includes('创建账号'),
+  heroCta: text.includes('开始生成') && text.includes('立即生成'),
   features: text.includes('为什么选 Motif'),
-  footer: text.includes('© 2026 motif'),
-  nav: text.includes('案例一览') && text.includes('核心能力'),
+  footer: text.includes('© 2026 Motif'),
+  nav: text.includes('Motif') && text.includes('立即生成'),
 }
 cliLog('LANDING_CHECKS ' + JSON.stringify(checks))
 if (Object.values(checks).some(v => !v)) throw new Error('landing page missing sections: ' + JSON.stringify(checks))
@@ -80,12 +78,19 @@ const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 const EMAIL = E2E.email
 
-// 切到注册表单（若已在注册模式则直接继续）
+// 落地页的登录/注册已弹窗化：先点底部「免费注册」把弹窗打开（直接进注册模式）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('form button, #auth button')].find(x => x.innerText.trim() === '注册账号')
-  if (b) { b.click(); return 'switched' }
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '免费注册')
+  if (!b) throw new Error('「免费注册」入口未找到')
+  b.click()
+  return true
+})()`)
+await wait(1)
+
+// 确认已进注册模式（「免费注册」入口直接就是 register 模式）
+await js(String.raw`(() => {
   if (document.body.innerText.includes('创建账号')) return 'already-register'
-  throw new Error('注册入口未找到')
+  throw new Error('注册表单未出现')
 })()`)
 await wait(1)
 
@@ -106,7 +111,7 @@ const fillScript = String.raw`(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('#auth form input')]
+  const inputs = [...document.querySelectorAll('[role="dialog"] form input')]
   setVal(inputs[0], 'E2E 用户')           // 昵称
   setVal(inputs[1], email)                 // 邮箱
   setVal(inputs[2], 'MOTIF-E2E-CDK')     // 邀请码（不存在的邀请码应被忽略）
@@ -119,7 +124,7 @@ const filled = await js(fillScript)
 if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
 
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('#auth form button[type="submit"]')][0]
+  const b = [...document.querySelectorAll('[role="dialog"] form button[type="submit"]')][0]
   b.click()
   return true
 })()`)
@@ -137,44 +142,81 @@ if (ws.credits !== '3') throw new Error('注册赠送额度应为 3，实际: ' 
 EOF
 echo "[e2e] Round 2 ✅"
 
-# ---------- Round 3：模板生成流程 ----------
-echo "[e2e] Round 3: template generation"
+# ---------- Round 3：提示词库取词 + 生成流程 ----------
+echo "[e2e] Round 3: prompt library + generation"
 ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 
-// 模板入口已搬到表单侧：空态引导底部的「从模板开始」与表单里的下拉走同一个 selectTemplate
-const clicked = await js(String.raw`(() => {
-  const guide = document.querySelector('[data-testid="canvas-empty-guide"]')
-  if (!guide) throw new Error('空态引导未找到')
-  const b = [...guide.querySelectorAll('button')].find(x => x.innerText.trim() === '从模板开始')
-  if (!b) throw new Error('「从模板开始」按钮未找到')
-  b.click()
-  return '从模板开始'
-})()`)
-cliLog('TEMPLATE ' + clicked)
-await wait(1)
-
-// 断言模板写入了提示词 / 张数 / 尺寸（HeroUI 侧的落点：NumberField 的 input 带 aria-label，
-// 选中的尺寸是 ToggleButtonGroup 里 data-selected="true" 的 role=radio 按钮）
-const panel = await js(String.raw`(() => {
+// 提示词库是表单侧提示词的唯一入口：空态引导底部按钮 → 弹窗 → 选「系统自带」一条
+// 判据：**只填提示词**；张数与尺寸逐值不变（模板已并入「系统自带」源，不再联动张数/尺寸）
+const readPanel = String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
   const num = document.querySelector('.ws-panel input[aria-label="张数"]')
   const active = document.querySelector('.ws-panel [role="radio"][data-selected="true"]')
   return { promptLen: ta.value.length, count: num ? num.value : null, size: active ? active.innerText.split('\n')[0] : null }
-})()`)
-cliLog('PANEL ' + JSON.stringify(panel))
-if (panel.promptLen < 50) throw new Error('模板提示词未写入')
-if (panel.count !== '8') throw new Error('模板张数未写入: ' + panel.count)
-if (panel.size !== '方图') throw new Error('模板尺寸未写入: ' + panel.size)
+})()`
+const before = await js(readPanel)
+cliLog('PANEL_BEFORE ' + JSON.stringify(before))
+// 先确认两个控件真的取到了：否则下面「逐值不变」会在两边都是 null 时静默通过
+if (before.count === null || before.size === null) throw new Error('张数/尺寸控件未找到')
 
-// 改为 2 张（赠送额度 3，留余量）
+const clicked = await js(String.raw`(() => {
+  const guide = document.querySelector('[data-testid="canvas-empty-guide"]')
+  if (!guide) throw new Error('空态引导未找到')
+  const b = [...guide.querySelectorAll('button')].find(x => x.innerText.trim() === '打开提示词库')
+  if (!b) throw new Error('「打开提示词库」按钮未找到')
+  b.click()
+  return '打开提示词库'
+})()`)
+cliLog('LIBRARY ' + clicked)
+await wait(2)
+
+// 选「系统自带」来源（TagGroup 里的 Tag，按文本定位）
 await js(String.raw`(() => {
-  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
-  num.dispatchEvent(new Event('input', { bubbles: true }))
+  const tag = [...document.querySelectorAll('[role="dialog"] *')]
+    .find(x => x.children.length === 0 && x.textContent.trim() === '系统自带')
+  if (!tag) throw new Error('「系统自带」来源未找到')
+  tag.click()
   return true
 })()`)
+await wait(1)
+
+// 点第一张卡片（卡片是带 aria-label 的真按钮）
+const picked = await js(String.raw`(() => {
+  const card = document.querySelector('[role="dialog"] [aria-label^="选用提示词："]')
+  if (!card) throw new Error('提示词卡片未找到')
+  const title = card.getAttribute('aria-label')
+  card.click()
+  return title
+})()`)
+cliLog('PICKED ' + picked)
+await wait(1)
+
+const after = await js(readPanel)
+cliLog('PANEL_AFTER ' + JSON.stringify(after))
+if (after.promptLen < 50) throw new Error('提示词未被填入: ' + after.promptLen)
+if (after.count !== before.count) throw new Error('张数被联动改了: ' + before.count + ' → ' + after.count)
+if (after.size !== before.size) throw new Error('尺寸被联动改了: ' + before.size + ' → ' + after.size)
+
+// 改为 2 张（赠送额度 3，留余量）
+// 用 CDP 插入文本：实测「设 value + 派 input」没能驱动它的 onChange（提交时仍是旧值）
+await js(String.raw`(() => {
+  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
+  num.focus()
+  num.select()
+  return true
+})()`)
+await cdp('Input.insertText', { text: '2' })
+await wait(0.5)
+await js(String.raw`(() => {
+  document.querySelector('.ws-panel input[aria-label="张数"]').blur()
+  return true
+})()`)
+await wait(1)
+const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label="张数"]').value)()`)
+cliLog('COUNT_AFTER ' + countNow)
+if (countNow !== '2') throw new Error('张数未改为 2: ' + countNow)
 
 // 改为自包含提示词提交（模板提示词面向参考图场景，无参考图时模型可能拒绝）
 await js(String.raw`(() => {
@@ -193,7 +235,7 @@ await js(String.raw`(() => {
 })()`)
 await wait(2)
 
-const toast = await js(String.raw`(() => (document.querySelector('.ws-toast') || {}).innerText || null)()`)
+const toast = await js(String.raw`(() => (document.querySelector('[role="alertdialog"]') || {}).innerText || null)()`)
 cliLog('TOAST ' + toast)
 if (!toast || !toast.includes('队列')) throw new Error('生成提交 toast 未出现: ' + toast)
 
@@ -230,15 +272,17 @@ await ensureRealTab()
 
 // 打开任务抽屉
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '任务')
+  // 「任务」已图标化：IconButton 的短名落在 aria-label 上，按钮内没有文字
+  const b = document.querySelector('.ws-nav [aria-label="任务"]')
   b.click()
   return true
 })()`)
 await wait(1)
 
 const drawer = await js(String.raw`(() => {
-  const d = document.querySelector('.ws-drawer')
-  return { open: !!d, items: d ? d.querySelectorAll('.ws-topic-item').length : 0, hasInvite: d ? d.innerText.includes('邀请好友') : false }
+  // 抽屉的稳定锚点是关闭按钮的 aria-label（HeroUI 的 Drawer.Content 不保证把 aria-label 透传到 dialog 上）
+  const open = !!document.querySelector('[aria-label="关闭任务列表"]')
+  return { open, items: document.querySelectorAll('.ws-topic-item').length, hasInvite: document.body.innerText.includes('邀请好友') }
 })()`)
 cliLog('DRAWER ' + JSON.stringify(drawer))
 if (!drawer.open || drawer.items < 1) throw new Error('任务抽屉未打开或为空')
@@ -246,17 +290,25 @@ if (!drawer.open || drawer.items < 1) throw new Error('任务抽屉未打开或�
 // 重命名任务
 await js(String.raw`(() => {
   const item = document.querySelector('.ws-topic-item')
-  const btn = [...item.querySelectorAll('button')].find(b => b.title === '重命名任务')
+  const btn = [...item.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '重命名任务')
   btn.click()
   return true
 })()`)
 await wait(1)
+// 同样走 CDP 插入文本（理由见 Round 3 张数那处）
 await js(String.raw`(() => {
   const input = document.querySelector('.ws-topic-item input')
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'E2E 马克杯套图')
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.focus()
+  input.select()
   return true
 })()`)
+await cdp('Input.insertText', { text: 'E2E 马克杯套图' })
+await wait(0.5)
+await js(String.raw`(() => {
+  document.querySelector('.ws-topic-item input').blur()
+  return true
+})()`)
+await wait(1)
 await js(String.raw`(() => {
   const b = [...document.querySelectorAll('.ws-topic-item button')].find(x => x.innerText.trim() === '保存')
   b.click()
@@ -269,7 +321,7 @@ if (!renamed) throw new Error('任务重命名未生效')
 
 // 关抽屉 → 打开充值弹窗
 await js(String.raw`(() => {
-  document.querySelector('.ws-drawer button[aria-label="关闭任务列表"]').click()
+  document.querySelector('[aria-label="关闭任务列表"]').click()
   return true
 })()`)
 await wait(1)
@@ -280,16 +332,18 @@ await js(String.raw`(() => {
 })()`)
 await wait(2)
 const billing = await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('充值额度'))
-  return { open: !!m, packages: m ? [...m.querySelectorAll('.ws-size-chip')].length : 0, cdk: m ? m.innerText.includes('CDK') : false }
+  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+  // 套餐卡片是弹窗里不带 aria-label 的按钮（关闭按钮带 aria-label="关闭"）
+  const pkgs = m ? [...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label')) : []
+  return { open: !!m, packages: pkgs.length, cdk: m ? m.innerText.includes('CDK') : false }
 })()`)
 cliLog('BILLING ' + JSON.stringify(billing))
 if (!billing.open || billing.packages < 4 || !billing.cdk) throw new Error('充值弹窗内容不完整')
 
 // 购买第一档（50 张）→ 模拟收银台自动支付 → 额度 1 + 50 = 51
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('充值额度'))
-  m.querySelectorAll('.ws-size-chip')[0].click()
+  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+  ;[...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label'))[0].click()
   return true
 })()`)
 let credits = null
@@ -303,7 +357,7 @@ if (credits !== '51') throw new Error('充值后额度应为 51，实际: ' + cr
 
 // 登出 → 回到落地页
 await js(String.raw`(() => {
-  const m = document.querySelector('.ws-modal-mask')
+  const m = document.querySelector('[role="dialog"] [aria-label="关闭"]')
   if (m) m.click()
   return true
 })()`)
@@ -316,10 +370,10 @@ await js(String.raw`(() => {
 await wait(3)
 const landing = await js(String.raw`(() => ({
   hero: document.body.innerText.includes('一张参考图'),
-  auth: document.body.innerText.includes('欢迎回来'),
+  cta: document.body.innerText.includes('开始生成'),
 }))()`)
 cliLog('LOGOUT ' + JSON.stringify(landing))
-if (!landing.hero || !landing.auth) throw new Error('登出后未回到落地页')
+if (!landing.hero || !landing.cta) throw new Error('登出后未回到落地页')
 EOF
 echo "[e2e] Round 4 ✅"
 
@@ -330,6 +384,15 @@ const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-e2e-en
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 
+// 落地页登录已弹窗化：先点导航「立即生成」打开弹窗
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '立即生成')
+  if (!b) throw new Error('「立即生成」入口未找到')
+  b.click()
+  return true
+})()`)
+await wait(1)
+
 // 用刚注册的账号再次登录
 const EMAIL = E2E.email
 await js(String.raw`(() => {
@@ -338,13 +401,13 @@ await js(String.raw`(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('#auth form input')]
+  const inputs = [...document.querySelectorAll('[role="dialog"] form input')]
   setVal(inputs[0], email)
   setVal(inputs[1], 'e2e-secret-66')
   return true
 })()`)
 await js(String.raw`(() => {
-  [...document.querySelectorAll('#auth form button[type="submit"]')][0].click()
+  [...document.querySelectorAll('[role="dialog"] form button[type="submit"]')][0].click()
   return true
 })()`)
 await wait(4)

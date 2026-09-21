@@ -23,7 +23,7 @@ function TaskDrawer(p: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
-  // 无触发器上下文（由调用方条件挂载），关闭后还原焦点（GDD L4-2-G1-A1）
+  // 无触发器上下文（由调用方条件挂载），关闭后还原焦点
   const restoreRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null

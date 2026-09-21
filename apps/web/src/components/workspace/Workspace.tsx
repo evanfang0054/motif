@@ -584,7 +584,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
               说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
               注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
-              要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本轮范围。
+              要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
               模板入口已收敛到右侧表单。 */}
           {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
             <div className="flex h-full items-center justify-center">

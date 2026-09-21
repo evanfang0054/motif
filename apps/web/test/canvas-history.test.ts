@@ -3,7 +3,7 @@ import { createCanvasHistory } from '@/lib/canvas/history'
 
 type S = { n: number }
 
-describe('撤销栈（L4-2-G2-A3）', () => {
+describe('撤销栈', () => {
   it('连续拖拽（20 帧）合并为一个撤销步', () => {
     const h = createCanvasHistory<S>()
     const s0 = { n: 0 }

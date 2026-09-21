@@ -3,15 +3,16 @@ import { ConsoleMailer, ResendMailer, SendGridMailer, SmtpMailer, createMailerFr
 
 describe('createMailerFromEnv', () => {
   it('默认 console（本地直出）', () => {
-    const cfg = createMailerFromEnv({})
+    const cfg = createMailerFromEnv({ NODE_ENV: 'test' })
     expect(cfg.mailer instanceof ConsoleMailer).toBe(true)
     expect(cfg.isConsole).toBe(true)
   })
   it('smtp 缺配置直接报错并列出缺失键', () => {
-    expect(() => createMailerFromEnv({ MOTIF_MAILER: 'smtp' })).toThrow(/SMTP_HOST/)
+    expect(() => createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'smtp' })).toThrow(/SMTP_HOST/)
   })
   it('smtp 配置齐全时创建 SmtpMailer（465 端口默认 SSL）', () => {
     const cfg = createMailerFromEnv({
+      NODE_ENV: 'test',
       MOTIF_MAILER: 'smtp',
       SMTP_HOST: 'smtp.qq.com',
       SMTP_PORT: '465',
@@ -23,14 +24,14 @@ describe('createMailerFromEnv', () => {
     expect(cfg.isConsole).toBe(false)
   })
   it('resend / sendgrid 缺 Key 报错，齐全时创建对应实现', () => {
-    expect(() => createMailerFromEnv({ MOTIF_MAILER: 'resend' })).toThrow(/RESEND_API_KEY/)
-    expect(() => createMailerFromEnv({ MOTIF_MAILER: 'sendgrid' })).toThrow(/SENDGRID_API_KEY/)
+    expect(() => createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'resend' })).toThrow(/RESEND_API_KEY/)
+    expect(() => createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'sendgrid' })).toThrow(/SENDGRID_API_KEY/)
     expect(
-      createMailerFromEnv({ MOTIF_MAILER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
+      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
         ResendMailer
     ).toBe(true)
     expect(
-      createMailerFromEnv({ MOTIF_MAILER: 'sendgrid', SENDGRID_API_KEY: 'sg_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
+      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'sendgrid', SENDGRID_API_KEY: 'sg_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
         SendGridMailer
     ).toBe(true)
   })

@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
       throw new ServiceError(400, '画布位置数据不合法。')
     }
     const upserts = rawUpserts ?? []
-    // P1 的删除走既有 DELETE /api/canvas-images/[id]（含磁盘清理），补丁里不带删除。
+    // 删除走既有 DELETE /api/canvas-images/[id]（含磁盘清理），补丁里不带删除。
     // 若真收到删除指令则显式报错，而不是静默丢弃（静默丢弃会让客户端以为已删）。
     if (patch?.images?.delete?.length) throw new ServiceError(400, '画布补丁暂不支持删除图片。')
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { clampScale, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
-describe('缩放锚点（L4-2-G2-A1）', () => {
+describe('缩放锚点', () => {
   it('缩放后光标下的世界坐标不变', () => {
     const v = { x: 40, y: -20, k: 1 }
     const anchorX = 300
@@ -59,7 +59,7 @@ describe('视口必须是全函数（k 为 0/负数/NaN 时绝不产出 NaN —�
   })
 })
 
-describe('缩放钳制（L4-2-G2-A2）', () => {
+describe('缩放钳制', () => {
   it('小于下限取下限、大于上限取上限', () => {
     expect(clampScale(0.01)).toBe(MIN_SCALE)
     expect(clampScale(99)).toBe(MAX_SCALE)
@@ -167,7 +167,7 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
   })
 })
 
-describe('背景图案（L4-2-G1-A4、L1-1-G2-A4）', () => {
+describe('背景图案', () => {
   it('blank 不渲染', () => {
     expect(gridStyle('blank', { x: 0, y: 0, k: 1 })).toBeNull()
   })
@@ -187,7 +187,7 @@ describe('背景图案（L4-2-G1-A4、L1-1-G2-A4）', () => {
     expect(gridStyle('lines', { x: 0, y: 0, k: 1 })!.backgroundImage.split('linear-gradient')).toHaveLength(3)
     expect(gridStyle('dots', { x: 0, y: 0, k: 1 })!.backgroundImage).toContain('radial-gradient')
   })
-  it('图案色取中性底变量，不含暖色硬编码（L1-1-G2-A4）—— 两条分支都查', () => {
+  it('图案色取中性底变量，不含暖色硬编码 —— 两条分支都查', () => {
     const lines = gridStyle('lines', { x: 0, y: 0, k: 1 })!.backgroundImage
     expect(lines).toContain('var(--canvas-grid-line)')
     expect(lines).not.toMatch(/#[0-9a-f]{3,6}/i)

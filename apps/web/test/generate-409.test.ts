@@ -40,7 +40,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('同任务互斥 409（C4 / L4-4-G3-A1）', () => {
+describe('同任务互斥 409', () => {
   for (const status of ['pending', 'running', 'canceling'] as const) {
     it(`topic.status=${status} 时返回 409，且不产生 generation_charge 流水`, async () => {
       store.setTopicActive(topicId, null, null, status)

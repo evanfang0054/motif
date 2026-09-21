@@ -173,12 +173,12 @@ describe('抓取与落库', () => {
 
 describe('单飞去重', () => {
   it('同一源并发触发两次刷新只发一次网络请求', async () => {
-    let resolveFetch: (() => void) | null = null
     const calls: string[] = []
+    const resolvers: Array<() => void> = []
     const impl = (async (input: string | URL | Request) => {
       calls.push(String(input))
       await new Promise<void>((r) => {
-        resolveFetch = r
+        resolvers.push(r)
       })
       return { ok: true, status: 200, json: async () => payloadFor('x', 1) } as unknown as Response
     }) as unknown as typeof fetch
@@ -189,7 +189,7 @@ describe('单飞去重', () => {
     // 让两个请求都进到 fetch（频控与播种都是同步的）
     await Promise.resolve()
     expect(calls).toHaveLength(1)
-    resolveFetch?.()
+    resolvers.forEach((r) => r())
     const [ra, rb] = await Promise.all([a, b])
     expect(ra.summary.total).toBe(1)
     expect(rb.summary.total).toBe(1)

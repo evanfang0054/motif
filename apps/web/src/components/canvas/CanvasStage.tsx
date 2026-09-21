@@ -4,7 +4,7 @@
  * 参考 `.infinite-canvas-ref/src/components/canvas/infinite-canvas.tsx` 的整体结构
  * （外层容器接管 wheel/pointer、内层世界层用 transform 承载节点、独立一层画背景网格）。
  * 适配改动：
- *  - 只渲染图片节点；连线、小地图、右键菜单、快捷键表、复制粘贴留 P2
+ *  - 只渲染图片节点；连线、小地图、右键菜单、快捷键表、复制粘贴不在本层
  *  - 弹层豁免选择器由上游的 `.ant-*` 改为 `[data-canvas-no-zoom]` / `[role="dialog"]`（Motif 用 HeroUI）
  *  - 底色取 `var(--canvas-background)`（中性，不抄上游的暖底）
  *
@@ -231,7 +231,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
     sync.commitMeta(topicId, meta)
   }, [meta, topicId])
 
-  // 灯箱关闭后还原焦点（沿用既有 CanvasBoard 的 setTimeout 手法，冒烟 P-1）
+  // 灯箱关闭后还原焦点（沿用既有 CanvasBoard 的 setTimeout 手法，冒烟时发现）
   const lightboxRestoreRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (preview) {
@@ -550,7 +550,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
    * 或成环那种「排完也不一样」的极端形状）则如实提示。
    *
    * 早先用的是「边方向判据」（目标没明显排在源右边）：它对「一轮只有 1–3 张、恰好排在源右侧
-   * 同一行」的网格会漏报，交付后评审点出后改为现在这条。
+   * 同一行」的网格会漏报，改为现在这条。
    */
   const TREE_HINT_TOLERANCE = 80
   const showTreeHint = useMemo(

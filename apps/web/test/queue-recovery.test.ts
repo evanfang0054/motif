@@ -136,7 +136,8 @@ describe('worker 启动', () => {
     delete g.__motifWorker
     try {
       startWorker()
-      const first = g.__motifWorker
+      // 显式标注：delete / 赋 undefined 都会把可选属性收窄成 undefined，不标注则 first!.timer 塌成 never
+      const first: { timer: ReturnType<typeof setInterval> | null } | undefined = g.__motifWorker
       expect(first).toBeTruthy()
       startWorker()
       expect(g.__motifWorker).toBe(first) // globalThis 守卫：同一实例

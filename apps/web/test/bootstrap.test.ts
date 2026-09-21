@@ -41,7 +41,7 @@ describe('管理员引导', () => {
     expect(readFileSync(file, 'utf8')).toContain(res.password!)
     expect(statSync(file).mode & 0o777).toBe(0o600)
 
-    // 契约 A3：凭据文件里的密码必须真的能登录，而不只是「文件里含这串字符」
+    // 凭据文件里的密码必须真的能登录，而不只是「文件里含这串字符」
     expect(login(store, 'admin@motif.local', res.password!).id).toBe(root.id)
   })
 

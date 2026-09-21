@@ -41,13 +41,13 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - 端口：dev 3100 · e2e 3210 · acceptance 3220；e2e 脚本自行 `next start`、清空 `.data-e2e` / `.data-accept`，缺 `.next` 时自动先 build。
 - CI（main）= `pnpm install --frozen-lockfile` → typecheck → test → build；e2e 不在 CI 中。提交前本地至少通过 typecheck + 单测。
 
-## HeroUI 使用规范（heroui-migration）
+## HeroUI 使用规范
 
-- **迁移已完成**（P1–P6，2026-09-19）：全站控件层唯一来源 `@heroui/react`，自研控件 CSS 类族已清零（globals.css 死类手术 37 项）。
+- **控件层迁移已完成**：全站唯一来源 `@heroui/react`；自研控件 CSS 类族已清零。
 - 新 UI 控件一律使用 `@heroui/react`（v3.2.6）；禁止再新增自研控件或往 globals.css 添加控件类。
 - 样式来源只有两层：HeroUI 语义令牌（经 `globals.css` 桥接段映射到 DESIGN.md）+ Tailwind 工具类排版；禁止覆盖 HeroUI 组件内部样式，主题调整只改桥接段。
 - 同名变量正向桥接：项目 `:root`/暗色块定义在后，值自动成为 HeroUI 组件取值；`--accent` 唯一在桥接段覆盖（珊瑚）；`--danger-quiet` 为表面危险文字角色（暗色 #eb6962 ≥4.5:1）。同名反义变量项目侧已改名让位：`--accent` 族→`--surface-accent` 族、`--overlay`（遮罩色）→`--scrim`；**新增同名 CSS 变量前必须对照 HeroUI 主题变量清单查重**（`.heroui-docs` 或 node_modules `@heroui/styles/dist/themes/`）。
-- 例外层（保留自定义，不套 HeroUI）：画布图像渲染与手势（CanvasStage/`lib/canvas/geometry`）；lightbox 已改用 Modal 容器承载（内容区无手势代码）；模板画廊 tpl-grid 为 auto-fill 自适应网格容器（无横滑行为，P5 实证校正）；`--canvas-background` 保持中性。
+- 例外层（保留自定义，不套 HeroUI）：画布图像渲染与手势（CanvasStage/`lib/canvas/geometry`）；lightbox 已改用 Modal 容器承载（内容区无手势代码）；`--canvas-background` 保持中性。
 - 组件文档：本地查 `.heroui-docs/react/`（下方索引）；线上 https://heroui.com/llms.txt 与官方 MCP（`npx -y @heroui/react-mcp@latest`）。
 
 <!-- HEROUI-REACT-AGENTS-MD-START -->

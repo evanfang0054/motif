@@ -9,7 +9,7 @@
  * 裁掉的上游键位（Motif 没有对应概念，照抄清单里已列为可砍项）：
  * - `Cmd/Ctrl+G` / `Cmd/Ctrl+Shift+G`：编组 / 解组（无 group 节点）
  * - `Delete` 的「删连线」分支、`Esc` 的连线 / 裁剪 / 蒙版 / 弹窗分支
- * - `Cmd/Ctrl+C` / `V`：复制粘贴（本轮裁决不做，理由见设计文档）
+ * - `Cmd/Ctrl+C` / `V`：复制粘贴（不做：与服务端权威冲突）
  */
 
 export type CanvasShortcut = 'undo' | 'redo' | 'select-all' | 'delete' | 'escape'
@@ -62,7 +62,7 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 /** 键位 → 动作；不认识的键返回 null（调用方据此放行） */
 export function shortcutFor(input: ShortcutInput): CanvasShortcut | null {
   // ⚠️ Esc 必须在 typing 豁免**之前**：焦点在输入框里时按 Esc 仍要能关灯箱 / 清空选择。
-  // 这是 P1 既有行为，上游同样是「先判 Esc 再豁免输入框」。
+  // 这是既有行为，上游同样是「先判 Esc 再豁免输入框」。
   if (input.key === 'Escape') return 'escape'
   if (input.typing) return null
   const key = input.key.toLowerCase()

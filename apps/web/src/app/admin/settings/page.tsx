@@ -184,7 +184,7 @@ export default function AdminSettingsPage() {
     if (groupItems.length === 0 && group !== 'prompts') return null
     if (group === 'prompts') return <PromptSourcePanel />
     // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
-    // 否则 mock/console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通（评审 P0）
+    // 否则 mock/console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通
     const savedChannel = items.find((i) => i.key === (group === 'mailer' ? 'MOTIF_MAILER' : 'PAYMENT_CHANNEL'))?.value ?? null
     const dirtyKey = group === 'mailer' ? dirty['MOTIF_MAILER'] : dirty['PAYMENT_CHANNEL']
     const draftChannel = dirtyKey ?? savedChannel
