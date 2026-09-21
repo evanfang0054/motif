@@ -16,10 +16,9 @@
  * - 2026-09-21 的裁决：全站图标化。上一条里「保留文案」这一条对**次要 / 破坏性 / 视图类**
  *   控件不再适用 —— 它们改为「图标 + Tooltip」（Tooltip 文案同时作 aria-label，见 ui/icon-button.tsx）；
  *   而**承载数字或状态**的文案（「N 张图片」「已选 N 张」「100%」）、灯箱说明、引导提示一律保留文字。
- *   ⚠️ 唯一加不了 HeroUI Tooltip 的是「画布归档」：它的触发件必须是 Dropdown 的直接子元素，
- *   而 Tooltip 靠 clone 直接子元素注入 props、DropdownRoot 又是 MenuTrigger（不落 DOM、不透传 props），
- *   两者结构上不能共存（源码 dist/components/tooltip/tooltip.js 与 dropdown/dropdown.js:19-30 实证）
- *   → 该处退回原生 title 属性，是本文件唯一的例外。
+ *   ✅ 本文件**没有例外**：原先认为「Tooltip 与 Dropdown 触发件结构上不能共存」，2026-09-21 运行时实证
+ *   推翻了该判断（DropdownRoot 是 RAC MenuTrigger，trigger props 经 PressResponderContext 下发、children
+ *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
@@ -999,17 +998,20 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
               + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动）。
               ⚠️ 触发件用 Dropdown 的**直接子元素**（官方 default demo 的写法）：`Dropdown.Trigger`
               内部会再渲染一个 HeroUI Button，写成 `<Trigger><Button/></Trigger>` 会得到 `<button>` 套
-              `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效） */}
+              `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效）。
+              ✅ Tooltip 与 Dropdown 触发件**可以共存**（2026-09-21 运行时实证）：MenuTrigger 经
+              PressResponderContext 下发 trigger props、并原样渲染 children（不 cloneElement），React context
+              会穿过 Tooltip —— 实测 aria-haspopup/aria-expanded 正常接线、菜单正常开合、Tooltip 正常浮现 */}
           <Dropdown>
-            {/* ⚠️ 这一处**不能**用 IconButton（图标 + HeroUI Tooltip）：触发件必须是 Dropdown 的直接子元素，
-                而 Tooltip 靠 clone 直接子元素注入 props、DropdownRoot 又是 MenuTrigger（不落 DOM、不透传 props），
-                两者结构上无法共存（源码实证，详见文件头注释）；`title` 也不在 HeroUI Button 的 props 类型里
-                （ButtonRootProps 继承 RAC Button，不放开任意 HTML 属性）。
-                故这里保留**可见**的短标签「归档」+ 图标 —— 不用 hack 换悬停提示，可访问性反而更稳 */}
-            <Button variant="secondary" className="pointer-events-auto" data-canvas-no-zoom isDisabled={zipping || importing}>
+            <IconButton
+              variant="secondary"
+              className="pointer-events-auto"
+              data-canvas-no-zoom
+              label={zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
+              isDisabled={zipping || importing}
+            >
               {zipping || importing ? <ArrowRotateRight className="animate-spin" /> : <Archive />}
-              {zipping ? '打包中…' : importing ? '导入中…' : '归档'}
-            </Button>
+            </IconButton>
             <Dropdown.Popover placement="bottom end">
               <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
                 <Dropdown.Item id="export" textValue="导出画布（zip）">

@@ -234,16 +234,14 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
                       <Label>邮箱验证码</Label>
                       <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
                     </TextField>
-                    <IconButton
-                      type="button"
-                      variant="outline"
-                      className="shrink-0"
-                      label={cooldown > 0 ? `重新发送（${cooldown}s 后可再发）` : '发送验证码'}
-                      isDisabled={cooldown > 0}
-                      onPress={sendCode}
-                    >
+                    {/* ⚠️ 这里**不能**收成纯图标：冷却期按钮是 disabled，而 disabled 的 HeroUI Button
+                        带 `pointer-events: none`（@heroui/styles utilities status-disabled）+ 原生 disabled，
+                        hover 与 focus 都到不了 ⇒ Tooltip 在「想知道还要等多久」的那一刻恰好打不开。
+                        倒计时属于「承载状态的文案」，按口径保留可见文字 */}
+                    <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
                       <PaperPlane />
-                    </IconButton>
+                      {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
+                    </Button>
                   </div>
                   {codeMsg && (
                     <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>

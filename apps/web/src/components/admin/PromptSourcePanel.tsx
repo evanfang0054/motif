@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Link, Spinner, Table } from '@heroui/react'
 import { ArrowRotateLeft, ArrowRotateRight, ArrowUpRightFromSquare } from '@gravity-ui/icons'
-import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminPromptSource } from '@/lib/client'
 import { ListEmptyContent, ListLoadingRows } from './ListUi'
 import { showToast } from '@/components/ui/toast'
@@ -86,25 +85,16 @@ function PromptSourcePanel() {
       )}
 
       <div className="flex items-center gap-2">
-        <IconButton
-          variant="primary"
-          label={refreshing ? '刷新中…' : '立即刷新'}
-          tooltip="立即向上游重新抓取提示词"
-          isDisabled={refreshing}
-          onPress={() => void refresh()}
-        >
+        {/* 这是本面板的主操作，且刷新中会 disabled → 保留可见文字 */}
+        <Button variant="primary" isDisabled={refreshing} onPress={() => void refresh()}>
           <ArrowRotateRight className={refreshing ? 'animate-spin' : undefined} />
-        </IconButton>
+          {refreshing ? '刷新中…' : '立即刷新'}
+        </Button>
         {refreshing && <Spinner size="sm" />}
-        <IconButton
-          variant="secondary"
-          label="重新加载"
-          tooltip="从本地缓存重新读取列表"
-          isDisabled={refreshing}
-          onPress={() => void load()}
-        >
+        <Button variant="secondary" isDisabled={refreshing} onPress={() => void load()}>
           <ArrowRotateLeft />
-        </IconButton>
+          重新加载
+        </Button>
       </div>
 
       <Table>

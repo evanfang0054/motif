@@ -10,8 +10,11 @@
  * 靠 clone 直接子元素注入 ref 与 aria-describedby。写成 `<Tooltip.Trigger><Button/></Tooltip.Trigger>`
  * 会得到 `<div role="button">` 套 `<button>`（源码 dist/components/tooltip/tooltip.js 实证：
  * TooltipTrigger 渲染的是带 role="button" 的 div，不是透传包装）。
- * 同理它**不能**包 Dropdown：DropdownRoot 是 RAC 的 MenuTrigger，不落 DOM、不透传 props，
- * Tooltip 会静默失效（dist/components/dropdown/dropdown.js:19-30）—— 需要下拉的触发件另想办法。
+ * ✅ 它**可以**包住 Dropdown 的触发件（2026-09-21 运行时实证，此前一度误判为「结构上不能共存」）：
+ * DropdownRoot 是 RAC 的 MenuTrigger，它把 trigger props 经 **PressResponderContext** 下发、并**原样渲染
+ * children**（`react-aria-components/private/Menu.mjs` 里 `grep cloneElement` 命中 0），而 React context
+ * 会穿过 Tooltip —— 实测 `<Dropdown><IconButton/><Dropdown.Popover/></Dropdown>` 的
+ * aria-haspopup / aria-expanded 接线正常、菜单正常开合、Tooltip 也正常浮现。
  *
  * delay={0}：HeroUI 默认 --tooltip-delay 是 1500ms（@heroui/styles themes/default/variables.css:50），
  * 对「图标即唯一标签」的场景等于没有提示；官方 icon-only demo（demos/cn/tooltip/basic.tsx）同样传 0。
@@ -21,9 +24,14 @@ import { BUTTON_GROUP_CHILD, Button, Tooltip } from '@heroui/react'
 type ButtonProps = React.ComponentProps<typeof Button>
 
 interface Props extends Omit<ButtonProps, 'isIconOnly' | 'aria-label' | 'children'> {
-  /** Tooltip 文案，同时作为 aria-label（二者必须一致，否则读屏与视觉用户看到的不是同一个东西） */
+  /**
+   * 短名：缺省同时充当 aria-label 与 Tooltip 文案。
+   * ⚠️ 三者是**有意允许分歧**的，不是必须一致：`label` 是视觉/读屏的默认名，`ariaLabel` 给读屏更精确的
+   * 指代（如「移除画布引用 商品主图.png」），`tooltip` 给视觉用户更长的说明（如「适应窗口」）。
+   * 分歧时要保证二者**说的是同一件事**，别一个讲动作、一个讲结果。
+   */
   label: string
-  /** 读屏需要更精确的指代（如「移除画布引用 商品主图.png」）时覆盖 aria-label；Tooltip 仍用 label 的短文案 */
+  /** 读屏需要更精确的指代时覆盖 aria-label；Tooltip 仍用 label 的短文案 */
   ariaLabel?: string
   /** 需要更长的说明时才传；缺省与 label 相同 */
   tooltip?: string
@@ -42,7 +50,8 @@ function IconButton({ label, ariaLabel, tooltip, placement, children, ...rest }:
           选择器 `.button-group .button:first-child`（@heroui/styles button-group.css），而 Tooltip 不落 DOM，
           所以视觉不受影响。标记是 HeroUI 的公开出口，补回来即可与裸 Button 行为完全一致。
           不在组里时传它也无副作用：默认 context 是空对象，各字段仍回落到按钮自身的 props。 */}
-      <Button isIconOnly aria-label={ariaLabel ?? label} {...{ [BUTTON_GROUP_CHILD]: true }} {...rest}>
+      {/* `||` 而不是 `??`：传空串时 `??` 不拦，会产出空的可访问名 */}
+      <Button isIconOnly aria-label={ariaLabel || label} {...{ [BUTTON_GROUP_CHILD]: true }} {...rest}>
         {children}
       </Button>
       <Tooltip.Content placement={placement}>{tooltip ?? label}</Tooltip.Content>

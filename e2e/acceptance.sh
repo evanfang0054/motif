@@ -405,16 +405,17 @@ await wait(1)
 const sel = await js(String.raw`(() => ({
   pill: (document.querySelector('.canvas-pill') || {}).innerText?.replace(/\n/g, ' ') || null,
   toolbar: !!document.querySelector('.canvas-toolbar'),
-  toolTitles: [...document.querySelectorAll('.canvas-toolbar [title]')].map(b => b.getAttribute('title'))
+  // 浮动工具栏的按钮只有 aria-label、从来没有 title（改用 title 会让这里恒为空数组 → 下面必 throw）
+  toolArias: [...document.querySelectorAll('.canvas-toolbar [aria-label]')].map(b => b.getAttribute('aria-label'))
 }))()`)
 cliLog('selection: ' + JSON.stringify(sel))
 if (!sel.pill || !sel.pill.includes('已选 1')) throw new Error('选中态未出现: ' + sel.pill)
 if (!sel.toolbar) throw new Error('浮动工具栏未出现')
-if (!sel.toolTitles.includes('加入参考图，并把编号写进提示词') || !sel.toolTitles.includes('删除所选图片')) throw new Error('工具栏按钮不全: ' + JSON.stringify(sel.toolTitles))
+if (!sel.toolArias.includes('加入参考图，并把编号写进提示词') || !sel.toolArias.includes('删除所选图片')) throw new Error('工具栏按钮不全: ' + JSON.stringify(sel.toolArias))
 
 // @ 引用 → 提示词写入 #编号 且参考图计数 +1
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('title')?.includes('参考图'))
+  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('aria-label')?.includes('参考图'))
   b.click(); return true
 })()`)
 await wait(1)
@@ -462,7 +463,7 @@ const c2 = await js(String.raw`(() => {
 await click([c2.cx, c2.cy], { label: 'select for delete' })
 await wait(1)
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('title') === '删除所选图片')
+  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('aria-label') === '删除所选图片')
   b.click(); return true
 })()`)
 await wait(1)

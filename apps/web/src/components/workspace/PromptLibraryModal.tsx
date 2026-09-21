@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup } from '@heroui/react'
 import { ArrowRotateRight } from '@gravity-ui/icons'
-import { IconButton } from '@/components/ui/icon-button'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { showToast } from '@/components/ui/toast'
 import { PromptDetailDialog } from './PromptDetailDialog'
@@ -296,16 +295,11 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 : `${failures.length} 个提示词源抓取失败，暂时没有可展示的内容`}
             </Alert.Title>
             <Alert.Description>{failures.map((f) => `${f.sourceName}：${f.error}`).join('；')}</Alert.Description>
-            <IconButton
-              variant="secondary"
-              size="sm"
-              className="mt-2"
-              label={retrying ? '重试中…' : '重试'}
-              isDisabled={retrying}
-              onPress={() => void retry()}
-            >
+            {/* 错误态的 CTA 且会 disabled → 保留可见文字（禁用时 Tooltip 不可达，见 ui/icon-button.tsx 的说明） */}
+            <Button variant="secondary" size="sm" className="mt-2" isDisabled={retrying} onPress={() => void retry()}>
               <ArrowRotateRight className={retrying ? 'animate-spin' : undefined} />
-            </IconButton>
+              {retrying ? '重试中…' : '重试'}
+            </Button>
           </Alert.Content>
         </Alert>
       )}
@@ -370,9 +364,10 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
                 <span>{error}</span>
-                <IconButton variant="secondary" size="sm" label="重试" onPress={() => void load(1, 'replace')}>
+                <Button variant="secondary" size="sm" onPress={() => void load(1, 'replace')}>
                   <ArrowRotateRight />
-                </IconButton>
+                  重试
+                </Button>
               </div>
             ) : items.length === 0 ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 px-4 text-center text-sm" style={{ color: 'var(--muted)' }}>

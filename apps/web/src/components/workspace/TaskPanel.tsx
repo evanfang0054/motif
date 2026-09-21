@@ -84,15 +84,13 @@ function TaskPanel(p: Props) {
       <div>
         <div className="ws-panel-label mb-1.5">参考图</div>
         <div className="flex items-center gap-2">
-          {/* 张数写进 Tooltip：图标化后按钮上放不下「（3／6）」这种计数，而它恰恰是用户要看的 */}
-          <IconButton
-            variant="secondary"
-            label={`上传参考图（${p.referenceCount}／${MAX_REFERENCE_IMAGES}）`}
-            isDisabled={atReferenceCap}
-            onPress={() => fileRef.current?.click()}
-          >
+          {/* ⚠️ 计数**必须**留在按钮上，不能搬进 Tooltip：① 它是用户要看的数字；② 达上限时按钮
+              disabled（原生 disabled + pointer-events:none），Tooltip 恰好打不开，用户既看不到「几／几」
+              也不知道为什么点不动。故这里是「图标 + 文字」 */}
+          <Button variant="secondary" isDisabled={atReferenceCap} onPress={() => fileRef.current?.click()}>
             <ArrowUpToLine />
-          </IconButton>
+            上传参考图（{p.referenceCount}／{MAX_REFERENCE_IMAGES}）
+          </Button>
           <input
             ref={fileRef}
             type="file"
@@ -120,8 +118,9 @@ function TaskPanel(p: Props) {
                 <IconButton
                   variant="secondary"
                   size="sm"
-                  label="移除"
+                  label="取消引用"
                   ariaLabel={`移除画布引用 ${c.name}`}
+                  tooltip="只取消引用，不删图"
                   onPress={() => p.onRemoveCanvasReference(c.id)}
                 >
                   <Xmark />
@@ -145,8 +144,9 @@ function TaskPanel(p: Props) {
                 <IconButton
                   variant="secondary"
                   size="sm"
-                  label="移除"
+                  label="移除暂存"
                   ariaLabel={`移除暂存参考 ${s.name}`}
+                  tooltip="从暂存列表移除"
                   onPress={() => p.onRemoveStaged(s.id)}
                 >
                   <Xmark />

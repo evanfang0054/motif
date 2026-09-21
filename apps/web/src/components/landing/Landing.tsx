@@ -93,9 +93,9 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <span><CircleCheck aria-hidden />注册即送 3 张额度</span>
-                <span><CircleCheck aria-hidden />单任务多张成套</span>
-                <span><CircleCheck aria-hidden />云端队列不占本地算力</span>
+                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />注册即送 3 张额度</span>
+                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</span>
+                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</span>
               </div>
             </div>
           </div>

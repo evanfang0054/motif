@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Alert, Button, Chip, Spinner } from '@heroui/react'
 import { Copy } from '@gravity-ui/icons'
-import { IconButton } from '@/components/ui/icon-button'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { isAttachableImage, PROMPT_ENTRY_MAX_IMAGES } from '@/lib/prompts'
 import { WorkspaceModal } from './dialogs'
@@ -133,9 +132,10 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
               {busyIndex === 0 ? '加入中…' : atCap ? `参考图已达上限 ${maxReferences} 张` : '把封面用作参考图'}
             </Button>
           )}
-          <IconButton variant="secondary" size="sm" label="复制提示词" onPress={onCopyPrompt}>
+          <Button variant="secondary" size="sm" onPress={onCopyPrompt}>
             <Copy />
-          </IconButton>
+            复制提示词
+          </Button>
           {busyIndex !== null && <Spinner size="sm" />}
         </div>
 

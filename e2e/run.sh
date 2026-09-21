@@ -230,8 +230,7 @@ await ensureRealTab()
 
 // 打开任务抽屉
 await js(String.raw`(() => {
-  // 图标化后该按钮无可见文字，改用 aria-label（2026-09-21）
-  const b = document.querySelector('.ws-nav button[aria-label="任务"]')
+  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '任务')
   b.click()
   return true
 })()`)

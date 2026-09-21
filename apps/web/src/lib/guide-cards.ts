@@ -68,6 +68,8 @@ export const PAYMENT_GUIDES: Record<'epay' | 'stripe', GuideCard[]> = {
       ],
       linkUrl: 'https://github.com/Calcium-Ion/go-epay',
       linkLabel: '查看协议参考实现',
+      // ⚠️ 前缀是有意保留的：它承载「这是警告」的语义，而数据里只有这一条是警告
+      // （渲染成图标要给 GuideCard 加字段）。属文案/数据里的 emoji 而非控件图标，不在本次范围。
       note: '⚠️ 易支付网关基本仅支持 CNY 结算；站点良莠不齐，请自行尽调，Motif 不背书任何站点。',
     },
   ],
