@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Button, Drawer, Input, TextField } from '@heroui/react'
+import { Pencil, TrashBin } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import type { Topic } from '@motif/core'
 import { TOPIC_STATUS_LABEL } from '@motif/core'
 
@@ -39,7 +41,7 @@ function TaskDrawer(p: Props) {
         <Drawer.Dialog>
           <Drawer.Header>
             <Drawer.Heading>任务</Drawer.Heading>
-            <Drawer.CloseTrigger aria-label="关闭任务列表">✕</Drawer.CloseTrigger>
+            <Drawer.CloseTrigger aria-label="关闭任务列表" />
           </Drawer.Header>
           <Drawer.Body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
             {p.topics.length === 0 && (
@@ -74,31 +76,30 @@ function TaskDrawer(p: Props) {
                   <>
                     <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
                     <span className="ws-badge">{TOPIC_STATUS_LABEL[t.status] ?? t.status}</span>
-                    <Button
+                    {/* ✎ / 🗑 原为文字字形与 emoji（emoji 还随平台变样），2026-09-21 换成图标库 + Tooltip */}
+                    <IconButton
                       variant="secondary"
                       size="sm"
-                      isIconOnly
-                      aria-label="重命名任务"
+                      label="重命名任务"
                       onClick={(e) => {
                         e.stopPropagation()
                         setRenaming(t.id)
                         setRenameValue(t.title)
                       }}
                     >
-                      ✎
-                    </Button>
-                    <Button
+                      <Pencil />
+                    </IconButton>
+                    <IconButton
                       variant="secondary"
                       size="sm"
-                      isIconOnly
-                      aria-label="删除任务"
+                      label="删除任务"
                       onClick={(e) => {
                         e.stopPropagation()
                         p.onDelete(t.id)
                       }}
                     >
-                      🗑
-                    </Button>
+                      <TrashBin />
+                    </IconButton>
                   </>
                 )}
               </div>

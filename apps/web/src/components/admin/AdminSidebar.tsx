@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Drawer, ListBox } from '@heroui/react'
+import { Bars } from '@gravity-ui/icons'
 import type { AdminNavItem } from '@/app/admin/nav'
 
 /**
@@ -54,13 +55,14 @@ export function AdminSidebar({ items }: { items: AdminNavItem[] }) {
   return (
     <>
       {/* 图标按钮：只在 <1024 显示（桌面档由 CSS 隐藏）。打开 HeroUI 左侧抽屉 */}
+      {/* ☰ 原为文字字形，2026-09-21 换成图标库的 Bars */}
       <button
         type="button"
         className="admin-nav-toggle"
         aria-label="打开管理菜单"
         onClick={() => setOpen(true)}
       >
-        <span aria-hidden="true">☰</span>
+        <Bars aria-hidden="true" />
       </button>
 
       <Drawer.Backdrop isOpen={open} onOpenChange={setOpen}>
@@ -68,7 +70,7 @@ export function AdminSidebar({ items }: { items: AdminNavItem[] }) {
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>管理菜单</Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭管理菜单">✕</Drawer.CloseTrigger>
+              <Drawer.CloseTrigger aria-label="关闭管理菜单" />
             </Drawer.Header>
             <Drawer.Body>{navList(() => setOpen(false))}</Drawer.Body>
           </Drawer.Dialog>

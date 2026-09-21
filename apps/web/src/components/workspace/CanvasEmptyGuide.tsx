@@ -8,6 +8,7 @@
 'use client'
 
 import { Button, Surface } from '@heroui/react'
+import { BookOpen } from '@gravity-ui/icons'
 
 interface Props {
   onOpenPromptLibrary: () => void
@@ -55,7 +56,11 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
         </ol>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onPress={onOpenPromptLibrary}>打开提示词库</Button>
+          {/* 空态里这是**唯一**的入口，保留文字（图标化会把新手引导藏进悬停里），只补图标做视觉对齐 */}
+          <Button variant="secondary" onPress={onOpenPromptLibrary}>
+            <BookOpen />
+            打开提示词库
+          </Button>
           <span className="text-xs" style={{ color: 'var(--muted)' }}>
             系统自带的 8 套模板提示词都在里面，挑一条填进右侧表单
           </span>

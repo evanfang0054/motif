@@ -150,7 +150,8 @@ await ensureRealTab()
 
 // 新建任务并上传参考图（1×1 PNG）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.includes('新任务'))
+  // 图标化后该按钮无可见文字，改用 aria-label（2026-09-21）
+  const b = document.querySelector('.ws-nav button[aria-label="新任务"]')
   b.click(); return true
 })()`)
 await wait(2)
@@ -159,7 +160,8 @@ await wait(2)
 await uploadFile('.ws-panel input[type="file"]', '/tmp/motif-accept-ref.png')
 await wait(2)
 
-const refUploaded = await js(String.raw`(() => document.body.innerText.includes('参考图已上传') || document.querySelector('.ws-panel button')?.innerText.includes('（1）'))()`)
+// 上传按钮图标化后计数进了 aria-label（原先是可见文字「上传参考图（1／6）」），故按前缀匹配
+const refUploaded = await js(String.raw`(() => document.body.innerText.includes('参考图已上传') || [...document.querySelectorAll('.ws-panel button')].some(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图（1')))()`)
 cliLog('refUploaded=' + refUploaded)
 
 // 提交 2 张生成
@@ -403,22 +405,23 @@ await wait(1)
 const sel = await js(String.raw`(() => ({
   pill: (document.querySelector('.canvas-pill') || {}).innerText?.replace(/\n/g, ' ') || null,
   toolbar: !!document.querySelector('.canvas-toolbar'),
-  toolTitles: [...document.querySelectorAll('.canvas-toolbar [title]')].map(b => b.getAttribute('title'))
+  // 浮动工具栏的按钮只有 aria-label、从来没有 title（改用 title 会让这里恒为空数组 → 下面必 throw）
+  toolArias: [...document.querySelectorAll('.canvas-toolbar [aria-label]')].map(b => b.getAttribute('aria-label'))
 }))()`)
 cliLog('selection: ' + JSON.stringify(sel))
 if (!sel.pill || !sel.pill.includes('已选 1')) throw new Error('选中态未出现: ' + sel.pill)
 if (!sel.toolbar) throw new Error('浮动工具栏未出现')
-if (!sel.toolTitles.includes('加入参考图，并把编号写进提示词') || !sel.toolTitles.includes('删除所选图片')) throw new Error('工具栏按钮不全: ' + JSON.stringify(sel.toolTitles))
+if (!sel.toolArias.includes('加入参考图，并把编号写进提示词') || !sel.toolArias.includes('删除所选图片')) throw new Error('工具栏按钮不全: ' + JSON.stringify(sel.toolArias))
 
 // @ 引用 → 提示词写入 #编号 且参考图计数 +1
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('title')?.includes('参考图'))
+  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('aria-label')?.includes('参考图'))
   b.click(); return true
 })()`)
 await wait(1)
 const refState = await js(String.raw`(() => ({
   promptHasSerial: /#\d{3}/.test(document.querySelector('.ws-panel textarea').value),
-  refBtn: [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.includes('上传参考图'))?.innerText.trim() || null
+  refBtn: [...document.querySelectorAll('.ws-panel button')].find(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图'))?.getAttribute('aria-label') || null
 }))()`)
 cliLog('reference: ' + JSON.stringify(refState))
 if (!refState.promptHasSerial) throw new Error('@ 引用未把编号写入提示词')
@@ -436,7 +439,7 @@ if (!lightboxClosed) throw new Error('Esc 未关闭灯箱')
 
 // 整理布局 → 位置吸附回网格
 const arrangeBtn = await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '整理布局')
+  const b = document.querySelector('button[aria-label="整理布局"]')
   const r = b.getBoundingClientRect()
   return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]
 })()`)
@@ -460,7 +463,7 @@ const c2 = await js(String.raw`(() => {
 await click([c2.cx, c2.cy], { label: 'select for delete' })
 await wait(1)
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('title') === '删除所选图片')
+  const b = [...document.querySelectorAll('.canvas-toolbar button')].find(x => x.getAttribute('aria-label') === '删除所选图片')
   b.click(); return true
 })()`)
 await wait(1)

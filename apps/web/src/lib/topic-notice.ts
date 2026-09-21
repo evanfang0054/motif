@@ -56,6 +56,8 @@ export function terminalNotice(detail: TopicDetail, opts?: { title?: string }): 
   // messages 为空：绝不能读 undefined.status（「造一个没有消息的进行态任务」是实测里最容易造出来的状态）
   if (!msg) return null
   const prefix = opts?.title ? `任务「${opts.title}」` : ''
+  // ⚠️ 这里的「✓」是**有意保留**的：test/topic-notice.test.ts 逐字固定了该文案，
+  // 且改动它属于改用户可见文案而非图标化，故不在本次范围内顺手改（见 PR 说明的「已知未改」）。
   if (msg.status === 'completed') return { tone: 'success', message: `${prefix}生成完成 ✓` }
   if (msg.status === 'failed') {
     return { tone: 'danger', message: `${prefix}生成失败：${msg.error ?? '未知原因'}。`, timeoutMs: 6000 }

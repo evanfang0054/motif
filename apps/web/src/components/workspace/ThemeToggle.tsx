@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button, ButtonGroup } from '@heroui/react'
+import { ButtonGroup } from '@heroui/react'
+import { Display, Moon, Sun } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 
 /**
  * 主题三态切换：浅色 / 深色 / 跟随系统（默认浅色）。
@@ -12,6 +14,14 @@ type ThemeMode = 'light' | 'dark' | 'system'
 
 const STORAGE_KEY = 'motif-theme'
 const MODE_LABEL: Record<ThemeMode, string> = { light: '浅色', dark: '深色', system: '跟随系统' }
+// 图标化（2026-09-21 裁决）：三段文字（浅色/深色/跟随系统）在顶栏最占位，且这三个语义
+// 有公认图形（太阳/月亮/显示器）→ 收成图标 + Tooltip。aria-pressed 补上当前选中态，
+// 否则图标按钮在视觉上只能靠配色区分，读屏则完全拿不到「当前是哪个模式」。
+const MODE_ICON: Record<ThemeMode, React.ReactNode> = {
+  light: <Sun />,
+  dark: <Moon />,
+  system: <Display />,
+}
 const MODES: ThemeMode[] = ['light', 'dark', 'system']
 
 export function applyThemeMode(mode: ThemeMode) {
@@ -55,14 +65,16 @@ function ThemeToggle() {
   return (
     <ButtonGroup className="ws-theme-toggle" aria-label="主题外观">
       {MODES.map((m) => (
-        <Button
+        <IconButton
           key={m}
           size="sm"
+          label={MODE_LABEL[m]}
+          aria-pressed={mode === m}
           variant={mode === m ? 'primary' : 'secondary'}
           onPress={() => select(m)}
         >
-          {MODE_LABEL[m]}
-        </Button>
+          {MODE_ICON[m]}
+        </IconButton>
       ))}
     </ButtonGroup>
   )

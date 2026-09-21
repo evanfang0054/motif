@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, Input, Label, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
+import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
@@ -328,7 +329,17 @@ export default function AdminSettingsPage() {
                     return (
                       <p className="admin-field-hint">
                         当前支付配置：
-                        {paymentHealth?.ready ? '✅ 已就绪' : `⚠️ 未就绪：${paymentHealth?.reason ?? '配置不完整'}`}
+                        {paymentHealth?.ready ? (
+                          <>
+                            <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                            已就绪
+                          </>
+                        ) : (
+                          <>
+                            <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
+                            未就绪：{paymentHealth?.reason ?? '配置不完整'}
+                          </>
+                        )}
                         <button
                           type="button"
                           onClick={() => setTab('payment')}

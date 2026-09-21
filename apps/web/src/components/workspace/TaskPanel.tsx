@@ -2,6 +2,8 @@
 
 import { useRef } from 'react'
 import { Alert, Button, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
+import { ArrowUpToLine, BookOpen, ChevronRight, Plus, Xmark } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { SIZE_PRESETS } from '@/lib/templates'
 import { MAX_REFERENCE_IMAGES } from '@motif/core'
 import type { CanvasImage, StagedReference } from '@motif/core'
@@ -59,9 +61,13 @@ function TaskPanel(p: Props) {
         <StatusBadge status={p.status} />
         <div className="flex items-center gap-2">
           {p.onCollapse && (
-            <Button variant="secondary" className="lg:hidden" aria-label="收起生成面板" onPress={p.onCollapse}>收起</Button>
+            <IconButton variant="secondary" className="lg:hidden" label="收起生成面板" onPress={p.onCollapse}>
+              <ChevronRight />
+            </IconButton>
           )}
-          <Button variant="secondary" onPress={p.onNewTask}>＋ 新任务</Button>
+          <IconButton variant="secondary" label="新任务" onPress={p.onNewTask}>
+            <Plus />
+          </IconButton>
         </div>
       </div>
 
@@ -78,8 +84,12 @@ function TaskPanel(p: Props) {
       <div>
         <div className="ws-panel-label mb-1.5">参考图</div>
         <div className="flex items-center gap-2">
+          {/* ⚠️ 计数**必须**留在按钮上，不能搬进 Tooltip：① 它是用户要看的数字；② 达上限时按钮
+              disabled（原生 disabled + pointer-events:none），Tooltip 恰好打不开，用户既看不到「几／几」
+              也不知道为什么点不动。故这里是「图标 + 文字」 */}
           <Button variant="secondary" isDisabled={atReferenceCap} onPress={() => fileRef.current?.click()}>
-            ⬆ 上传参考图（{p.referenceCount}／{MAX_REFERENCE_IMAGES}）
+            <ArrowUpToLine />
+            上传参考图（{p.referenceCount}／{MAX_REFERENCE_IMAGES}）
           </Button>
           <input
             ref={fileRef}
@@ -105,14 +115,16 @@ function TaskPanel(p: Props) {
                 <span className="truncate" style={{ flex: 1, minWidth: 0 }}>
                   #{String(c.serial).padStart(3, '0')} {c.name}
                 </span>
-                <Button
+                <IconButton
                   variant="secondary"
                   size="sm"
-                  aria-label={`移除画布引用 ${c.name}`}
+                  label="取消引用"
+                  ariaLabel={`移除画布引用 ${c.name}`}
+                  tooltip="只取消引用，不删图"
                   onPress={() => p.onRemoveCanvasReference(c.id)}
                 >
-                  移除
-                </Button>
+                  <Xmark />
+                </IconButton>
               </div>
             ))}
             {stagedOnly.map((s) => (
@@ -129,14 +141,16 @@ function TaskPanel(p: Props) {
                   </span>
                 )}
                 <span className="truncate" style={{ flex: 1, minWidth: 0 }}>{s.name}</span>
-                <Button
+                <IconButton
                   variant="secondary"
                   size="sm"
-                  aria-label={`移除暂存参考 ${s.name}`}
+                  label="移除暂存"
+                  ariaLabel={`移除暂存参考 ${s.name}`}
+                  tooltip="从暂存列表移除"
                   onPress={() => p.onRemoveStaged(s.id)}
                 >
-                  移除
-                </Button>
+                  <Xmark />
+                </IconButton>
               </div>
             ))}
             <p className="text-xs" style={{ color: 'var(--muted)' }}>
@@ -211,11 +225,15 @@ function TaskPanel(p: Props) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="ws-panel-label mb-1.5">提示词</div>
-        {/* 唯一的提示词入口：系统自带的 8 套模板提示词也都在库里（用户裁决 2026-09-21 并入） */}
-        <Button variant="secondary" className="mb-2 w-full" aria-label="提示词库" onPress={p.onOpenPromptLibrary}>
-          提示词库
-        </Button>
+        {/* 唯一的提示词入口：系统自带的 8 套模板提示词也都在库里（用户裁决 2026-09-21 并入）。
+            图标化后收进「提示词」标题行右侧 —— 原先那个 w-full 的文字按钮在面板里最重，
+            而它只是一个打开检索弹窗的入口 */}
+        <div className="mb-1.5 flex items-center justify-between">
+          <div className="ws-panel-label">提示词</div>
+          <IconButton variant="secondary" size="sm" label="提示词库" onPress={p.onOpenPromptLibrary}>
+            <BookOpen />
+          </IconButton>
+        </div>
         <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
           <TextArea
             placeholder="描述你要生成的图片，或从提示词库挑一条…"

@@ -10,7 +10,7 @@
  * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
-import { EmptyState, Pagination, Skeleton, Table } from '@heroui/react'
+import { EmptyState, Pagination, Skeleton, Table, Tooltip } from '@heroui/react'
 
 /** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */
 export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
@@ -59,15 +59,23 @@ export function Pager({ page, pageSize, total, onChange }: { page: number; pageS
         </span>
       </Pagination.Summary>
       <Pagination.Content>
+        {/* 上一页/下一页用 HeroUI 自带的 PreviousIcon / NextIcon（组件内已内置 chevron，
+            原先的 <span>文字</span> 属于自造图标）；图标本身 aria-hidden，故补 aria-label + Tooltip */}
         <Pagination.Item>
-          <Pagination.Previous isDisabled={page <= 1} onPress={() => onChange(page - 1)}>
-            <span>上一页</span>
-          </Pagination.Previous>
+          <Tooltip delay={0}>
+            <Pagination.Previous isDisabled={page <= 1} aria-label="上一页" onPress={() => onChange(page - 1)}>
+              <Pagination.PreviousIcon />
+            </Pagination.Previous>
+            <Tooltip.Content>上一页</Tooltip.Content>
+          </Tooltip>
         </Pagination.Item>
         <Pagination.Item>
-          <Pagination.Next isDisabled={page >= pages} onPress={() => onChange(page + 1)}>
-            <span>下一页</span>
-          </Pagination.Next>
+          <Tooltip delay={0}>
+            <Pagination.Next isDisabled={page >= pages} aria-label="下一页" onPress={() => onChange(page + 1)}>
+              <Pagination.NextIcon />
+            </Pagination.Next>
+            <Tooltip.Content>下一页</Tooltip.Content>
+          </Tooltip>
         </Pagination.Item>
       </Pagination.Content>
     </Pagination>

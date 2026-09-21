@@ -3,6 +3,8 @@ import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Input, NumberField, SearchField, Select, ListBox, Table, TextField } from '@heroui/react'
+import { Copy, FileArrowDown } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminCdk } from '@/lib/client'
 import { buildCdkCsv } from '@/lib/admin-csv'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
@@ -162,8 +164,12 @@ export default function AdminCdksPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <Button variant="secondary" onPress={() => void copyCodes()} isDisabled={items.length === 0}>复制列表</Button>
-        <Button variant="secondary" onPress={exportCsv} isDisabled={items.length === 0}>导出 CSV</Button>
+        <IconButton variant="secondary" label="复制列表" tooltip="复制当前页全部 CDK" isDisabled={items.length === 0} onPress={() => void copyCodes()}>
+          <Copy />
+        </IconButton>
+        <IconButton variant="secondary" label="导出 CSV" tooltip="导出筛选结果（CSV）" isDisabled={items.length === 0} onPress={exportCsv}>
+          <FileArrowDown />
+        </IconButton>
         <ListCount loading={loading} total={total} unit="个" />
       </div>
 

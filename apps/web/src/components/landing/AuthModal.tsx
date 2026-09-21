@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField } from '@heroui/react'
+import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
 
 type Mode = 'login' | 'register' | 'reset'
@@ -41,30 +43,16 @@ function PasswordInput({
       <InputGroup>
         <InputGroup.Input type={show ? 'text' : 'password'} autoComplete={autoComplete} />
         <InputGroup.Suffix className="pe-0">
-          <Button
-            isIconOnly
-            aria-label={show ? `隐藏${ariaBase}` : `显示${ariaBase}`}
+          {/* 睁眼=当前明文，闭眼=当前密文（原为手写 SVG，2026-09-21 换成图标库） */}
+          <IconButton
+            label={show ? `隐藏${ariaBase}` : `显示${ariaBase}`}
             aria-pressed={show}
             size="sm"
             variant="ghost"
             onPress={() => setShow((v) => !v)}
           >
-            {show ? (
-              // 睁眼：当前明文
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-            ) : (
-              // 闭眼：当前密文
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68" />
-                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61" />
-                <path d="M2 2l20 20" />
-                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
-              </svg>
-            )}
-          </Button>
+            {show ? <Eye /> : <EyeSlash />}
+          </IconButton>
         </InputGroup.Suffix>
       </InputGroup>
     </TextField>
@@ -207,7 +195,7 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
         <HeroModal.Dialog aria-label={title}>
           <HeroModal.Header>
             <HeroModal.Heading>{title}</HeroModal.Heading>
-            <HeroModal.CloseTrigger aria-label="关闭">✕</HeroModal.CloseTrigger>
+            <HeroModal.CloseTrigger aria-label="关闭" />
           </HeroModal.Header>
           <HeroModal.Body>
             <p className="text-sm" style={{ color: 'var(--muted)' }}>{subtitle}</p>
@@ -246,7 +234,12 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
                       <Label>邮箱验证码</Label>
                       <Input inputMode="numeric" autoComplete="one-time-code" placeholder="6 位数字" />
                     </TextField>
+                    {/* ⚠️ 这里**不能**收成纯图标：冷却期按钮是 disabled，而 disabled 的 HeroUI Button
+                        带 `pointer-events: none`（@heroui/styles utilities status-disabled）+ 原生 disabled，
+                        hover 与 focus 都到不了 ⇒ Tooltip 在「想知道还要等多久」的那一刻恰好打不开。
+                        倒计时属于「承载状态的文案」，按口径保留可见文字 */}
                     <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
+                      <PaperPlane />
                       {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
                     </Button>
                   </div>

@@ -3,6 +3,8 @@ import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Drawer, SearchField, Table } from '@heroui/react'
+import { Eye } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminAuditRow } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 
@@ -98,9 +100,9 @@ export default function AdminAuditPage() {
                     {/* 详情抽屉（推荐的下钻模式：抽屉保持列表上下文） */}
                     <Table.Cell data-label="详情">
                       {r.detail ? (
-                        <Button size="sm" variant="secondary" onPress={() => setDetail(r)}>
-                          查看详情
-                        </Button>
+                        <IconButton size="sm" variant="secondary" label="查看详情" onPress={() => setDetail(r)}>
+                          <Eye />
+                        </IconButton>
                       ) : (
                         '—'
                       )}
@@ -120,7 +122,7 @@ export default function AdminAuditPage() {
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>审计详情</Drawer.Heading>
-              <Drawer.CloseTrigger aria-label="关闭">✕</Drawer.CloseTrigger>
+              <Drawer.CloseTrigger aria-label="关闭" />
             </Drawer.Header>
             <Drawer.Body>
               {detail && (

@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@gravity-ui/icons": "^2.22.0",
     "@heroui/react": "^3.2.6",
     "@heroui/styles": "^3.2.6",
     "@motif/core": "workspace:*",

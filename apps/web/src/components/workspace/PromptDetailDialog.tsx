@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Alert, Button, Chip, Spinner } from '@heroui/react'
+import { Copy } from '@gravity-ui/icons'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { isAttachableImage, PROMPT_ENTRY_MAX_IMAGES } from '@/lib/prompts'
 import { WorkspaceModal } from './dialogs'
@@ -132,6 +133,7 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
             </Button>
           )}
           <Button variant="secondary" size="sm" onPress={onCopyPrompt}>
+            <Copy />
             复制提示词
           </Button>
           {busyIndex !== null && <Spinner size="sm" />}

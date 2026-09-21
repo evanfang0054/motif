@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ProgressBar, ProgressCircle } from '@heroui/react'
+import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
 
 /** 百分比展示：接口已保证 0/0 → 0，这里只负责保留一位小数 */
@@ -168,9 +169,18 @@ export default function AdminHomePage() {
       <section className="admin-panel admin-ledger">
         <h2 className="admin-title">额度账目</h2>
         <div className={ledgerDiff === 0 ? 'admin-ledger-ok' : 'admin-ledger-bad'} role="status">
-          {ledgerDiff === 0
-            ? `✓ 对账一致：发放+期初+调整+退回−回收−扣费 = ${closed}，与存量 ${c.balance} 一致`
-            : `⚠ 对账差异 ${ledgerDiff}：恒等式合计 ${closed}，与存量 ${c.balance} 不符——账目可能被旁路修改`}
+          {/* ✓ / ⚠ 原为符号冒充图标（2026-09-21 换图标库）；句子本身是状态文案，保留文字 */}
+          {ledgerDiff === 0 ? (
+            <>
+              <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+              对账一致：发放+期初+调整+退回−回收−扣费 = {closed}，与存量 {c.balance} 一致
+            </>
+          ) : (
+            <>
+              <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
+              对账差异 {ledgerDiff}：恒等式合计 {closed}，与存量 {c.balance} 不符——账目可能被旁路修改
+            </>
+          )}
         </div>
         {onlyOpening && (
           <p className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</p>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, Label, Link, TextField, TextArea } from '@heroui/react'
 import { Modal as HeroModal } from '@heroui/react'
+import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
 
@@ -37,7 +39,7 @@ function WorkspaceModal({
         <HeroModal.Dialog aria-label={title} className={dialogClassName}>
           <HeroModal.Header>
             <HeroModal.Heading>{title}</HeroModal.Heading>
-            <HeroModal.CloseTrigger aria-label="关闭">✕</HeroModal.CloseTrigger>
+            <HeroModal.CloseTrigger aria-label="关闭" />
           </HeroModal.Header>
           <HeroModal.Body>{children}</HeroModal.Body>
         </HeroModal.Dialog>
@@ -128,7 +130,7 @@ function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onP
         </Alert>
       )}
       <Link onPress={onRedeem} className="mt-4 block w-fit" style={{ fontSize: 13, color: 'var(--muted)' }}>
-        已有 CDK？前往兑换 →
+        已有 CDK？前往兑换 <ArrowRight className="ms-1 inline align-[-0.125em]" aria-hidden />
       </Link>
     </Modal>
   )
@@ -192,15 +194,16 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
         <TextField aria-label="邀请链接" className="min-w-0 flex-1" value={link}>
           <Input readOnly onFocus={(e) => e.target.select()} />
         </TextField>
-        <Button
-          variant="primary"
+        <IconButton
+          variant={copied ? 'secondary' : 'primary'}
+          label={copied ? '已复制' : '复制邀请链接'}
           onPress={() => {
             void navigator.clipboard?.writeText(link)
             setCopied(true)
           }}
         >
-          {copied ? '已复制' : '复制'}
-        </Button>
+          {copied ? <FileCheck /> : <Copy />}
+        </IconButton>
       </div>
     </Modal>
   )
