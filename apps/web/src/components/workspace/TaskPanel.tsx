@@ -1,8 +1,8 @@
 'use client'
 
 import { useRef } from 'react'
-import { Alert, Button, Dropdown, Label, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
-import { SIZE_PRESETS, TEMPLATES } from '@/lib/templates'
+import { Alert, Button, NumberField, TextField, TextArea, ToggleButton, ToggleButtonGroup } from '@heroui/react'
+import { SIZE_PRESETS } from '@/lib/templates'
 import { MAX_REFERENCE_IMAGES } from '@motif/core'
 import type { CanvasImage, StagedReference } from '@motif/core'
 import { StatusBadge } from './TopNav'
@@ -32,8 +32,8 @@ interface Props {
   onRemoveStaged: (id: string) => void
   /** 取消引用画布图（只摘掉参考关系，画布里的图仍在） */
   onRemoveCanvasReference: (id: string) => void
-  /** 套用模板：一次填好提示词、张数与尺寸（模板入口收敛到表单侧，空态只留一个快捷入口） */
-  onSelectTemplate: (key: string) => void
+  /** 打开提示词库弹窗（从现成提示词里挑一条填进输入框） */
+  onOpenPromptLibrary: () => void
   onGenerate: () => void
   onCancel: () => void
   onNewTask: () => void
@@ -212,22 +212,13 @@ function TaskPanel(p: Props) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="ws-panel-label mb-1.5">提示词</div>
-        {/* 模板入口在表单侧：套用会一次填好提示词 / 张数 / 尺寸，用户再按需改 */}
-        <Dropdown>
-          <Button variant="secondary" className="mb-2 w-full" aria-label="从模板开始">从模板开始</Button>
-          <Dropdown.Popover placement="bottom start" offset={4}>
-            <Dropdown.Menu onAction={(key) => p.onSelectTemplate(String(key))}>
-              {TEMPLATES.map((t) => (
-                <Dropdown.Item key={t.key} id={t.key} textValue={t.title}>
-                  <Label>{t.title}</Label>
-                </Dropdown.Item>
-              ))}
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
+        {/* 唯一的提示词入口：系统自带的 8 套模板提示词也都在库里（用户裁决 2026-09-21 并入） */}
+        <Button variant="secondary" className="mb-2 w-full" aria-label="提示词库" onPress={p.onOpenPromptLibrary}>
+          提示词库
+        </Button>
         <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
           <TextArea
-            placeholder="描述你要生成的图片，或选择模板快速开始…"
+            placeholder="描述你要生成的图片，或从提示词库挑一条…"
             rows={5}
             className="w-full min-h-[120px] resize-y"
           />

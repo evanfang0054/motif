@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
 import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
 import { api } from '@/lib/client'
-import { TEMPLATES } from '@/lib/templates'
 import { TopNav } from './TopNav'
 import { CanvasEmptyGuide } from './CanvasEmptyGuide'
 import { CanvasStage } from '@/components/canvas/CanvasStage'
@@ -14,6 +13,8 @@ import { planRegenerateFromImage } from '@/lib/canvas/regenerate'
 import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
+import { PromptLibraryModal } from './PromptLibraryModal'
+import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
 import { AlertDialog, Button, Spinner } from '@heroui/react'
 import { showToast } from '@/components/ui/toast'
@@ -59,7 +60,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [topicsLoaded, setTopicsLoaded] = useState(false)
   /** 详情拉取失败：不能一直转圈（长轮询会继续重试，成功后自动复位） */
   const [detailFailed, setDetailFailed] = useState(false)
-  const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | null>(null)
+  const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | 'promptLibrary' | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: 'image'; ids: CanvasImage[] }
@@ -259,26 +260,6 @@ function Workspace({ initialUser }: { initialUser: User }) {
     return () => clearInterval(timer)
   }, [hasBusyTopic, refreshTopics])
 
-  const selectTemplate = useCallback(
-    (key: string) => {
-      const tpl = TEMPLATES.find((t) => t.key === key)
-      if (!tpl) return
-      setPanel((p) => ({
-        ...p,
-        prompt: tpl.prompt,
-        count: tpl.count,
-        size: tpl.size,
-        referenceIds: p.referenceIds,
-      }))
-      showToast({ tone: 'info', message: `已套用「${tpl.title}」模板` })
-      // 额度预警前置：新用户余额往往小于模板张数，别等提交时才发现
-      if (user.credits < tpl.count) {
-        showToast({ tone: 'warning', message: `注意：「${tpl.title}」需 ${tpl.count} 张额度，当前余额 ${user.credits} 张；可调小张数或点击「充值」`, timeoutMs: 5200 })
-      }
-    },
-    [user.credits]
-  )
-
   const creatingRef = useRef(false)
   /** 确保存在活动任务：已有则直接复用 id；没有才向服务端创建/复用未使用任务（不动面板内容） */
   const ensureTopic = useCallback(async (): Promise<string | null> => {
@@ -473,6 +454,34 @@ function Workspace({ initialUser }: { initialUser: User }) {
     [ensureTopic, panel.referenceIds.length]
   )
 
+  /**
+   * 把提示词库的示例图带进表单：服务端抓取 → 落成暂存参考（`refu_`，不进画布）。
+   * 与上传同口径：先看上限，再 `ensureTopic`（自动建任务），失败如实抛出交给弹窗内联显示。
+   */
+  const attachPromptImage = useCallback(
+    async (entry: PromptLibraryEntry, index: number) => {
+      if (panel.referenceIds.length >= MAX_REFERENCE_IMAGES) {
+        throw new Error(`参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先移除一张再添加`)
+      }
+      const tid = await ensureTopic()
+      if (!tid) throw new Error('请先新建一个任务')
+      const { reference } = await api.attachPromptImage({ topicId: tid, sourceId: entry.sourceId, entryId: entry.id, index })
+      setPanel((p) => ({
+        ...p,
+        referenceIds: [...p.referenceIds, reference.id],
+        staged: [...p.staged, reference],
+        // 预览走**我们自己的字节**（服务端已经把图抓下来了），不复用远程 URL：
+        // 否则第三方防盗链/签名过期时会变成破图，而浏览器也会多一个外部外联
+        stagedPreviews: { ...p.stagedPreviews, [reference.id]: `/api/reference-uploads/${reference.id}` },
+      }))
+      showToast({
+        tone: 'info',
+        message: `已加入参考图（${panel.referenceIds.length + 1}/${MAX_REFERENCE_IMAGES}）；提示词未改动`,
+      })
+    },
+    [ensureTopic, panel.referenceIds.length]
+  )
+
   /** 移除暂存参考（服务端删除 + 面板同步） */
   const removeStaged = useCallback(
     (id: string) => {
@@ -604,7 +613,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               onRegenerate={regenerateFrom}
             />
           ) : (
-            <CanvasEmptyGuide onSelectTemplate={selectTemplate} />
+            <CanvasEmptyGuide onOpenPromptLibrary={() => setDialog('promptLibrary')} />
           )}
           {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
           {busy && (
@@ -658,7 +667,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
             onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
             onUploadReference={(f) => void uploadReference(f)}
-            onSelectTemplate={selectTemplate}
+            onOpenPromptLibrary={() => setDialog('promptLibrary')}
             onGenerate={() => void submitGenerate()}
             onCancel={() => void cancelRunning()}
             onNewTask={() => void createTopic()}
@@ -696,6 +705,25 @@ function Workspace({ initialUser }: { initialUser: User }) {
         />
       )}
 
+      {dialog === 'promptLibrary' && (
+        <PromptLibraryModal
+          onClose={() => setDialog(null)}
+          referenceCount={panel.referenceIds.length}
+          maxReferences={MAX_REFERENCE_IMAGES}
+          onAttachImage={attachPromptImage}
+          onCopyPrompt={(entry) => {
+            void navigator.clipboard?.writeText(entry.prompt)
+            showToast({ tone: 'info', message: '提示词已复制' })
+          }}
+          onSelect={(prompt) => {
+            // 与「以它为参考再生成」同一口径：直接覆盖面板内容，并在 toast 里说清覆盖了什么
+            const had = panel.prompt.trim().length > 0
+            setPanel((p) => ({ ...p, prompt }))
+            setDialog(null)
+            showToast({ tone: 'info', message: had ? '已填入提示词（原有内容已覆盖）' : '已填入提示词' })
+          }}
+        />
+      )}
       {dialog === 'billing' && (
         <BillingDialog
           onClose={() => setDialog(null)}

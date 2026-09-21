@@ -448,6 +448,52 @@ export interface CreateUserInput {
   mustChangePassword?: boolean
 }
 
+/** 提示词源的一行：清单列来自代码（`lib/prompt-sources.ts`），状态列来自抓取 */
+export interface PromptSourceRow {
+  id: string
+  name: string
+  url: string
+  homepage: string
+  sortIndex: number
+  entryCount: number
+  /** 最近一次抓取**尝试**（无论成败）；null = 从未抓过 */
+  fetchedAt: string | null
+  /** 最近一次成功；失败时不更新 */
+  lastSuccessAt: string | null
+  /** 空串 = 上次抓取成功 */
+  lastError: string
+  /** 最近一次抓取**尝试**时的源定义签名；变了即视为陈旧 */
+  signature: string
+}
+
+/** 一条待写入的提示词条目（抓取解析结果） */
+export interface PromptEntryInput {
+  id: string
+  title: string
+  prompt: string
+  description: string
+  coverUrl: string
+  referenceImageUrls: string[]
+  tags: string[]
+  author: string
+  sourceUrl: string
+}
+
+/** 一条读出的提示词条目（附带来源信息，供筛选与展示） */
+export interface PromptEntryRow extends PromptEntryInput {
+  sourceId: string
+  sourceName: string
+  sortIndex: number
+}
+
+/** 提示词源清单（代码是真相，DB 只存副本与抓取状态） */
+export interface PromptSourceDefInput {
+  id: string
+  name: string
+  url: string
+  homepage: string
+}
+
 /** SQLite 存储层：所有持久化读写集中在这里 */
 export class MotifStore {
   readonly db: Database.Database
@@ -1592,6 +1638,167 @@ export class MotifStore {
       for (const k of keys) stmt.run(k)
     })
     tx()
+  }
+
+  // ---------- 提示词库（prompt_sources / prompt_entries）----------
+
+  /**
+   * 播种/同步源清单：**只覆盖清单列**，抓取状态列（entry_count / fetched_at /
+   * last_success_at / last_error / signature）一律保留；**不在清单里的源连同其条目一起删掉**。
+   *
+   * 为什么按这个方向：清单的真相在代码里（改源地址只需改代码、重启即生效），
+   * 而抓取状态只存在于库里（重启不该丢）。`sort_index` 用数组下标 ⇒ 调整清单顺序即生效。
+   *
+   * 为什么要删：不删的话，从清单里去掉一个源（例如只保留 GPT 系）之后，它的行与条目
+   * 会一直留着，用户仍能在「来源」筛选栏里挑到它 —— 代码说没有、界面说有。
+   * 删除走外键级联，该源的条目一并消失；重新加回清单时会从零重抓（可接受）。
+   */
+  seedPromptSources(defs: readonly PromptSourceDefInput[]): void {
+    const stmt = this.db.prepare(
+      `INSERT INTO prompt_sources (id, name, url, homepage, sort_index) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, url = excluded.url,
+         homepage = excluded.homepage, sort_index = excluded.sort_index`
+    )
+    const del = this.db.prepare('DELETE FROM prompt_sources WHERE id NOT IN (SELECT value FROM json_each(?))')
+    const tx = this.db.transaction(() => {
+      defs.forEach((d, i) => stmt.run(d.id, d.name, d.url, d.homepage, i))
+      del.run(JSON.stringify(defs.map((d) => d.id)))
+    })
+    tx()
+  }
+
+  listPromptSources(): PromptSourceRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, name, url, homepage, sort_index, entry_count, fetched_at, last_success_at, last_error, signature
+         FROM prompt_sources ORDER BY sort_index, id`
+      )
+      .all() as Array<{
+      id: string
+      name: string
+      url: string
+      homepage: string
+      sort_index: number
+      entry_count: number
+      fetched_at: string | null
+      last_success_at: string | null
+      last_error: string
+      signature: string
+    }>
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      homepage: r.homepage,
+      sortIndex: r.sort_index,
+      entryCount: r.entry_count,
+      fetchedAt: r.fetched_at,
+      lastSuccessAt: r.last_success_at,
+      lastError: r.last_error,
+      signature: r.signature,
+    }))
+  }
+
+  /**
+   * 抓取成功：**整源原子替换**（同一事务内先删后插，再更新状态列）。
+   *
+   * 为什么必须同事务：中途失败会留下「一半新一半旧」的条目集，而列表页据此展示、
+   * 用户据此挑选，半截状态无法解释也无法自愈。⚠️ 一律走同一个 `Database` 连接 ——
+   * SQLite 同文件多连接下 WAL 视图不同，而 worker 持有的是同一个 store 实例。
+   */
+  replacePromptEntries(
+    sourceId: string,
+    entries: readonly PromptEntryInput[],
+    meta: { signature: string; now: string }
+  ): void {
+    const del = this.db.prepare('DELETE FROM prompt_entries WHERE source_id = ?')
+    const ins = this.db.prepare(
+      `INSERT INTO prompt_entries
+         (source_id, id, title, prompt, description, cover_url, reference_image_urls, tags, author, source_url, sort_index)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    const upd = this.db.prepare(
+      `UPDATE prompt_sources
+       SET entry_count = ?, fetched_at = ?, last_success_at = ?, last_error = '', signature = ?
+       WHERE id = ?`
+    )
+    const tx = this.db.transaction(() => {
+      del.run(sourceId)
+      entries.forEach((e, i) =>
+        ins.run(
+          sourceId,
+          e.id,
+          e.title,
+          e.prompt,
+          e.description,
+          e.coverUrl,
+          JSON.stringify(e.referenceImageUrls),
+          JSON.stringify(e.tags),
+          e.author,
+          e.sourceUrl,
+          i
+        )
+      )
+      upd.run(entries.length, meta.now, meta.now, meta.signature, sourceId)
+    })
+    tx()
+  }
+
+  /**
+   * 抓取失败：只更新 `fetched_at`（最近一次尝试）、`last_error` 与 `signature`。
+   * 条目、`entry_count`、`last_success_at` 全部保留 —— 旧快照继续服役。
+   *
+   * 为什么失败也记 `signature`：它的语义是「最近一次抓取**尝试**时用的源定义签名」。
+   * 若只在成功时记，一个从未成功过的源签名恒为空串，`isSourceStale` 会**每次读都判陈旧**，
+   * 失败源的重试节奏就失效了（等于每次打开提示词库都去敲一遍死源）。
+   * 记上之后：源地址没改 ⇒ 由 TTL 节奏控制；源地址改了 ⇒ 签名不匹配 ⇒ 立刻重抓。
+   */
+  recordPromptSourceFailure(sourceId: string, error: string, now: string, signature: string): void {
+    this.db
+      .prepare('UPDATE prompt_sources SET fetched_at = ?, last_error = ?, signature = ? WHERE id = ?')
+      .run(now, error.slice(0, 300), signature, sourceId)
+  }
+
+  /**
+   * 读全部条目（含源名）。库规模在万级以内，全量读 + 内存筛选足够；
+   * 筛选/分面/分页都放在纯函数层，故这里不写任何 WHERE。
+   */
+  listPromptEntries(): PromptEntryRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT e.source_id, s.name AS source_name, e.id, e.title, e.prompt, e.description,
+                e.cover_url, e.reference_image_urls, e.tags, e.author, e.source_url, e.sort_index
+         FROM prompt_entries e JOIN prompt_sources s ON s.id = e.source_id
+         ORDER BY s.sort_index, e.sort_index`
+      )
+      .all() as Array<{
+      source_id: string
+      source_name: string
+      id: string
+      title: string
+      prompt: string
+      description: string
+      cover_url: string
+      reference_image_urls: string
+      tags: string
+      author: string
+      source_url: string
+      sort_index: number
+    }>
+    return rows.map((r) => ({
+      sourceId: r.source_id,
+      sourceName: r.source_name,
+      id: r.id,
+      title: r.title,
+      prompt: r.prompt,
+      description: r.description,
+      coverUrl: r.cover_url,
+      referenceImageUrls: safeParseIds(r.reference_image_urls),
+      tags: safeParseIds(r.tags),
+      author: r.author,
+      sourceUrl: r.source_url,
+      sortIndex: r.sort_index,
+    }))
   }
 }
 
