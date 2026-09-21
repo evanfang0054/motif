@@ -10,12 +10,14 @@ import { TopNav } from './TopNav'
 import { CanvasEmptyGuide } from './CanvasEmptyGuide'
 import { CanvasStage } from '@/components/canvas/CanvasStage'
 import { deleteImageConfirmText } from './canvas-geometry'
+import { planRegenerateFromImage } from '@/lib/canvas/regenerate'
 import { TaskPanel } from './TaskPanel'
 import { TaskDrawer } from './TaskDrawer'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
 import { PasswordHintBanner } from './PasswordHintBanner'
 import { AlertDialog, Button, Spinner } from '@heroui/react'
 import { showToast } from '@/components/ui/toast'
+import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
 
 export interface PanelState {
   prompt: string
@@ -41,6 +43,9 @@ const IDLE_PANEL: PanelState = {
   stagedPreviews: {},
 }
 
+/** 任务列表级监看的轮询间隔：只在有任务在跑时用（够快让人察觉，又不至于把接口打成心跳） */
+const TOPIC_LIST_POLL_MS = 5000
+
 /** 登录后工作台：顶栏 + 画布 + 右侧任务面板 + 任务抽屉 + 弹层 */
 function Workspace({ initialUser }: { initialUser: User }) {
   const router = useRouter()
@@ -65,23 +70,31 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [passwordHintDismissed, setPasswordHintDismissed] = useState(false)
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
+  /**
+   * 当前任务 id 的镜像：`refreshTopics` 要靠它判断「这次结束的是不是当前任务」，
+   * 但**不能**把 `activeId` 放进 `refreshTopics` 的 deps —— 初始化 effect 依赖它，
+   * 且里面会 `setActiveId(list[0].id)`，身份一变就会在每次切任务时把用户强行拉回最近的任务。
+   */
+  const activeIdRef = useRef<string | null>(null)
+  /** 上一次看到的各任务状态：只用于迁移检测，不参与渲染 */
+  const topicStatusRef = useRef<Map<string, string>>(new Map())
+  /** 列表请求序号：迟到的旧响应不许落地（否则状态快照回退 ⇒ 同一次结束被报两遍） */
+  const listSeqRef = useRef(0)
+
+  useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
 
   /** 统一入口：写 detail 前检测消息状态迁移（取消/失败/完成），弹出对应提示 */
   const applyDetail = useCallback(
     (d: TopicDetail) => {
-      const active = d.messages.find((m) => m.id === d.topic.activeMessageId) ?? d.messages[d.messages.length - 1]
+      const active = activeMessage(d)
       // 切换任务时不提示历史状态，只同步基线
       const topicChanged = detailRef.current !== null && detailRef.current.topic.id !== d.topic.id
-      if (active && !topicChanged && lastMsgStatusRef.current && lastMsgStatusRef.current !== active.status) {
-        if (active.status === 'canceled') {
-          const done = d.canvasImages.filter((i) => i.messageId === active.id).length
-          const refund = active.requestedCount - done
-          if (refund > 0) showToast({ tone: 'info', message: `任务已取消，未完成的 ${refund} 张额度已退回。`, timeoutMs: 6000 })
-        } else if (active.status === 'failed') {
-          showToast({ tone: 'danger', message: `生成失败：${active.error ?? '未知原因'}。`, timeoutMs: 6000 })
-        } else if (active.status === 'completed') {
-          showToast({ tone: 'success', message: '生成完成 ✓' })
-        }
+      if (!topicChanged && lastMsgStatusRef.current && lastMsgStatusRef.current !== active?.status) {
+        // 文案与后台任务路径（任务列表级监看）共用同一个纯函数：两处各写一份，改一处必漏另一处
+        const notice = terminalNotice(d)
+        if (notice) showToast(notice)
       }
       if (active) lastMsgStatusRef.current = active.status
       detailRef.current = d
@@ -91,8 +104,31 @@ function Workspace({ initialUser }: { initialUser: User }) {
   )
 
   const refreshTopics = useCallback(async (): Promise<Topic[]> => {
+    const seq = ++listSeqRef.current
     const { topics } = await api.listTopics()
+    // 迟到的旧响应不许落地：否则状态快照会被回退成「在跑」，下一轮把同一次结束再报一遍
+    if (seq < listSeqRef.current) return topics
+    // 判定全在纯函数里（可单测）：非当前任务 + 从「在跑」落到「不在跑」才提示；
+    // 返回的 next 必须写回 ref —— 它就是「同一次迁移只提示一次」的载体。
+    // 读-改-写全程同步（中间没有 await），故「轮询与 watch/提交同时刷新」不会双份。
+    const { finished, next } = planTopicNotices({ prev: topicStatusRef.current, topics, activeId: activeIdRef.current })
+    topicStatusRef.current = next
     setTopics(topics)
+    if (finished.length > 0) {
+      // 不 await：submitGenerate / createTopic 都 await 本函数，把详情拉取塞进同步路径
+      // 会拖慢「任务已加入队列」这类回执
+      void (async () => {
+        for (const t of finished) {
+          try {
+            const d = await api.topicDetail(t.id)
+            const notice = terminalNotice(d, { title: t.title })
+            if (notice) showToast(notice)
+          } catch {
+            // 详情拉不到就**不提示**：宁可少说，也不拿列表里的粗粒度状态编一句「已完成」
+          }
+        }
+      })()
+    }
     return topics
   }, [])
 
@@ -183,8 +219,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
           if (stopped) return
           if (r.changed) {
             const fresh = await refreshDetail(activeId)
+            // ⚠️ 这里到 refreshTopics 之间还有一次 /api/me 往返：用户中途切走时若不复检 stopped，
+            // 循环会带着「已不是当前任务」的旧 id 继续刷新 —— 那条结束会被当成后台任务再报一遍
+            if (stopped) return
             if (fresh.topic.status === 'idle') {
               const { user: u } = await api.me()
+              if (stopped) return
               if (u) setUser(u)
               void refreshTopics()
             }
@@ -200,6 +240,24 @@ function Workspace({ initialUser }: { initialUser: User }) {
       ac.abort()
     }
   }, [activeId, refreshDetail, refreshTopics])
+
+  /**
+   * 任务列表级监看：切到别的任务后，在跑的那个任务结束了也要有回执。
+   *
+   * 依赖是**布尔**而不是 `topics` 数组 —— 列表每次刷新不会重建定时器；空闲时**零请求**。
+   * 取舍：本端全部空闲时不发请求，故别处（另一标签页）新启动的任务不会被发现，
+   * 要等下一次列表刷新（提交 / 改名 / 删除 / 切任务）才可见。
+   */
+  const hasBusyTopic = topics.some((t) => isBusyStatus(t.status))
+  useEffect(() => {
+    if (!hasBusyTopic) return
+    const timer = setInterval(() => {
+      // 标签页在后台时不发请求：省掉没人看的轮询，回到前台的下一个 tick 自动追上
+      if (typeof document !== 'undefined' && document.hidden) return
+      void refreshTopics().catch(() => {})
+    }, TOPIC_LIST_POLL_MS)
+    return () => clearInterval(timer)
+  }, [hasBusyTopic, refreshTopics])
 
   const selectTemplate = useCallback(
     (key: string) => {
@@ -433,6 +491,44 @@ function Workspace({ initialUser }: { initialUser: User }) {
     setPanel((p) => ({ ...p, referenceIds: p.referenceIds.filter((x) => x !== id) }))
   }, [])
 
+  /**
+   * 「以它为参考再生成」：按该图**所属轮次的原始提示词**重填表单，并把参考图换成这张图。
+   *
+   * 与「@ 引用」的区别是**替换**（不是追加）；暂存参考与张数/尺寸都不动 —— 判定全在
+   * `planRegenerateFromImage` 里（可单测），这里只负责落面板与回执。
+   *
+   * ⚠️ deps 必须含 `panel.prompt`：提示词是纯客户端 state，改它不会改变 `panel.staged` 的数组身份；
+   * 只依赖 `panel.staged` 会闭包到旧提示词，把用户刚敲的正文写回成旧值。
+   */
+  const regenerateFrom = useCallback(
+    (img: CanvasImage) => {
+      const plan = planRegenerateFromImage({
+        image: { id: img.id, serial: img.serial, messageId: img.messageId },
+        messages: detail?.messages ?? [],
+        currentPrompt: panel.prompt,
+        stagedIds: panel.staged.map((s) => s.id),
+        maxReferences: MAX_REFERENCE_IMAGES,
+      })
+      if (!plan.ok) {
+        showToast({ tone: 'info', message: `参考图最多 ${MAX_REFERENCE_IMAGES} 张，暂存区已占满；先移除一张再重生成` })
+        return
+      }
+      setPanel((p) => ({ ...p, prompt: plan.prompt, referenceIds: plan.referenceIds }))
+      const marker = `#${String(img.serial).padStart(3, '0')}`
+      const stagedCount = panel.staged.length
+      showToast({
+        tone: 'info',
+        message: plan.reusedPrompt
+          ? `已按 ${marker} 那一轮的提示词填好表单，参考图换成 ${marker}（原有画布引用已替换；张数与尺寸沿用当前设置）`
+          : stagedCount > 0
+            ? `已把 ${marker} 设为画布参考图（原有画布引用已替换；没有可复用的提示词，提示词未改动；暂存区 ${stagedCount} 张仍会一起提交）`
+            : `已把 ${marker} 设为唯一参考图（原有画布引用已替换；没有可复用的提示词，提示词未改动）`,
+        timeoutMs: 6000,
+      })
+    },
+    [detail, panel.staged, panel.prompt]
+  )
+
   /** 面板里要展示的画布引用：已在参考图里、且不在暂存区的画布图 */
   const canvasReferences = useMemo(() => {
     const stagedIds = new Set(panel.staged.map((s) => s.id))
@@ -502,8 +598,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
               key={detail.topic.id}
               topicId={detail.topic.id}
               images={detail.canvasImages}
+              messages={detail.messages}
               onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
               onAddReferences={addReferencesFromCanvas}
+              onRegenerate={regenerateFrom}
             />
           ) : (
             <CanvasEmptyGuide onSelectTemplate={selectTemplate} />

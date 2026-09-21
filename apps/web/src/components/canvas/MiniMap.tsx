@@ -83,7 +83,7 @@ function MiniMap({ rects, viewport, size, onJump }: Props) {
       }}
       onPointerDown={(e) => {
         e.preventDefault()
-        e.stopPropagation() // 不把按下透给画布（否则会同时开始框选）
+        e.stopPropagation() // 不把按下透给画布（否则会同时开始平移/框选）
         draggingRef.current = e.pointerId
         e.currentTarget.setPointerCapture(e.pointerId)
         jumpTo(e.currentTarget, e.clientX, e.clientY)
