@@ -8,7 +8,7 @@
  *    `shouldFlip`（默认 true）承担。
  * 2. 上游用第三方弹层的类名排除弹层、自己挂全局 `pointerdown` 关闭；Motif 无此概念，
  *    关闭交给 `onOpenChange` 与画布的 Esc。
- * 3. 菜单项按 Motif 的既有能力裁剪：只保留与单选浮动工具栏**逐项一致**的四项；
+ * 3. 菜单项按 Motif 的既有能力裁剪：只保留与单选浮动工具栏**逐项一致**的五项；
  *    上游的「复制 / 编组 / 解组 / 视频三帧」都不适用（无复制粘贴、无编组、无视频节点）。
  * 4. 危险项走 HeroUI 的 `variant="danger"`（映射到项目 `--danger` 桥接），不硬编码色值（上游硬编码 #f87171）。
  */
@@ -16,7 +16,7 @@
 
 import { Dropdown, Label } from '@heroui/react'
 
-export type ContextMenuAction = 'preview' | 'reference' | 'download' | 'delete'
+export type ContextMenuAction = 'preview' | 'reference' | 'regenerate' | 'download' | 'delete'
 
 interface Props {
   /** 指针的**视口坐标**（clientX/clientY）；null 表示不显示 */
@@ -28,6 +28,7 @@ interface Props {
 const ITEMS: Array<{ id: ContextMenuAction; label: string; danger?: boolean }> = [
   { id: 'preview', label: '放大预览' },
   { id: 'reference', label: '@ 引用' },
+  { id: 'regenerate', label: '再生成' },
   { id: 'download', label: '下载' },
   { id: 'delete', label: '删除', danger: true },
 ]

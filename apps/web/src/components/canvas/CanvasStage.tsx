@@ -9,13 +9,13 @@
  *  - 底色取 `var(--canvas-background)`（中性，不抄上游的暖底）
  *
  * ⚠️ 保留既有 CanvasBoard 的**全部**控件与文案（用户 2026-09-20 裁决 J1）：
- * 顶部 pill（张数 / 已选 / 清空选择）、整理布局、单选工具栏（放大预览 / @ 引用 / 下载 / 删除）、
+ * 顶部 pill（张数 / 已选 / 清空选择）、整理布局、单选工具栏（放大预览 / @ 引用 / 再生成 / 下载 / 删除）、
  * 多选工具栏（已选 N 张 / 批量删除）、缩放条（−/百分比/＋/适应）、sr-only 清单、灯箱。
  * 唯一的语义变化：**整理布局**从「重置到网格」升级为「重排进空位槽并落库」。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar } from '@heroui/react'
-import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMeta } from '@motif/core'
+import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMeta, Message } from '@motif/core'
 import { anchorRender } from '@/components/ui/anchor-button'
 import { boundsOf, hitTest, toWorld } from '@/lib/canvas/geometry'
 import { backgroundGesture } from '@/lib/canvas/gesture'
@@ -24,6 +24,7 @@ import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
 import { allocateSlots, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
+import { deriveLineage, isSameLayout, layoutLineageTree, lineageLayerModel } from '@/lib/canvas/lineage'
 import { createCloudDriver, createLocalDriver, createCanvasPersistence, type CanvasSync } from '@/stores/canvas/persistence'
 import { MiniMap } from './MiniMap'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
@@ -48,12 +49,16 @@ const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string }> = 
 interface Props {
   topicId: string
   images: CanvasImage[]
+  /** 本任务的全部生成轮次：溯源推导（id + referenceIds）与「再生成」取原始提示词（id + prompt）都要用 */
+  messages: Message[]
   onRemoveImages: (imgs: CanvasImage[]) => void
   /** 加入参考图（单张与批量共用；批量时一次写多句 #编号） */
   onAddReferences: (imgs: CanvasImage[]) => void
+  /** 「以它为参考再生成」：把该图所属轮次的原始提示词与这张图填回表单（替换画布引用） */
+  onRegenerate: (img: CanvasImage) => void
 }
 
-function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props) {
+function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReferences, onRegenerate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<CanvasImage | null>(null)
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -94,6 +99,8 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
   /** 小地图开关：瞬态视图偏好，**默认关、不落库**（照抄上游默认关；要跨刷新保留得扩 CanvasMeta 白名单） */
   const [miniMapOpen, setMiniMapOpen] = useState(false)
+  /** 溯源层开关（代码里仍叫 lineage）：同上（默认关、不落库） */
+  const [lineageOpen, setLineageOpen] = useState(false)
   /** 右键菜单：锚点是容器内屏幕坐标（与 marquee 同类，属瞬态，不入 store） */
   const [menu, setMenu] = useState<{ x: number; y: number; image: CanvasImage } | null>(null)
   /** 导入进行中 */
@@ -205,15 +212,13 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
     }
   }, [preview])
 
-  // ---------- 平移（空格/Ctrl/中键 + 拖拽）与框选（普通左键拖拽）----------
+  // ---------- 平移（普通左键 / 空格 / Ctrl / 中键 + 拖拽）与框选（Shift + 左键拖拽）----------
   //
-  // ⚠️ 平移与框选**共用同一个手势**（左键在空白处拖拽），必须裁决 —— 照抄上游
-  // `.infinite-canvas-ref/src/components/canvas/infinite-canvas.tsx:114-135`：
-  //   `temporaryTool = ctrlKey || isSpacePressed`
-  //   `shouldPan = button === 1 || (button === 0 && activeTool === 'pan' && isBackgroundClick)`
-  // 即：**中键、或「空格/Ctrl + 左键」= 平移视图；普通左键拖拽 = 框选**。
-  // 这样「空格/Ctrl + 左键拖拽平移」与「普通左键拖拽框选」同时成立，
-  // 且既有 CanvasBoard 的「左键框选」语义不被改变。
+  // ⚠️ 平移与框选**共用同一个手势**（左键在空白处拖拽），必须裁决（`lib/canvas/gesture.ts`）。
+  // 上游 `.infinite-canvas-ref/.../infinite-canvas.tsx:114-135` 是「中键或空格/Ctrl+左键 = 平移；
+  // 普通左键 = 框选」；**用户 2026-09-21 裁决把默认对调**：画布要能直接拖，
+  // 于是「普通左键拖空白 = 平移；Shift + 左键拖空白 = 框选」，空格/Ctrl/中键的平移一律不变。
+  // 代价是框选要按 Shift —— 故容器挂抓手光标 + `title` 提示两种手势（画布上没有别的手势说明位）。
   const [spaceHeld, setSpaceHeld] = useState(false)
 
   useEffect(() => {
@@ -246,14 +251,15 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
       const rect = el.getBoundingClientRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
-      const gesture = backgroundGesture({ button: e.button, ctrlKey: e.ctrlKey, spaceHeld })
+      const gesture = backgroundGesture({ button: e.button, ctrlKey: e.ctrlKey, spaceHeld, shiftKey: e.shiftKey })
       if (gesture === 'none') return
       if (gesture === 'pan') {
         panRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false }
-      } else {
+      } else if (gesture === 'marquee') {
         // 点击/拖空白：**先清空选中**（拖动后由框选命中重设）—— 沿用既有 CanvasBoard 的语义。
-        // ⚠️ 清空必须放在这里而不是 pointerup：早先放在「平移分支」的 pointerup 里，
-        // 而普通左键走的是框选分支、panRef 为 null，于是「点空白取消选中」整条失效。
+        // ⚠️ 清空必须放在这里而不是 pointerup：框选分支不建 panRef，放进 pointerup 就整条失效
+        // （历史教训：这条曾因为写在「平移分支」的 pointerup 里而彻底不生效）。
+        // 另注：平移分支的 pointerup 里也有一次「没移动就清空」，那是给「点空白」用的。
         useCanvasStore.getState().clearSelection()
         marqueeRef.current = { pointerId: e.pointerId, startX: sx, startY: sy, moved: false }
         setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy })
@@ -309,7 +315,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   const onBackgroundPointerUp = useCallback((e: React.PointerEvent) => {
     const pan = panRef.current
     if (pan && pan.pointerId === e.pointerId) {
-      // 空格/中键平移但没移动 = 在空白处点了一下：同样清空选中
+      // 平移（普通左键 / 空格 / Ctrl / 中键）但没移动 = 在空白处点了一下：同样清空选中
       if (!pan.moved) useCanvasStore.getState().clearSelection()
       panRef.current = null
       pendingPanRef.current = null
@@ -465,6 +471,82 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
    */
   const rects = useMemo(() => Object.values(placements), [placements])
 
+  /**
+   * 溯源层（UI 文案；代码里叫 lineage）：**只在开关打开时**推导（关着时一次都不算）。
+   *
+   * 画什么全由 `lineageLayerModel` 判定（无 jsdom 的测试环境里组件路径测不到，判定必须可单测）；
+   * 返回 `null` 表示整层都不挂载。`messages` 每次长轮询都会换新数组，故依赖它。
+   */
+  const lineageImages = useMemo(
+    () => images.map((i) => ({ id: i.id, messageId: i.messageId, serial: i.serial, origin: i.origin })),
+    [images]
+  )
+  /** 树形布局要显示尺寸：与空位槽分配用同一个 `displaySize`，保证排出来的卡片尺寸不变 */
+  const lineageTreeImages = useMemo(
+    () => images.map((i) => ({ id: i.id, messageId: i.messageId, serial: i.serial, size: displaySize(i.width, i.height) })),
+    [images]
+  )
+  /** 溯源推导（`deriveLineage`）：图层与树形布局共用同一份（都只在开关打开时算） */
+  const lineage = useMemo(
+    () => (lineageOpen ? deriveLineage({ images: lineageImages, messages }) : null),
+    [lineageOpen, lineageImages, messages]
+  )
+  const lineageLayer = useMemo(
+    () => (lineage ? lineageLayerModel({ lineage, placements, k: viewport.k }) : null),
+    [lineage, placements, viewport.k]
+  )
+  /**
+   * 树形布局的锚点：**当前内容的包围盒左上角 + 竖直中心**，而不是视口原点。
+   *
+   * 这样计划**不随视口漂移**（平移/缩放后不会算出另一棵树），于是「整理」是幂等的：
+   * 整理完内容包围盒就等于树的包围盒，再算一次结果逐值相同 ⇒ 引导自动消失。
+   */
+  const treeOrigin = useMemo(() => {
+    const b = boundsOf(rects)
+    return b ? { x: b.x, y: b.y + b.h / 2 } : viewportOrigin(viewport)
+  }, [rects, viewport])
+
+  /** 树形布局的目标位置（只在溯源打开时算；点「按来源整理」时才落库） */
+  const treePlan = useMemo(
+    () => (lineage ? layoutLineageTree({ images: lineageTreeImages, lineage, origin: treeOrigin }) : []),
+    [lineage, lineageTreeImages, treeOrigin]
+  )
+  /**
+   * 引导提示：**当前摆放与树形布局差得明显**时才出现。
+   *
+   * 判据用 `isSameLayout` 配一个「轻推容差」（80 世界单位）：手工微调过、或本来就排成树的，
+   * 偏差在容差内 ⇒ 不提示（否则用户每动一下卡片都被念一遍）；而与树形明显不符（按行铺的网格、
+   * 或成环那种「排完也不一样」的极端形状）则如实提示。
+   *
+   * 早先用的是「边方向判据」（目标没明显排在源右边）：它对「一轮只有 1–3 张、恰好排在源右侧
+   * 同一行」的网格会漏报，交付后评审点出后改为现在这条。
+   */
+  const TREE_HINT_TOLERANCE = 80
+  const showTreeHint = useMemo(
+    () => (lineage && treePlan.length > 0 ? !isSameLayout(treePlan, placements, TREE_HINT_TOLERANCE) : false),
+    [lineage, treePlan, placements]
+  )
+
+  /**
+   * 按来源整理：把树形布局落库。
+   *
+   * 走既有的 `beginGesture`/`endGesture`（与「整理布局」同一条路），所以 **Ctrl+Z 能撤销**；
+   * 位置提交沿用既有的 400ms 防抖队列，不新增持久化管线。整理后把整棵树放进视野，
+   * 否则用户只会看到树的一角。
+   */
+  const arrangeByLineage = useCallback(() => {
+    if (treePlan.length === 0) return
+    const store = useCanvasStore.getState()
+    const now = new Date().toISOString()
+    store.beginGesture('arrange')
+    store.applyPlacements(treePlan.map((p) => rectToPlacement(p.id, p.rect, now)))
+    store.endGesture()
+    const el = containerRef.current
+    const bounds = boundsOf(treePlan.map((p) => p.rect))
+    if (el && bounds) store.setViewport(fitView(bounds, el.clientWidth, el.clientHeight))
+    showToast({ tone: 'success', message: `已按来源重新排列 ${treePlan.length} 张（Ctrl+Z 可撤销）` })
+  }, [treePlan])
+
   /** 当前摆放（导出与导入比对共用）：store 里是稀疏表，这里转成 placement 列表 */
   const currentPlacements = useCallback((): CanvasImagePlacement[] => {
     const store = useCanvasStore.getState()
@@ -593,10 +675,11 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
       if (!target) return
       if (action === 'preview') setPreview(target)
       else if (action === 'reference') onAddReferences([target])
+      else if (action === 'regenerate') onRegenerate(target)
       else if (action === 'download') downloadImage(target)
       else onRemoveImages([target]) // 删除：走 Workspace 的二次确认
     },
-    [menu, onAddReferences, onRemoveImages, downloadImage]
+    [menu, onAddReferences, onRemoveImages, downloadImage, onRegenerate]
   )
 
   /**
@@ -639,7 +722,9 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         ref={containerRef}
         className="canvas-stage relative h-full w-full overflow-hidden touch-none"
         onContextMenu={onStageContextMenu}
-        style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grab' : undefined }}
+        /* 抓手光标是「这里可以直接拖」的天然提示；手势说明挂 title（画布上没有别的手势说明位） */
+        title="左键拖拽平移画布 · Shift+左键拖拽框选 · 滚轮缩放 · 空格/Ctrl+左键也可平移"
+        style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grabbing' : 'grab' }}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}
         onPointerUp={onBackgroundPointerUp}
@@ -669,6 +754,48 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
           className="absolute left-0 top-0"
           style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`, transformOrigin: '0 0' }}
         >
+          {/* 溯源层（UI 文案；代码里叫 lineage）：与世界层同一 transform ⇒ 线与框粘在卡片上，缩放平移都不用重算。
+              只读（pointer-events: none），在卡片**之前**渲染 ⇒ 永远在卡片之下。
+              ⚠️ 尺寸必须显式非零：世界层没有宽高、子元素全是绝对定位 ⇒ 父盒实际 0×0，
+              而 SVG 宽或高为 0 时按规范**禁用渲染**（整层会不可见）。1×1 + overflow: visible
+              足以画出任意坐标（含负坐标）的图元，不需要量世界的包围盒。
+              ⚠️ 线宽用 1.5 / k 而不是 vector-effect="non-scaling-stroke"：缩放来自祖先的
+              CSS transform，non-scaling-stroke 只抵消「元素 → SVG 视口」那段 CTM，抵不掉它。
+              分组框标签的字号与世界偏移**不除以 k**，跟卡片 caption 一样随缩放变化（既有口径）。 */}
+          {lineageLayer && (
+            <svg
+              aria-hidden
+              data-testid="canvas-lineage"
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: 1,
+                height: 1,
+                overflow: 'visible',
+                pointerEvents: 'none',
+              }}
+            >
+              {lineageLayer.groups.map((g) => (
+                <g key={g.key}>
+                  <rect
+                    x={g.rect.x}
+                    y={g.rect.y}
+                    width={g.rect.w}
+                    height={g.rect.h}
+                    rx={12}
+                    style={{ fill: 'none', stroke: 'var(--border)', strokeDasharray: '6 6', strokeWidth: 1 / viewport.k }}
+                  />
+                  <text x={g.rect.x + 8} y={g.rect.y - 6} style={{ fill: 'var(--muted)', fontSize: 12 }}>
+                    {g.label}
+                  </text>
+                </g>
+              ))}
+              {lineageLayer.edges.map((e) => (
+                <path key={e.key} d={e.d} style={{ fill: 'none', stroke: 'var(--border)', strokeWidth: 1.5 / viewport.k }} />
+              ))}
+            </svg>
+          )}
           {images.map((img) => {
             const p = placements[img.id]
             if (!p) return null
@@ -725,6 +852,15 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
             </Button>
             <Button size="sm" variant="secondary" aria-label="加入参考图，并把编号写进提示词" onPress={() => onAddReferences([selectedImages[0]])}>
               @ 引用
+            </Button>
+            {/* 与「@ 引用」的区别：这是**替换**画布引用并把该轮原始提示词填回表单（不是追加） */}
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label="按这张图那一轮的提示词重新填好表单，并把它设为参考图"
+              onPress={() => onRegenerate(selectedImages[0])}
+            >
+              再生成
             </Button>
             <Button
               isIconOnly
@@ -861,6 +997,18 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         </div>
       </div>
 
+      {/* 引导：溯源打开、且当前摆放与来源明显不一致时给一条**可点的**提示（点它就整理）。
+          不做自动重排：切视图开关就改动用户手工摆的位置是惊吓式行为。
+          ⚠️ 放**左下角**而不是顶部：实测画布上方的横幅会盖住画布顶部那条带
+          （连 pill 一起盖），浮层放那儿会点不到。 */}
+      {showTreeHint && (
+        <div className="pointer-events-none absolute bottom-3 left-3">
+          <Button size="sm" variant="secondary" className="pointer-events-auto" data-canvas-no-zoom onPress={arrangeByLineage}>
+            布局与来源不一致 · 按来源整理
+          </Button>
+        </div>
+      )}
+
       {/* 小地图：默认关，开关在右下视图簇。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
           故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现 */}
       {miniMapOpen && stageSize.w > 0 && (
@@ -879,7 +1027,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         onAction={onMenuAction}
       />
 
-      {/* 右下视图控件：缩放 + 小地图开关 + 背景图案三态（都是「视图」而非「内容」，故同簇）。
+      {/* 右下视图控件：缩放 + 小地图开关 + 溯源开关 + 背景图案三态（都是「视图」而非「内容」，故同簇）。
           窄屏这一簇会超过画布宽度，而画布是 overflow-hidden（会被裁掉而不是出滚动条）→
           必须允许换行并限制最大宽度，否则左侧按钮在手机上点不到 */}
       <Toolbar className="canvas-zoombar max-w-[calc(100%-24px)] flex-wrap justify-end" aria-label="画布视图" data-canvas-no-zoom>
@@ -917,6 +1065,34 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
         >
           小地图
         </Button>
+        <span className="canvas-tool-divider" />
+        {/* 溯源层开关（UI 文案；代码里叫 lineage）：**不加 `hidden lg:inline-flex`** —— 它不是 240px 的面板，窄屏也能用
+            （与小地图开关的区别就在这：那个开关必须与组件自身的断点对齐） */}
+        <Button
+          size="sm"
+          variant={lineageOpen ? 'primary' : 'ghost'}
+          aria-label="溯源"
+          aria-pressed={lineageOpen}
+          onPress={() => setLineageOpen((v) => !v)}
+        >
+          溯源
+        </Button>
+        {/* 按来源整理：只在溯源打开时出现（不打开溯源就没必要谈「按来源排」）。
+            它**不自动触发** —— 开关只管显示线，重排必须由用户点（切视图开关就偷改摆放是惊吓式行为） */}
+        {lineageOpen && (
+          <>
+            <span className="canvas-tool-divider" />
+            <Button
+              size="sm"
+              variant={showTreeHint ? 'primary' : 'ghost'}
+              aria-label="按来源整理"
+              isDisabled={treePlan.length === 0}
+              onPress={arrangeByLineage}
+            >
+              按来源整理
+            </Button>
+          </>
+        )}
         <span className="canvas-tool-divider" />
         <ToggleButtonGroup
           aria-label="网格样式"

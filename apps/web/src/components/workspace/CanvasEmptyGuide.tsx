@@ -17,7 +17,7 @@ interface Props {
 const STEPS: Array<{ title: string; desc: string }> = [
   { title: '写提示词', desc: '在右侧表单里描述你要生成的图片；张数与尺寸也在那里选。' },
   { title: '可选：上传参考图', desc: '想让主体在整组图里保持一致就上传参考图。上传后只暂存，生成时才进画布。' },
-  { title: '点「生成」', desc: '出图后会自动落在画布上，可以拖动、缩放、框选，也可以导出布局。' },
+  { title: '点「生成」', desc: '出图后会自动落在画布上，可以拖动、缩放，Shift+拖拽框选，也可以导出布局。' },
 ]
 
 function CanvasEmptyGuide({ onSelectTemplate }: Props) {
