@@ -51,7 +51,7 @@ export function boundsOf(rects: Rect[]): Rect | null {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
-/** 视口裁剪：只保留与可见矩形相交的卡片（P1 不虚拟化，此处为将来留余地） */
+/** 视口裁剪：只保留与可见矩形相交的卡片（暂不虚拟化，此处为将来留余地） */
 export function visibleRects(rects: Rect[], viewportRect: Rect): Rect[] {
   return rects.filter((r) => rectsIntersect(r, viewportRect))
 }

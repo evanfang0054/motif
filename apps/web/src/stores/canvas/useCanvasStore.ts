@@ -64,7 +64,7 @@ export interface CanvasState {
   selected: string[]
   /** 'cloud' = 云端已同步；'local' = 离线草稿（画布上提示"本地草稿"） */
   source: 'cloud' | 'local'
-  /** 撤销栈（非响应式；放 store 里以便 P2 的工具栏直接复用） */
+  /** 撤销栈（非响应式；放 store 里以便工具栏直接复用） */
   history: CanvasHistory<Placements>
   /** 待提交的位置（由 CanvasStage 防抖提交；store 只记录） */
   dirty: string[]

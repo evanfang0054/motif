@@ -14,7 +14,7 @@ function Landing() {
   const [authOpen, setAuthOpen] = useState(false)
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
-  // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」（spec §3.1）
+  // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const mode = params.get('mode')
@@ -52,7 +52,7 @@ function Landing() {
           <BrandMark />
           Motif
         </Link>
-        {/* 文案映射（契约 A2）：开始体验 → 立即生成；导航锚点链接已按用户裁决移除（2026-09-20） */}
+        {/* 文案映射：开始体验 → 立即生成；导航锚点链接已按用户裁决移除（2026-09-20） */}
         <Button variant="primary" onPress={() => openAuth('login')}>立即生成</Button>
       </header>
 
@@ -81,7 +81,7 @@ function Landing() {
                 生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
               </p>
               <div className="lp-actions">
-                {/* 文案映射（契约 A2）：立即开始 → 开始生成 */}
+                {/* 文案映射：立即开始 → 开始生成 */}
                 <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
                 <Button
                   variant="outline"

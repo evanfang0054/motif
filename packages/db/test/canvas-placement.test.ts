@@ -34,7 +34,7 @@ function columns(dbPath: string, table: string): string[] {
   return cols
 }
 
-describe('迁移安全（L3-2-G1-A1/A2、L3-2-G2-A1）', () => {
+describe('迁移安全', () => {
   it('canvas_images 同时存在原图尺寸列与画布显示尺寸列，且新列名不是 width/height', () => {
     const cols = columns(join(dir, 't.db'), 'canvas_images')
     // 原图尺寸列（既有，表示原图像素尺寸）
@@ -115,10 +115,10 @@ describe('迁移安全（L3-2-G1-A1/A2、L3-2-G2-A1）', () => {
   })
 })
 
-/** 存储层断言。⚠️ 标签里点名的是**服务端可观测的那一半**：
- * L2-1-G1-A3 的完整断言是「客户端收到 rejected 后用服务端值覆盖本地并提示」，
- * 客户端侧由 T7/T8 覆盖，这里只钉住它依赖的前提（服务端确实回了 rejected）。 */
-describe('图片级 LWW（L2-1-G1-A1/A2 + L2-1-G1-A3 的服务端前提）', () => {
+/** 存储层断言。⚠️ 这里钉的是**服务端可观测的那一半**：
+ * 「客户端收到 rejected 后用服务端值覆盖本地并提示」这条完整断言里，
+ * 客户端侧由画布侧的测试覆盖，这里只钉住它依赖的前提（服务端确实回了 rejected）。 */
+describe('图片级 LWW', () => {
   function makeImage(): string {
     return store.insertCanvasImage({
       topicId, userId, messageId: null, origin: 'generated', name: '图片 1',
@@ -159,7 +159,7 @@ describe('图片级 LWW（L2-1-G1-A1/A2 + L2-1-G1-A3 的服务端前提）', () 
   })
 })
 
-describe('旧库补位（L3-2-G1-A3、L2-2-G1-A3）', () => {
+describe('旧库补位', () => {
   it('updated_at 为空的行按 serial 分配位置；连续两次调用位置不变（幂等）', () => {
     const a = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
     const b = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'b', imageKey: 'kb', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
@@ -201,7 +201,7 @@ describe('旧库补位（L3-2-G1-A3、L2-2-G1-A3）', () => {
   })
 })
 
-describe('insertCanvasImage 带 placement（L3-2-G2-A2）', () => {
+describe('insertCanvasImage 带 placement', () => {
   it('位置列与图片行在同一条 INSERT 落库（原子），updatedAt 非空故不参与补位', () => {
     const img = store.insertCanvasImage({
       topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka',

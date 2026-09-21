@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import { Button, Popover } from '@heroui/react'
 import { Ellipsis, ListCheck, Plus, Shield } from '@gravity-ui/icons'
@@ -30,10 +29,12 @@ function TopNav({ user, topicTitle, onOpenTasks, onNewTask, onOpenBilling, onOpe
   return (
     <header className="ws-nav">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Link href="/" className="lp-brand" onClick={(e) => e.preventDefault()}>
+        {/* 品牌标识（不可点）：已登录时 `/` 渲染的就是工作台本身，做成链接等于整页刷新，
+            故与落地页页脚的品牌同构，只做展示 */}
+        <span className="lp-brand">
           <BrandMark size={26} />
           Motif
-        </Link>
+        </span>
         {/* 图标化口径（2026-09-21 裁决）：次要入口收成图标 + Tooltip；主路径与首次关键操作留文字。
             任务列表 / 新建任务 / 管理后台属次要入口 → 图标；充值（主操作）、用户名、退出留文字。 */}
         <IconButton variant="secondary" label="任务" onPress={onOpenTasks}>

@@ -19,6 +19,7 @@
     "*.ts",
     "next-env.d.ts",
     "src",
+    "test",
     ".next/types/**/*.ts"
   ],
   "exclude": [

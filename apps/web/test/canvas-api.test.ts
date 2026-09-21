@@ -36,7 +36,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('GET /api/topics/[id]/canvas（L3-1-G1-A1）', () => {
+describe('GET /api/topics/[id]/canvas', () => {
   it('未登录 401', async () => {
     expect((await GET(req(undefined), params(topicId))).status).toBe(401)
   })
@@ -53,10 +53,10 @@ describe('GET /api/topics/[id]/canvas（L3-1-G1-A1）', () => {
   })
 })
 
-/** ⚠️ L3-1-G1-A3 在 spec 里的原话是「非法补丁整批回滚」。这里断言的是**可观测等价物**：
+/** ⚠️ 「非法补丁整批回滚」的可观测等价物：
  * 400 + 零写入（SQLite 单事务下「整批不落库」与「回滚」对外不可区分），
- * 故标签写 A3 指的是该断言的接口侧落点。 */
-describe('PATCH /api/topics/[id]/canvas（L3-1-G1-A2/A3）', () => {
+ * 故这里钉的是该断言的接口侧落点。 */
+describe('PATCH /api/topics/[id]/canvas', () => {
   it('未登录 401', async () => {
     expect((await PATCH(req(undefined, { images: { upsert: [] } }), params(topicId))).status).toBe(401)
   })
@@ -139,13 +139,13 @@ describe('PATCH /api/topics/[id]/canvas（L3-1-G1-A2/A3）', () => {
     expect(body.images.every((p) => Number.isFinite(p.canvasX) && Number.isFinite(p.canvasY))).toBe(true)
   })
 
-  it('补丁里带非空 delete 时 400（P1 删除走 DELETE /api/canvas-images/[id]，不静默丢弃）', async () => {
+  it('补丁里带非空 delete 时 400（删除走 DELETE /api/canvas-images/[id]，不静默丢弃）', async () => {
     const res = await PATCH(req(token, { images: { delete: ['cimg_a'] } }), params(topicId))
     expect(res.status).toBe(400)
   })
 })
 
-describe('旧库补位挂在 GET 上（L3-2-G1-A3）', () => {
+describe('旧库补位挂在 GET 上', () => {
   it('首次 GET 补位；连续两次 GET 位置不变', async () => {
     store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
     store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'b', imageKey: 'kb', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })

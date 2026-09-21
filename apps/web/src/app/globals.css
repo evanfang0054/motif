@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@heroui/styles"; /* 顺序必须：tailwindcss 在前（heroui-migration P1 原子变更） */
+@import "@heroui/styles"; /* 顺序必须：tailwindcss 在前 */
 
 /*
  * Motif 设计令牌 —— 亮色为基准（默认），暗色由 html[data-theme="dark"] 控制
@@ -109,14 +109,14 @@ html[data-theme="dark"] {
 }
 
 /*
- * HeroUI 令牌桥接（spec §5 · heroui-migration P1）：
+ * HeroUI 令牌桥接（把 DESIGN.md 的语义色映射到 HeroUI 的组件变量）：
  * @heroui/styles 的 -hover/-soft/-soft-foreground 家族均由基令牌 color-mix 派生，
  * 因此这里只覆盖基令牌；同名项目令牌（--background/--foreground/--danger 等定义于上方）
  * 按「后定义者胜」级联自动成为 HeroUI 组件取值（正向桥接）。
  * --accent 是唯一无项目对应的品牌语义色：HeroUI 默认蓝紫，改接珊瑚。
  * 亮暗同值 #cc785c：暗下对最深表面 5.47:1 已达标，提亮反而降低珊瑚底奶白文字对比。
  * --danger 保持双角色：按钮底色沿用上方 --danger（白字对比更好）；
- * 表面危险文字角色新增 --danger-quiet（暗色提亮至主要表面 ≥4.5:1，P3 admin 消费，关 plans 待办#1）。
+ * 表面危险文字角色新增 --danger-quiet（暗色提亮至主要表面 ≥4.5:1，管理后台危险区消费）。
  */
 :root,
 [data-theme="light"] {
@@ -131,7 +131,7 @@ html[data-theme="dark"] {
 }
 
 /*
- * 表单控件令牌桥接（P3 复查补充）：HeroUI 输入件的静默/悬停/聚焦底色与边框
+ * 表单控件令牌桥接（补充）：HeroUI 输入件的静默/悬停/聚焦底色与边框
  * 默认走中性白黑系，与暖米面板存在色调落差（用户反馈：聚焦前后底色不一致）。
  * 统一桥接到项目表面系；聚焦边框 = 珊瑚（DESIGN.md text-input-focused 规范）。
  */
@@ -252,7 +252,7 @@ body {
   font-size: 16px;
 }
 
-/* 品牌链接点击目标放大（负 margin 抵消布局位移，全端 ≥40px） */
+/* 品牌点击目标放大（负 margin 抵消布局位移，全端 ≥40px） */
 .lp-brand {
   padding: 8px 10px;
   margin: -8px -10px;
@@ -272,7 +272,7 @@ body {
 
 .lp-band-showcase {
   padding: 30px 0 64px;
-  background: #ffffff; /* 亮色亮白：实测 --surface-primary 与页面底同为 #faf9f5，直接用无区分度（spec §3.3 实测注） */
+  background: #ffffff; /* 亮色亮白：实测 --surface-primary 与页面底同为 #faf9f5，直接用无区分度 */
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
@@ -316,7 +316,7 @@ html[data-theme="dark"] .lp-band-showcase {
   align-items: center;
 }
 
-/* 暗色主题提亮一档：避免与页面 #181715 融片（契约 C3 计算断言） */
+/* 暗色主题提亮一档：避免与页面 #181715 融片 */
 html[data-theme="dark"] .lp-hero {
   --lp-hero-bg: #221b15;
 }
@@ -442,7 +442,7 @@ html[data-theme="dark"] .lp-hero {
   align-items: center;
 }
 
-/* 移动 CTA 纵向堆叠全宽：必须位于基础 .lp-actions 之后（unlayered 同 specificity 源顺序后者胜，评审 B3）。
+/* 移动 CTA 纵向堆叠全宽：必须位于基础 .lp-actions 之后（unlayered 同 specificity 源顺序后者胜）。
    子项 width:100% 用于顶掉 HeroUI Button 自带的 w-fit 显式宽度——stretch 对显式宽度无效 */
 @media (max-width: 639px) {
   .lp-actions {
@@ -498,7 +498,7 @@ html[data-theme="dark"] .lp-hero {
 
 .lp-demo-card {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: var(--surface-secondary); /* 带内可辨：暗色下与 showcase 带拉开一档（spec §3.5 连带修正） */
+  background: var(--surface-secondary); /* 带内可辨：暗色下与 showcase 带拉开一档 */
   border-radius: 18px;
   padding: 20px;
 }
@@ -680,49 +680,6 @@ html[data-theme="dark"] .lp-hero {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-
-
-
-
-/* 模板画廊 */
-
-.tpl-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 14px;
-  padding: 8px 24px 32px;
-}
-
-
-
-
-.tpl-card-body {
-  padding: 12px 14px 14px;
-}
-
-.tpl-card-title {
-  font-size: 14.5px;
-  font-weight: 700;
-}
-
-.tpl-card-desc {
-  margin-top: 6px;
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.tpl-card-meta {
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 

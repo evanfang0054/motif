@@ -6,7 +6,7 @@
  * 抽出来的原因：六个列表页在「加载中」与「空数据」两件事上必须表现一致 ——
  * 否则加载窗口里会显示「共 0 个 /（无匹配的…）」，与「真的没有数据」无法区分，会误导运营。
  *
- * P3 起双轨过渡：HeroUI Table 形态（ListLoadingRows / ListEmptyContent）供已迁移页使用；
+ * 双轨过渡：HeroUI Table 形态（ListLoadingRows / ListEmptyContent）供已迁移页使用；
  * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
@@ -38,7 +38,7 @@ export function ListEmptyContent({ text }: { text: string }) {
   )
 }
 
-/** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知（L3-3-G1-A3） */
+/** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知 */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
   return (
     <span className="admin-muted" role="status">

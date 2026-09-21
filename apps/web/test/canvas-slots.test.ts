@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { allocateSlots, displaySize, placementRect, rectToPlacement, viewportOrigin, SLOT_COLS, SLOT_STEP, SLOT_W } from '@/lib/canvas/placement'
 import { rectsIntersect, visibleRects } from '@/lib/canvas/geometry'
 
-describe('空位槽分配（L2-2-G1-A1）', () => {
+describe('空位槽分配', () => {
   it('同一视口连续分配 N=12 个槽位，两两矩形不相交', () => {
     const occupied: Array<{ x: number; y: number; w: number; h: number }> = []
     const origin = { x: 0, y: 0 }
@@ -47,7 +47,7 @@ describe('空位槽分配（L2-2-G1-A1）', () => {
     for (let i = 0; i < slots.length; i += 1) {
       for (let j = i + 1; j < slots.length; j += 1) expect(rectsIntersect(slots[i], slots[j])).toBe(false)
     }
-    // 视口裁剪：只返回与可见矩形相交的（P1 不虚拟化，但为将来留余地）
+    // 视口裁剪：只返回与可见矩形相交的（暂不虚拟化，但为将来留余地）
     const visible = visibleRects(slots, { x: 0, y: 0, w: 600, h: 600 })
     expect(visible.length).toBeGreaterThan(0)
     expect(visible.length).toBeLessThan(100)
@@ -65,7 +65,7 @@ describe('空位槽分配（L2-2-G1-A1）', () => {
   })
 })
 
-describe('显示尺寸（L2-2-G1-A2）', () => {
+describe('显示尺寸', () => {
   it('宽高比与原图宽高比之差 ≤ 1%（不拉伸）', () => {
     for (const [w, h] of [[1024, 768], [768, 1024], [1024, 1024], [1920, 1080], [300, 1200]] as const) {
       const size = displaySize(w, h)

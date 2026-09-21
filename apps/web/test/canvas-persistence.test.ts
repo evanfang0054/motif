@@ -19,7 +19,7 @@ const p = (id: string, updatedAt = '2026-09-20T10:00:00.000Z') => ({
   id, canvasX: 1, canvasY: 2, canvasWidth: 240, canvasHeight: 240, updatedAt,
 })
 
-describe('防抖合并（L3-1-G2-A1）', () => {
+describe('防抖合并', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
@@ -66,7 +66,7 @@ describe('防抖合并（L3-1-G2-A1）', () => {
   })
 })
 
-describe('结构变更立即提交（L3-1-G2-A2）', () => {
+describe('结构变更立即提交', () => {
   it('不参与防抖，立刻发出', async () => {
     const driver = fakeDriver()
     const cp = createCanvasPersistence(driver, 400)

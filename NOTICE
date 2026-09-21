@@ -1,0 +1,24 @@
+Motif
+Copyright (c) 2026 Evan Fang (evanfang0054)
+
+本产品在实现中参考或使用了以下第三方作品：
+
+1. 画布交互逻辑的参考实现
+   infinite-canvas — https://github.com/basketikun/infinite-canvas
+   MIT License, Copyright (c) 2026 basketikun
+   Motif 画布的交互逻辑（视口变换、拖拽、框选、空位槽分配、撤销重做、小地图、
+   导入导出等）在实现时参考了该项目，并按 Motif 的技术栈重新实现，未逐字拷贝其源码。
+   此处致谢出于自愿，不构成 MIT 许可证的义务。
+
+2. 提示词来源
+   Motif 的提示词库在服务端抓取并缓存以下公开仓库的提示词索引（JSON），不修改其内容：
+   - DavidWu GPT Image 2 — https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts
+   - Freestylefly GPT Image 2 — https://github.com/freestylefly/awesome-gpt-image-2
+   - Awesome GPT Image — https://github.com/ZeroLu/awesome-gpt-image
+   - Awesome GPT-4o — https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts
+   - YouMind GPT Image 2 — https://github.com/YouMind-OpenLab/awesome-gpt-image-2
+   提示词的著作权归各原作者所有；Motif 仅提供检索与缓存，并保留其来源链接。
+
+3. 第三方依赖
+   Next.js、React、HeroUI、better-sqlite3、sharp 等依赖的许可证随其包分发，
+   见 package.json 与 node_modules 中各自的 LICENSE 文件。

@@ -77,7 +77,7 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
   const emailRef = useRef<HTMLInputElement>(null)
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（复用 P2 dialogs GDD L4-2-G1-A1 模式）
+  // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（与通用弹窗外壳同一套焦点还原做法）
   const restoreRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null

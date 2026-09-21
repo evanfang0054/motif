@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * 全站唯一 Toast 出口（heroui-migration GDD L3-2）。
- * P3–P6 一律经此触发，禁止直接使用 @heroui/react 的 toast 底层 API。
- * 文案必须由调用方字面量直传——出口层不得改写/拼接/翻译（契约 D2）。
+ * 全站唯一 Toast 出口。
+ * 全站一律经此触发，禁止直接使用 @heroui/react 的 toast 底层 API。
+ * 文案必须由调用方字面量直传——出口层不得改写/拼接/翻译。
  */
 import { toast } from '@heroui/react'
 
