@@ -20,7 +20,7 @@ import { anchorRender } from '@/components/ui/anchor-button'
 import { boundsOf, hitTest, toWorld } from '@/lib/canvas/geometry'
 import { backgroundGesture } from '@/lib/canvas/gesture'
 import { gridStyle } from '@/lib/canvas/grid'
-import { zipEntriesFor, zipFileName } from '@/lib/canvas/download'
+import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
 import { allocateSlots, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
@@ -212,7 +212,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   //   `temporaryTool = ctrlKey || isSpacePressed`
   //   `shouldPan = button === 1 || (button === 0 && activeTool === 'pan' && isBackgroundClick)`
   // 即：**中键、或「空格/Ctrl + 左键」= 平移视图；普通左键拖拽 = 框选**。
-  // 这样 L4-2-G1-A1（空白处拖拽平移）与 L4-2-G1-A2（框选多选）同时成立，
+  // 这样「空格/Ctrl + 左键拖拽平移」与「普通左键拖拽框选」同时成立，
   // 且既有 CanvasBoard 的「左键框选」语义不被改变。
   const [spaceHeld, setSpaceHeld] = useState(false)
 
@@ -389,7 +389,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
     }
   }, [menu])
 
-  // ---------- 键盘：Esc 清空 / Ctrl+Z / Ctrl+Shift+Z ----------
+  // ---------- 键盘：Esc 清空 / Ctrl+Z / Ctrl+Shift+Z / Ctrl+A 全选 / Delete 删除 ----------
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -458,6 +458,12 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
   }, [])
 
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
+
+  /**
+   * 摆放矩形列表：`Object.values(placements)` 每次渲染都返回**新数组**，直接当 prop 传会击穿
+   * `MiniMap` 里 `useMemo(..., [rects])` 的记忆（每帧重算包围盒 + 比例 + 全部方块）。
+   */
+  const rects = useMemo(() => Object.values(placements), [placements])
 
   /** 当前摆放（导出与导入比对共用）：store 里是稀疏表，这里转成 placement 列表 */
   const currentPlacements = useCallback((): CanvasImagePlacement[] => {
@@ -551,11 +557,16 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
     [onExportArchive]
   )
 
-  /** 单图下载：与批量下载同源手法（造一个 `<a download>` 点一下），不另引依赖 */
+  /**
+   * 单图下载：与批量下载同源手法（造一个 `<a download>` 点一下），不另引依赖。
+   *
+   * 文件名必须走 `zipEntryName` —— 生成的图片 `name` 只有「图片 N」没有后缀，
+   * 直接用 `img.name` 会下到一个无后缀文件、双击打不开（批量下载早就补了后缀，单图漏了）。
+   */
   const downloadImage = useCallback((img: CanvasImage) => {
     const a = document.createElement('a')
     a.href = img.src
-    a.download = img.name
+    a.download = zipEntryName(img)
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -800,55 +811,61 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
             </>
           )}
         </div>
-        {/* 整理布局：沿用既有入口。语义从「重置到网格」升级为「把所有图重排进空位槽并落库」 */}
-        <Button
-          variant="secondary"
-          className="pointer-events-auto"
-          data-canvas-no-zoom
-          onPress={() => {
-            const all = images.map((i) => i.id)
-            useCanvasStore.getState().beginGesture('arrange')
-            const slots = allocateSlots(
-              [],
-              images.map((i) => displaySize(i.width, i.height)),
-              viewportOrigin(viewport)
-            )
-            useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
-            useCanvasStore.getState().endGesture()
-          }}
-        >
-          整理布局
-        </Button>
-        {/* 画布归档（导出/导入）。⚠️ 外层是 pointer-events-none，新控件必须显式 pointer-events-auto
-            + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动） */}
-        <Dropdown>
-          <Dropdown.Trigger>
+        {/* 右侧两个入口必须包成**同一个 flex 项**：容器是 `justify-between`，三个直接子项会让
+            中间那个（「整理布局」）被推到画布正中，与紧邻的归档菜单拉开半屏 */}
+        <div className="pointer-events-none flex items-center gap-2">
+          {/* 整理布局：沿用既有入口。语义从「重置到网格」升级为「把所有图重排进空位槽并落库」 */}
+          <Button
+            variant="secondary"
+            className="pointer-events-auto"
+            data-canvas-no-zoom
+            onPress={() => {
+              const all = images.map((i) => i.id)
+              useCanvasStore.getState().beginGesture('arrange')
+              const slots = allocateSlots(
+                [],
+                images.map((i) => displaySize(i.width, i.height)),
+                viewportOrigin(viewport)
+              )
+              useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
+              useCanvasStore.getState().endGesture()
+            }}
+          >
+            整理布局
+          </Button>
+          {/* 画布归档（导出/导入）。⚠️ 外层是 pointer-events-none，新控件必须显式 pointer-events-auto
+              + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动）。
+              ⚠️ 触发件用 Dropdown 的**直接子元素**（官方 default demo 的写法）：`Dropdown.Trigger`
+              内部会再渲染一个 HeroUI Button，写成 `<Trigger><Button/></Trigger>` 会得到 `<button>` 套
+              `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效） */}
+          <Dropdown>
             <Button variant="secondary" className="pointer-events-auto" data-canvas-no-zoom isDisabled={zipping || importing}>
               {zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
             </Button>
-          </Dropdown.Trigger>
-          <Dropdown.Popover placement="bottom end">
-            <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
-              <Dropdown.Item id="export" textValue="导出画布（zip）">
-                <Label>导出画布（zip）</Label>
-              </Dropdown.Item>
-              <Dropdown.Item id="import" textValue="导入画布（zip）">
-                <Label>导入画布（zip）</Label>
-              </Dropdown.Item>
-              {/* 说明用禁用项承载：菜单里只允许 menuitem/group/separator，裸 Label 不是合法菜单内容 */}
-              <Dropdown.Item id="import-hint" textValue="导入只恢复布局与视口，不会把图片导进来" isDisabled>
-                <Label>导入只恢复布局与视口，不会把图片导进来</Label>
-              </Dropdown.Item>
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-        <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
+            <Dropdown.Popover placement="bottom end">
+              <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
+                <Dropdown.Item id="export" textValue="导出画布（zip）">
+                  <Label>导出画布（zip）</Label>
+                </Dropdown.Item>
+                <Dropdown.Item id="import" textValue="导入画布（zip）">
+                  <Label>导入画布（zip）</Label>
+                </Dropdown.Item>
+                {/* 说明用禁用项承载：菜单里只允许 menuitem/group/separator，裸 Label 不是合法菜单内容 */}
+                <Dropdown.Item id="import-hint" textValue="导入只恢复布局与视口，不会把图片导进来" isDisabled>
+                  <Label>导入只恢复布局与视口，不会把图片导进来</Label>
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+          <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
+        </div>
       </div>
 
-      {/* 小地图：默认关，开关在右下视图簇；窄屏不渲染（240px 宽在手机上占掉近半屏） */}
+      {/* 小地图：默认关，开关在右下视图簇。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
+          故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap
-          rects={Object.values(placements)}
+          rects={rects}
           viewport={viewport}
           size={stageSize}
           onJump={(v) => useCanvasStore.getState().setViewport(v)}
@@ -880,7 +897,7 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
           onPress={() => {
             const el = containerRef.current
             if (!el) return
-            const rs = Object.values(placements)
+            const rs = rects
             const b = boundsOf(rs)
             if (!b) return
             useCanvasStore.getState().setViewport(fitView(b, el.clientWidth, el.clientHeight))
@@ -894,6 +911,8 @@ function CanvasStage({ topicId, images, onRemoveImages, onAddReferences }: Props
           variant={miniMapOpen ? 'primary' : 'ghost'}
           aria-label="小地图"
           aria-pressed={miniMapOpen}
+          /* hidden lg:inline-flex：与 MiniMap 自身的 `hidden lg:block` 对齐（见上方注释） */
+          className="hidden lg:inline-flex"
           onPress={() => setMiniMapOpen((v) => !v)}
         >
           小地图

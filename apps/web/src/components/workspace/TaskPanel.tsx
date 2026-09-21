@@ -32,7 +32,7 @@ interface Props {
   onRemoveStaged: (id: string) => void
   /** 取消引用画布图（只摘掉参考关系，画布里的图仍在） */
   onRemoveCanvasReference: (id: string) => void
-  /** 套用模板：一次填好提示词、张数与尺寸（模板入口按 D-2 收敛到表单侧） */
+  /** 套用模板：一次填好提示词、张数与尺寸（模板入口收敛到表单侧，空态只留一个快捷入口） */
   onSelectTemplate: (key: string) => void
   onGenerate: () => void
   onCancel: () => void

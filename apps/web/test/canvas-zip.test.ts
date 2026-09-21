@@ -216,4 +216,13 @@ describe('readZip（库的读侧，与写侧对称）', () => {
     dv.setUint32(central + 42, zip.length + 500, true) // localOffset 指向缓冲区之外
     expect(() => readZipLib(zip)).toThrow(/条目头部损坏/)
   })
+
+  // 数据区越界是**静默**损坏：`buf.slice` 不报错、只截短，用户拿到的是打不开的图 —— 必须显式拦
+  it('条目数据区越界：明确报错而不是静默截短', () => {
+    const zip = buildZip([{ name: 'a.txt', data: bytes('hello') }])
+    const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+    const central = dv.getUint32(zip.length - 22 + 16, true)
+    dv.setUint32(central + 20, 1_000_000, true) // compressedSize 远超缓冲区
+    expect(() => readZipLib(zip)).toThrow(/条目数据越界/)
+  })
 })

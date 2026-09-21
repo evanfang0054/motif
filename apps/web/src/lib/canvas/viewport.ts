@@ -96,7 +96,9 @@ export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: 
   const cx = (minX + maxX) / 2
   const above = worldToScreen(cx, minY, v)
   const top = above.y - TOOLBAR_LIFT
-  // 贴顶（首行卡片 y=0 时 top 会为负）→ 改为锚到包围盒**下方**，否则会被画布 `overflow-hidden` 裁掉上沿
+  // 贴顶（首行卡片 y=0 时 top 会为负）→ 改为锚到包围盒**下方**，否则会被画布 `overflow-hidden` 裁掉上沿。
+  // 范围说明：只处理**上沿**越界，下沿不做对称翻转 —— 工具栏锚在卡片上方，卡片贴底时它正好落在
+  // 卡片与视口底边之间，本就不会被裁；反过来翻到上方只会盖住卡片内容。
   if (top >= 0) return { left: above.x, top }
   const below = worldToScreen(cx, maxY, v)
   return { left: below.x, top: below.y + TOOLBAR_LIFT }

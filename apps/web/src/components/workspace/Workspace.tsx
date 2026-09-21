@@ -100,6 +100,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
     async (id: string): Promise<TopicDetail> => {
       const d = await api.topicDetail(id)
       applyDetail(d)
+      // 成功即复位失败态：长轮询恢复后不必等用户点「重试」
+      setDetailFailed(false)
       return d
     },
     [applyDetail]
@@ -130,6 +132,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
   useEffect(() => {
     if (!activeId) {
       setDetail(null)
+      // 任务被删光后 activeId 变 null：不清失败位就会落进失败态，而那里没有可重试的 id（死按钮）
+      setDetailFailed(false)
       return
     }
     void refreshDetail(activeId)
@@ -470,12 +474,28 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
       <div className="ws-grid">
         <section className="ws-canvas">
-          {/* 三态：等列表/等详情 → Spinner；有图 → 画布；无图（含新手一个任务都没有）→ 新手引导。
-              详情拉取失败时不再一直转圈（长轮询会继续重试），落引导保证界面可用。
-              模板入口已收敛到右侧表单，空态不再放模板画廊。 */}
+          {/* 四态：等列表/等详情 → Spinner；详情拉取失败 → 失败态 + 重试；有图 → 画布；
+              无图（含新手一个任务都没有）→ 新手引导。
+              ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
+              说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
+              注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
+              要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本轮范围。
+              模板入口已收敛到右侧表单。 */}
           {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
             <div className="flex h-full items-center justify-center">
               <Spinner />
+            </div>
+          ) : detail === null && detailFailed ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3">
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
+              <Button
+                variant="secondary"
+                onPress={() => {
+                  if (activeId) void refreshDetail(activeId).then(() => setDetailFailed(false)).catch(() => {})
+                }}
+              >
+                重试
+              </Button>
             </div>
           ) : detail && detail.canvasImages.length > 0 ? (
             <CanvasStage

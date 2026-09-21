@@ -1,7 +1,7 @@
 /**
  * 极简 ZIP 写入器（仅 store 存储、不压缩）。
  *
- * 为什么手写：契约的依赖白名单只允许新增 `zustand`，仓库没有 fflate/jszip。
+ * 为什么手写：依赖白名单只允许新增 `zustand`，仓库没有 fflate/jszip。
  * 「批量下载」需要把 N 张图合成一个文件，而 store 模式（method 0）不需要任何压缩算法 ——
  * 只要 CRC32 + 三个头部结构，约 80 行即可，且能用系统 `unzip` 独立验证。
  *
@@ -185,6 +185,9 @@ export function readZip(buf: Uint8Array): Map<string, Uint8Array> {
     if (view.getUint32(localOffset, true) !== SIG_LOCAL) throw new Error('读取失败：条目头部损坏。')
     // 数据起点要按 local header 自己的名字/扩展长度算（与中央目录的长度可能不同）
     const dataStart = localOffset + 30 + view.getUint16(localOffset + 26, true) + view.getUint16(localOffset + 28, true)
+    // 数据区也必须落在缓冲内：`buf.slice` 越界时**不报错**，只会静默截短 —— 解出来是一张坏图，
+    // 比抛错难查得多（用户看到的是「导入成功但图打不开」）
+    if (dataStart + compressedSize > buf.length) throw new Error('读取失败：条目数据越界。')
     files.set(name, buf.slice(dataStart, dataStart + compressedSize))
     p += 46 + nameLen + extraLen + commentLen
   }
