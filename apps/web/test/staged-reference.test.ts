@@ -86,5 +86,23 @@ describe('暂存参考图（上传不进画布）', () => {
       })
     ).rejects.toThrow(ServiceError)
     expect(store.getUserById(userId)!.credits).toBe(before)
+
+    // 光看余额不够：余额相等也可能是「压根没扣」或「扣了又补了」——
+    // 必须断言流水里确实有一扣一退，且两者相抵（额度守恒的账面证据）
+    const rows = store.listLedger({ userId, limit: 10 })
+    const charge = rows.find((r) => r.source === 'generation_charge')
+    const refund = rows.find((r) => r.source === 'generation_refund')
+    expect(charge?.delta).toBe(-1) // 按张扣费：count=1
+    expect(refund?.delta).toBe(1)
+    expect(rows.filter((r) => r.source.startsWith('generation_')).reduce((n, r) => n + r.delta, 0)).toBe(0)
+  })
+
+  it('转正失败不留半截：多张参考里有一张非法时，画布与暂存表都保持原样', async () => {
+    const user = store.getUserById(userId)!
+    const ok = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: 'ok.png' })
+    // 第二张非法 → 两遍走的第一遍就抛，不该留下 ok.png 已转正的痕迹
+    await expect(resolveStagedReferences(store, dataDir, user, topicId, [ok.id, 'refu_gone'])).rejects.toThrow(ServiceError)
+    expect(store.listCanvasImages(topicId)).toEqual([])
+    expect(store.listReferenceUploads(topicId).map((r) => r.id)).toEqual([ok.id])
   })
 })

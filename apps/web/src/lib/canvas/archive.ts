@@ -69,13 +69,10 @@ export function canvasArchiveEntries(input: {
     images: input.images,
     exportedAt: input.exportedAt,
   })
-  const byId = new Map(input.archiveImages.map((i) => [i.id, i]))
   const entries: ArchiveEntry[] = [{ name: CANVAS_JSON_ENTRY, text: JSON.stringify(file, null, 2) }]
   for (const img of input.archiveImages) {
     entries.push({ name: archiveEntryName(img), src: img.src })
   }
-  // 摆放在归档里但图片信息缺失（理论上不会发生）：不产条目，但仍由 canvas.json 记着，导入时会被计入 skipped
-  void byId
   return entries
 }
 

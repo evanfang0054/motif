@@ -64,9 +64,15 @@ function MiniMap({ rects, viewport, size, onJump }: Props) {
   return (
     <div
       data-testid="canvas-minimap"
+      /* role="img"：小地图本质是「画布缩略图」，内部方块对视读器没有独立语义。
+         注意它是**指针专用**的（点击/拖拽跳转，无键盘等价物）—— 声明成 img 会隐去这点，
+         但也不会比「裸 div 上的 aria-label（被 AT 忽略）」更差。补键盘操作是独立的一件事。 */
+      role="img"
       aria-label="小地图"
       /* data-canvas-no-zoom：小地图在画布容器内，不豁免的话滚轮会变成画布缩放 */
       data-canvas-no-zoom
+      /* hidden lg:block：窄屏（<1024）不渲染 —— 240px 宽在手机上占掉近半屏。
+         与右下视图簇里那个开关按钮的 `hidden lg:inline-flex` 必须成对，改一处要改两处。 */
       className="absolute bottom-24 left-6 z-30 hidden touch-none overflow-hidden rounded-lg border shadow-lg lg:block"
       style={{
         width: MINIMAP_W,

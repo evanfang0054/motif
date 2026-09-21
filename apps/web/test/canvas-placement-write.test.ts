@@ -37,7 +37,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('生成产出自动带位置（C2 / L4-3-G2-A1）', () => {
+describe('生成产出自动带位置', () => {
   it('N=4：画布新增 4 行，各有非零位置、两两不重叠、各带 serial', async () => {
     const msg = store.createMessage({
       topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
@@ -114,7 +114,7 @@ describe('生成产出自动带位置（C2 / L4-3-G2-A1）', () => {
   })
 })
 
-describe('暂存参考转正也带位置（C1 / L4-3-G2-A1）', () => {
+describe('暂存参考转正也带位置', () => {
   it('上传后画布为空；转正后该图有非零位置、origin=uploaded，且读的是原图真实尺寸', async () => {
     const user = store.getUserById(userId)!
     const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: '参考图.png' })

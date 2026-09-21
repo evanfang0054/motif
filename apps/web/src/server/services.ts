@@ -418,6 +418,10 @@ async function readImageSize(filePath: string): Promise<{ width: number; height:
 /**
  * 暂存参考转正：把 refu_ 暂存图逐张落为画布图（origin=uploaded），返回可用的画布参考 id 列表。
  * 归属校验失败（不存在/非本人/非本任务）直接抛错，绝不静默跳过。
+ *
+ * ⚠️ **两遍走**（先全校验、再全落库），不是单遍边校边写：
+ * 单遍在第 k 张失败时会留下前 k-1 张**已转正**的画布图（且暂存记录已删），调用方却只看到抛错 ——
+ * 钱退了、消息没建，画布上却凭空多出几张图。分两遍后校验期零副作用，失败即整体不生效。
  */
 export async function resolveStagedReferences(
   store: MotifStore,
@@ -426,15 +430,22 @@ export async function resolveStagedReferences(
   topicId: string,
   stagedIds: string[]
 ): Promise<string[]> {
-  const out: string[] = []
+  // 第一遍：只读校验 + 并发读尺寸（尺寸读取互不依赖，串行等 IO 是白等；参考图上限 5 张，无资源压力）
+  const refs = stagedIds.map((id) => {
+    const ref = store.getReferenceUpload(id)
+    if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
+    return ref
+  })
+  // 读真实像素尺寸再分配槽位：写死 0 会让渲染按原图比例、模型按 240 方形，两边对不上
+  const sizes = await Promise.all(refs.map((r) => readImageSize(storagePathFor(dataDir, r.imageKey))))
+
+  // 第二遍：落库。走到这里校验已全过，不会再抛
   // 落位上下文：转正的参考图也进「当前视口内的空位槽」，与生成产出共用同一套分配规则
   const origin = viewportOrigin(store.getCanvasMeta(topicId).viewport)
   const occupied = store.listCanvasPlacements(topicId).map(placementRect)
-  for (const id of stagedIds) {
-    const ref = store.getReferenceUpload(id)
-    if (!ref || ref.topicId !== topicId) throw new ServiceError(400, '参考图不存在或不属于当前任务。')
-    // 读真实像素尺寸再分配槽位：写死 0 会让渲染按原图比例、模型按 240 方形，两边对不上
-    const size = await readImageSize(storagePathFor(dataDir, ref.imageKey))
+  const out: string[] = []
+  refs.forEach((ref, i) => {
+    const size = sizes[i]
     const [slot] = allocateSlots(occupied, [displaySize(size.width, size.height)], origin)
     occupied.push(slot)
     const img = store.insertCanvasImage({
@@ -450,9 +461,9 @@ export async function resolveStagedReferences(
       height: size.height,
       placement: { x: slot.x, y: slot.y, width: slot.w, height: slot.h },
     })
-    store.deleteReferenceUpload(id)
+    store.deleteReferenceUpload(ref.id)
     out.push(img.id)
-  }
+  })
   return out
 }
 
