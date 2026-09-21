@@ -1,17 +1,16 @@
 /**
  * 画布空态的新手引导。
  *
- * 模板入口已搬到右侧表单（`TaskPanel` 的「从模板开始」），空态不再承担「挑模板」的职责，
- * 改为说清「从零开始怎么出第一套图」；底部的「从模板开始」只是同一 `selectTemplate` 的快捷入口，
- * 套用后会连同张数/尺寸一起填进表单，并沿用既有的额度预警。
+ * 空态不承担「挑提示词」的职责，只负责说清「从零开始怎么出第一套图」；
+ * 底部的按钮只是**打开提示词库**的快捷入口 —— 系统自带的 8 套模板提示词也在库里
+ * （用户裁决 2026-09-21 把模板并入提示词库，并去掉了原先那个「一次填好张数/尺寸」的下拉）。
  */
 'use client'
 
 import { Button, Surface } from '@heroui/react'
-import { TEMPLATES } from '@/lib/templates'
 
 interface Props {
-  onSelectTemplate: (key: string) => void
+  onOpenPromptLibrary: () => void
 }
 
 const STEPS: Array<{ title: string; desc: string }> = [
@@ -20,10 +19,7 @@ const STEPS: Array<{ title: string; desc: string }> = [
   { title: '点「生成」', desc: '出图后会自动落在画布上，可以拖动、缩放，Shift+拖拽框选，也可以导出布局。' },
 ]
 
-function CanvasEmptyGuide({ onSelectTemplate }: Props) {
-  // 空态只给一个「最省心」的模板：真正的挑选入口在右侧表单的「从模板开始」里
-  const starter = TEMPLATES[0]
-
+function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
   return (
     <div className="flex h-full items-center justify-center p-6" data-testid="canvas-empty-guide">
       <Surface className="w-full max-w-[520px] rounded-2xl p-6">
@@ -59,9 +55,9 @@ function CanvasEmptyGuide({ onSelectTemplate }: Props) {
         </ol>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onPress={() => onSelectTemplate(starter.key)}>从模板开始</Button>
+          <Button variant="secondary" onPress={onOpenPromptLibrary}>打开提示词库</Button>
           <span className="text-xs" style={{ color: 'var(--muted)' }}>
-            套用「{starter.title}」，张数与尺寸会一起填进右侧表单
+            系统自带的 8 套模板提示词都在里面，挑一条填进右侧表单
           </span>
         </div>
       </Surface>

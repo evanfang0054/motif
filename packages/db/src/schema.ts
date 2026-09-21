@@ -168,6 +168,41 @@ export function applySchema(db: Database): void {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_audit_actor ON admin_audit(actor_id, id DESC);
+
+    -- 提示词库：源清单（name/url/homepage/sort_index）是**代码里的清单的副本**，
+    -- 每次读源前由 seedPromptSources 覆盖；其余列是抓取状态，只由抓取流程写。
+    -- 不建 enabled 列：本仓不做源开关，失败源靠 last_error 如实呈现。
+    CREATE TABLE IF NOT EXISTS prompt_sources (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      url             TEXT NOT NULL,
+      homepage        TEXT NOT NULL DEFAULT '',
+      sort_index      INTEGER NOT NULL DEFAULT 0,
+      entry_count     INTEGER NOT NULL DEFAULT 0,
+      fetched_at      TEXT,
+      last_success_at TEXT,
+      last_error      TEXT NOT NULL DEFAULT '',
+      signature       TEXT NOT NULL DEFAULT ''
+    );
+
+    -- 提示词条目：**全局共享的只读内容**（无 user_id，不是用户数据）。
+    -- tags / reference_image_urls 存 JSON 数组文本，读侧容错回退 []。
+    -- 抓取成功时按源整源原子替换（DELETE + INSERT 同一事务），失败时一行都不碰。
+    CREATE TABLE IF NOT EXISTS prompt_entries (
+      source_id            TEXT NOT NULL REFERENCES prompt_sources(id) ON DELETE CASCADE,
+      id                   TEXT NOT NULL,
+      title                TEXT NOT NULL,
+      prompt               TEXT NOT NULL,
+      description          TEXT NOT NULL DEFAULT '',
+      cover_url            TEXT NOT NULL DEFAULT '',
+      reference_image_urls TEXT NOT NULL DEFAULT '[]',
+      tags                 TEXT NOT NULL DEFAULT '[]',
+      author               TEXT NOT NULL DEFAULT '',
+      source_url           TEXT NOT NULL DEFAULT '',
+      sort_index           INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (source_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_prompt_entries_source ON prompt_entries(source_id, sort_index);
   `)
 
   // 旧库平滑迁移：messages.reference_ids + verification_codes.attempts

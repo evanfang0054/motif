@@ -6,8 +6,20 @@ import { Modal as HeroModal } from '@heroui/react'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  // HeroUI 无触发器上下文（本壳由调用方条件挂载），关闭后手动还原焦点到打开前的元素（GDD L4-2-G1-A1）
+/** 通用弹窗外壳：受控开合在 Backdrop 上；关闭后把焦点还原到打开前的元素 */
+function WorkspaceModal({
+  title,
+  children,
+  onClose,
+  dialogClassName,
+}: {
+  title: string
+  children: React.ReactNode
+  onClose: () => void
+  /** 需要更宽/更高的弹窗时由调用方给（例如提示词库） */
+  dialogClassName?: string
+}) {
+  // HeroUI 无触发器上下文（本壳由调用方条件挂载），关闭后手动还原焦点到打开前的元素
   const restoreRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     restoreRef.current = document.activeElement as HTMLElement | null
@@ -22,7 +34,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
       }}
     >
       <HeroModal.Container>
-        <HeroModal.Dialog aria-label={title}>
+        <HeroModal.Dialog aria-label={title} className={dialogClassName}>
           <HeroModal.Header>
             <HeroModal.Heading>{title}</HeroModal.Heading>
             <HeroModal.CloseTrigger aria-label="关闭">✕</HeroModal.CloseTrigger>
@@ -33,6 +45,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
     </HeroModal.Backdrop>
   )
 }
+
+/** 弹窗外壳的旧名（各业务弹窗沿用，避免一次性改一大片调用点） */
+const Modal = WorkspaceModal
 
 /** 币种符号映射（不含零小数货币）；未知币种退化为 ISO 代码 */
 const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: 'US$', hkd: 'HK$', eur: '€', gbp: '£' }
@@ -333,4 +348,4 @@ function ProfileDialog({
   )
 }
 
-export { BillingDialog, RedeemDialog, InviteDialog, FeedbackDialog, ProfileDialog }
+export { BillingDialog, RedeemDialog, InviteDialog, FeedbackDialog, ProfileDialog, WorkspaceModal }

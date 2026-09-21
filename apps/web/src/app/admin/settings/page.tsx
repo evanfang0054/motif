@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, Input, Label, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
+import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
@@ -12,12 +13,14 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
   payment: '支付与套餐',
   mailer: '邮件发信',
+  // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
+  prompts: '提示词库',
   security: '会话与安全',
   danger: '危险区',
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'payment', 'mailer', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'payment', 'mailer', 'prompts', 'security', 'data']
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
@@ -176,7 +179,9 @@ export default function AdminSettingsPage() {
   /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */
   function renderGroupBody(group: AdminSettingItem['group']) {
     const groupItems = items.filter((i) => i.group === group)
-    if (groupItems.length === 0) return null
+    // 提示词库分区没有配置键，若跟着空组一起早退，面板就整块渲染不出来
+    if (groupItems.length === 0 && group !== 'prompts') return null
+    if (group === 'prompts') return <PromptSourcePanel />
     // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
     // 否则 mock/console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通（评审 P0）
     const savedChannel = items.find((i) => i.key === (group === 'mailer' ? 'MOTIF_MAILER' : 'PAYMENT_CHANNEL'))?.value ?? null
@@ -223,7 +228,7 @@ export default function AdminSettingsPage() {
             {item.hint && <p className="admin-field-hint">{item.hint}</p>}
           </div>
         ))}
-        {group !== 'data' && (
+        {group !== 'data' && groupItems.length > 0 && (
           <Button variant="secondary" isDisabled={saving} onPress={() => void save(group)}>
             保存
           </Button>

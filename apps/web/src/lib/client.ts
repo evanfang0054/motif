@@ -105,7 +105,7 @@ export interface AdminAuditRow {
 /** 管理后台：一项系统配置。密钥项的 value 恒为 null，只给掩码与「已设置」标记 */
 export interface AdminSettingItem {
   key: string
-  group: 'generation' | 'payment' | 'mailer' | 'danger' | 'security' | 'data'
+  group: 'generation' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
   label: string
   kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
@@ -124,6 +124,45 @@ export interface AdminConfigHealth {
   group: string
   ready: boolean
   reason: string | null
+}
+
+/** 提示词库：一条可复用的提示词（全局共享的只读内容） */
+export interface PromptLibraryEntry {
+  sourceId: string
+  sourceName: string
+  id: string
+  title: string
+  prompt: string
+  description: string
+  coverUrl: string
+  referenceImageUrls: string[]
+  tags: string[]
+  author: string
+  sourceUrl: string
+  /** 服务端算好的示例图列表（封面在前、去重丢空、上限 7）——「点第 N 张」的 index 就是它的下标 */
+  images: string[]
+}
+
+/** 提示词库检索结果：内容 + 分面 + 失败源 + 「首次抓取中」标记 */
+export interface PromptLibraryResponse {
+  items: PromptLibraryEntry[]
+  total: number
+  tags: string[]
+  sources: Array<{ id: string; name: string; homepage: string; entryCount: number }>
+  failures: Array<{ sourceId: string; sourceName: string; error: string }>
+  pending: boolean
+}
+
+/** 管理后台：一个提示词源的状态 */
+export interface AdminPromptSource {
+  id: string
+  name: string
+  url: string
+  homepage: string
+  entryCount: number
+  fetchedAt: string | null
+  lastSuccessAt: string | null
+  lastError: string
 }
 
 /** 只带上真正有值的查询参数，避免 `?status=` 这类空串污染服务端筛选 */
@@ -268,6 +307,39 @@ export const api = {
   /** 危险区专用入口：确认由服务端强校验（必须严格等于 true），页面上的勾选只是前置流程 */
   adminTestMail: (to: string) =>
     call<{ ok: true; via: string }>('/api/admin/settings/test-mail', { method: 'POST', body: JSON.stringify({ to }) }),
+  /** 提示词库检索：tags 传数组（多选 OR），source 传源名（'all' 或不传 = 不筛） */
+  listPrompts: (params: { q?: string; tags?: string[]; source?: string; page?: number; pageSize?: number } = {}) =>
+    call<PromptLibraryResponse>(
+      `/api/prompts${toQuery({
+        q: params.q,
+        tags: params.tags?.length ? params.tags.join(',') : undefined,
+        source: params.source,
+        page: params.page,
+        pageSize: params.pageSize,
+      })}`
+    ),
+  /** 抓取失败时用户自己重来一次：服务端会绕过失败重试节奏，只抓失败/陈旧的源 */
+  retryPrompts: (params: { q?: string; tags?: string[]; source?: string; page?: number; pageSize?: number } = {}) =>
+    call<PromptLibraryResponse & { retried: number; succeeded: number }>(
+      `/api/prompts/retry${toQuery({
+        q: params.q,
+        tags: params.tags?.length ? params.tags.join(',') : undefined,
+        source: params.source,
+        page: params.page,
+        pageSize: params.pageSize,
+      })}`,
+      { method: 'POST' }
+    ),
+  /** 把某条提示词的第 index 张示例图带进表单的参考图区（服务端抓取 → 落成暂存参考） */
+  attachPromptImage: (input: { topicId: string; sourceId: string; entryId: string; index: number }) =>
+    call<{ reference: StagedReference }>('/api/prompts/attach', { method: 'POST', body: JSON.stringify(input) }),
+  adminListPromptSources: () => call<{ sources: AdminPromptSource[] }>('/api/admin/prompts'),
+  /** 不传 sourceId 则刷新全部源；手动刷新不受自动重试节奏限制（失败源的人工恢复路径） */
+  adminRefreshPrompts: (sourceId?: string) =>
+    call<{ summary: { total: number; successCount: number; failureCount: number }; sources: AdminPromptSource[] }>(
+      '/api/admin/prompts/refresh',
+      { method: 'POST', body: JSON.stringify({ sourceId }) }
+    ),
   adminSaveDangerSettings: (updates: Record<string, string>) =>
     call<{ ok: true; updated: string[] }>('/api/admin/settings/danger', {
       method: 'POST',

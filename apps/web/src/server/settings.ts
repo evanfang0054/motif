@@ -13,7 +13,11 @@ import { createPaymentGateway } from './payment'
  * 3. 只读键（数据位置）永不进 DB：它们决定数据库自身位置，属于先于数据库存在的引导参数。
  */
 
-export type SettingGroup = 'generation' | 'payment' | 'mailer' | 'danger' | 'security' | 'data'
+/**
+ * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
+ * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
+ */
+export type SettingGroup = 'generation' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {

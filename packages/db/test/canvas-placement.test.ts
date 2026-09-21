@@ -61,7 +61,7 @@ describe('迁移安全（L3-2-G1-A1/A2、L3-2-G2-A1）', () => {
     expect(store.getCanvasMeta(topicId)).toEqual(DEFAULT_CANVAS_META)
   })
 
-  it('零新表（画布 = 升级后的 topic）', () => {
+  it('库内表清单快照（画布升级本身零新表；新增表必须同步这里）', () => {
     const db = new Database(join(dir, 't.db'), { readonly: true })
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>)
       .map((t) => t.name)
@@ -75,6 +75,9 @@ describe('迁移安全（L3-2-G1-A1/A2、L3-2-G2-A1）', () => {
       'feedback',
       'messages',
       'orders',
+      // 提示词库的表（canvas 升级之后新增；画布升级自身仍是零新表）
+      'prompt_entries',
+      'prompt_sources',
       'reference_uploads',
       'sessions',
       'settings',
