@@ -32,6 +32,7 @@ import {
   Bars,
   CircleXmark,
   Dots9,
+  Ellipsis,
   Frame,
   Hierarchy,
   LayoutCellsLarge,
@@ -51,13 +52,13 @@ import { gridStyle } from '@/lib/canvas/grid'
 import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
-import { allocateSlots, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
+import { allocateSlots, centerRectsInViewport, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
 import { deriveLineage, isSameLayout, layoutLineageTree, lineageLayerModel } from '@/lib/canvas/lineage'
 import { createCloudDriver, createLocalDriver, createCanvasPersistence, type CanvasSync } from '@/stores/canvas/persistence'
 import { MiniMap } from './MiniMap'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
+import { ZOOM_STEP, baseScale, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import { showToast } from '@/components/ui/toast'
 
@@ -76,6 +77,28 @@ const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string; icon
   { key: 'lines', label: '线', icon: <Bars /> },
   { key: 'blank', label: '空白', icon: <SquareDashed /> },
 ]
+
+/**
+ * 工具栏「放不下就收进 …」的档位阶梯（2026-09-21 用户裁决：窄屏**不换行**，改成「…」下拉）。
+ *
+ * 每档是「累计被收走的单元」，从 L0（全显示）往下递增，**收走的顺序 = 重要度从低到高**：
+ * 画布背景（纯外观）→ 小地图（默认就关）→ 画布归档（低频）→ 整理布局（低频且可撤销）。
+ * 留在最后的：状态读数、缩放、适应、溯源 —— 前三个是读数/高频，溯源是内容语义开关。
+ *
+ * ⚠️ 为什么不用视口断点写死：工具栏是**居中**的，可用宽度 = 画布宽 − 24，
+ * 而工具栏自身宽度又随内容变；断点写死会在某些宽度下「明明放得下却被收」。
+ * 这里按**实际测出来的 scrollWidth** 逐档收敛（见下面那对 effect）。
+ */
+const TOOLBAR_LEVELS: readonly (readonly string[])[] = [
+  [],
+  ['background'],
+  ['background', 'minimap'],
+  ['background', 'minimap', 'archive'],
+  ['background', 'minimap', 'archive', 'arrange'],
+]
+
+/** 工具栏可用宽度「定档」前的静默期（ms）。见 `rawToolbarAvail` 处的注释。 */
+const TOOLBAR_SETTLE_MS = 120
 
 interface Props {
   topicId: string
@@ -139,6 +162,9 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
   /** 打包 zip 中（批量下载与画布归档共用） */
   const [zipping, setZipping] = useState(false)
   const importRef = useRef<HTMLInputElement | null>(null)
+  /** 底部工具栏的溢出档位（0 = 全显示）。按实际宽度逐档收敛，见 TOOLBAR_LEVELS 的注释 */
+  const [toolbarLevel, setToolbarLevel] = useState(0)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
 
   // 首屏：cloud 为准；cloud 为空或离线才用本地草稿，并在画布上提示「本地草稿」
   useEffect(() => {
@@ -494,6 +520,73 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
     useCanvasStore.getState().zoomAt(factor, el.clientWidth / 2, el.clientHeight / 2)
   }, [])
 
+  /**
+   * 「整理布局」：把所有图重排进空位槽并落库。抽成回调是因为**工具栏与「…」溢出菜单共用同一个动作**
+   * （两处各写一份，改一处必漏另一处）。
+   *
+   * 2026-09-21 用户裁决：整块要**落在视口可见区的中间**（原来从视口左上角起铺，结果贴左上角）。
+   * `stageSize` 是容器 CSS 像素，除以缩放才是世界坐标下的可见宽高；`k` 非正时按 1 处理，
+   * 与 `viewportOrigin` 同一约定（那边注释里写了为什么绝不能产出 NaN/Infinity）。
+   */
+  const arrangeAll = useCallback(() => {
+    const all = images.map((i) => i.id)
+    useCanvasStore.getState().beginGesture('arrange')
+    const origin = viewportOrigin(viewport)
+    // k 归一交给 baseScale：内联写 `viewport.k > 0 ? viewport.k : 1` 会漏掉 Infinity
+    const k = baseScale(viewport.k)
+    const slots = centerRectsInViewport(
+      allocateSlots(
+        [],
+        images.map((i) => displaySize(i.width, i.height)),
+        origin
+      ),
+      origin,
+      stageSize.w / k,
+      stageSize.h / k
+    )
+    useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
+    useCanvasStore.getState().endGesture()
+  }, [images, viewport, stageSize])
+
+  /**
+   * 工具栏溢出收敛：可用宽度 = 画布宽 − 24（工具栏的 max-width 就是这么算的）。
+   * 每次可用宽度变化都**从 L0 重新开始**，再由下面那个 effect 逐档加收 ——
+   * 单向递增保证不会来回震荡，最多 5 次渲染就稳定（不能改成双向：降一档是否装得下
+   * 必须渲染完才量得到，会「降→溢出→升→装得下→降」无限循环）。
+   *
+   * ⚠️ 可用宽度先**防抖**再驱动收敛：收敛每档都要一次渲染，若直接拿每帧都在变的画布宽度驱动，
+   * 拖窗口时 ResizeObserver 每帧触发，档位非 0 就会每帧多出最多 5 次全量重渲染（画布会抖）。
+   * 抖动期间画布尺寸本来就在变，晚 120ms 定档肉眼无感。
+   */
+  const rawToolbarAvail = stageSize.w > 0 ? stageSize.w - 24 : Number.POSITIVE_INFINITY
+  const [toolbarAvail, setToolbarAvail] = useState(Number.POSITIVE_INFINITY)
+  useEffect(() => {
+    if (!Number.isFinite(rawToolbarAvail)) {
+      setToolbarAvail(rawToolbarAvail)
+      return
+    }
+    const timer = setTimeout(() => setToolbarAvail(rawToolbarAvail), TOOLBAR_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [rawToolbarAvail])
+  useEffect(() => {
+    setToolbarLevel(0)
+  }, [toolbarAvail])
+  useEffect(() => {
+    const el = toolbarRef.current
+    if (!el || !Number.isFinite(toolbarAvail)) return
+    if (el.scrollWidth > toolbarAvail && toolbarLevel < TOOLBAR_LEVELS.length - 1) {
+      setToolbarLevel(toolbarLevel + 1)
+    }
+  }, [toolbarLevel, toolbarAvail])
+
+  /** 当前档位下哪些单元还留在工具栏上（收走的那些会在「…」菜单里以文字项复现） */
+  const hiddenUnits = new Set(TOOLBAR_LEVELS[toolbarLevel])
+  const showMinimapUnit = !hiddenUnits.has('minimap')
+  const showArrangeUnit = !hiddenUnits.has('arrange')
+  const showArchiveUnit = !hiddenUnits.has('archive')
+  const showBackgroundUnit = !hiddenUnits.has('background')
+  const showContentGroup = showArrangeUnit || showArchiveUnit
+
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
 
   /**
@@ -755,6 +848,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         onContextMenu={onStageContextMenu}
         /* 抓手光标是「这里可以直接拖」的天然提示；手势说明挂 title（画布上没有别的手势说明位） */
         title="左键拖拽平移画布 · Shift+左键拖拽框选 · 滚轮缩放 · 空格/Ctrl+左键也可平移"
+        /* 顶栏仍是占位式（高 64px），故画布最小高度 = 视口高 − 64 */
         style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grabbing' : 'grab' }}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}
@@ -951,92 +1045,14 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         )}
       </div>
 
-      {/* 顶部信息与操作 —— 沿用既有 CanvasBoard 的 pill + 整理布局入口 */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-        <div className="canvas-pill pointer-events-auto flex items-center gap-2">
-          <span className="canvas-pill-count">{images.length} 张图片</span>
-          {source === 'local' && (
-            <>
-              <span className="canvas-pill-divider" />
-              <span className="canvas-pill-count" data-testid="canvas-local-draft">本地草稿</span>
-            </>
-          )}
-          {selected.length > 0 && (
-            <>
-              <span className="canvas-pill-divider" />
-              <span className="canvas-pill-count">已选 {selected.length}</span>
-              <IconButton size="sm" variant="secondary" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
-                <CircleXmark />
-              </IconButton>
-            </>
-          )}
-        </div>
-        {/* 右侧两个入口必须包成**同一个 flex 项**：容器是 `justify-between`，三个直接子项会让
-            中间那个（「整理布局」）被推到画布正中，与紧邻的归档菜单拉开半屏 */}
-        <div className="pointer-events-none flex items-center gap-2">
-          {/* 整理布局：沿用既有入口。语义从「重置到网格」升级为「把所有图重排进空位槽并落库」 */}
-          <IconButton
-            variant="secondary"
-            className="pointer-events-auto"
-            data-canvas-no-zoom
-            label="整理布局"
-            onPress={() => {
-              const all = images.map((i) => i.id)
-              useCanvasStore.getState().beginGesture('arrange')
-              const slots = allocateSlots(
-                [],
-                images.map((i) => displaySize(i.width, i.height)),
-                viewportOrigin(viewport)
-              )
-              useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
-              useCanvasStore.getState().endGesture()
-            }}
-          >
-            <LayoutCellsLarge />
-          </IconButton>
-          {/* 画布归档（导出/导入）。⚠️ 外层是 pointer-events-none，新控件必须显式 pointer-events-auto
-              + data-canvas-no-zoom（既有「整理布局」就是这么写的，缺前者点不动）。
-              ⚠️ 触发件用 Dropdown 的**直接子元素**（官方 default demo 的写法）：`Dropdown.Trigger`
-              内部会再渲染一个 HeroUI Button，写成 `<Trigger><Button/></Trigger>` 会得到 `<button>` 套
-              `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效）。
-              ✅ Tooltip 与 Dropdown 触发件**可以共存**（2026-09-21 运行时实证）：MenuTrigger 经
-              PressResponderContext 下发 trigger props、并原样渲染 children（不 cloneElement），React context
-              会穿过 Tooltip —— 实测 aria-haspopup/aria-expanded 正常接线、菜单正常开合、Tooltip 正常浮现 */}
-          <Dropdown>
-            <IconButton
-              variant="secondary"
-              className="pointer-events-auto"
-              data-canvas-no-zoom
-              label={zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
-              isDisabled={zipping || importing}
-            >
-              {zipping || importing ? <ArrowRotateRight className="animate-spin" /> : <Archive />}
-            </IconButton>
-            <Dropdown.Popover placement="bottom end">
-              <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
-                <Dropdown.Item id="export" textValue="导出画布（zip）">
-                  <Label>导出画布（zip）</Label>
-                </Dropdown.Item>
-                <Dropdown.Item id="import" textValue="导入画布（zip）">
-                  <Label>导入画布（zip）</Label>
-                </Dropdown.Item>
-                {/* 说明用禁用项承载：菜单里只允许 menuitem/group/separator，裸 Label 不是合法菜单内容 */}
-                <Dropdown.Item id="import-hint" textValue="导入只恢复布局与视口，不会把图片导进来" isDisabled>
-                  <Label>导入只恢复布局与视口，不会把图片导进来</Label>
-                </Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
-          <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
-        </div>
-      </div>
-
       {/* 引导：溯源打开、且当前摆放与来源明显不一致时给一条**可点的**提示（点它就整理）。
           不做自动重排：切视图开关就改动用户手工摆的位置是惊吓式行为。
-          ⚠️ 放**左下角**而不是顶部：实测画布上方的横幅会盖住画布顶部那条带
-          （连 pill 一起盖），浮层放那儿会点不到。 */}
+          ⚠️ 位置是**底部工具栏正上方居中**（2026-09-21 调整）：画布上方那一条现在是顶部两条浮动条
+          （Workspace 里）的地盘，左右两侧又各有一条浮动面板（top-64..bottom-64），
+          只有「底部工具栏上方」这一块在任何面板开合状态下都不会被盖住，
+          而且它指向的「按来源整理」按钮就在正下方的工具栏里 —— 提示与出口在同一处。 */}
       {showTreeHint && (
-        <div className="pointer-events-none absolute bottom-3 left-3">
+        <div className="pointer-events-none absolute bottom-[68px] left-1/2 -translate-x-1/2">
           {/* 「布局与来源不一致」这句**是提示的正文**而不是按钮标签 —— 换成图标 + Tooltip 会把
               「出问题了」这个信号藏进悬停里，正好废掉这条提示的作用。故保留文字，只补图标做视觉对齐 */}
           <Button size="sm" variant="secondary" className="pointer-events-auto" data-canvas-no-zoom onPress={arrangeByLineage}>
@@ -1046,8 +1062,10 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         </div>
       )}
 
-      {/* 小地图：默认关，开关在右下视图簇。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
-          故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现 */}
+      {/* 小地图：默认关，开关在工具栏的视图组。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
+          故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现。
+          ⚠️ 位置从「左下角」改为「底部工具栏上方居中」：左下角现在被左侧浮动面板（left-12 起）盖住，
+          而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap
           rects={rects}
@@ -1064,10 +1082,39 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         onAction={onMenuAction}
       />
 
-      {/* 右下视图控件：缩放 + 小地图开关 + 溯源开关 + 背景图案三态（都是「视图」而非「内容」，故同簇）。
-          窄屏这一簇会超过画布宽度，而画布是 overflow-hidden（会被裁掉而不是出滚动条）→
-          必须允许换行并限制最大宽度，否则左侧按钮在手机上点不到 */}
-      <Toolbar className="canvas-zoombar max-w-[calc(100%-24px)] flex-wrap justify-end" aria-label="画布视图" data-canvas-no-zoom>
+      {/* 底部工具栏：**水平居中贴底**，按用途分组（2026-09-21 用户裁决：原在右下角、
+          内容与视图混在一簇；【整理布局】【画布归档】也由右上角并入此处；画布状态读数由左上角并入此处）。
+          分组顺序 = 「先看读数，再调视图，再摆内容，最后改外观」：
+            ① 画布状态  ② 视图缩放  ③ 视图开关  ④ 内容操作  ⑤ 画布背景  ⑥ 溢出菜单
+          ⚠️ **不换行**：放不下的项按 TOOLBAR_LEVELS 收进「…」下拉（窄屏仍能点到全部功能）。 */}
+      <Toolbar
+        ref={toolbarRef}
+        className="canvas-zoombar"
+        aria-label="画布工具栏"
+        data-canvas-no-zoom
+      >
+        {/* ① 画布状态读数（原画布左上角的 pill）。「N 张图片」是纯读数；
+            「本地草稿」是数据来源警示；「已选 N」带一个清空按钮 */}
+        <div className="canvas-status">
+          <span className="canvas-status-count">{images.length} 张图片</span>
+          {source === 'local' && (
+            <>
+              <span className="canvas-status-divider" />
+              <span data-testid="canvas-local-draft">本地草稿</span>
+            </>
+          )}
+          {selected.length > 0 && (
+            <>
+              <span className="canvas-status-divider" />
+              <span>已选 {selected.length}</span>
+              <IconButton size="sm" variant="ghost" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
+                <CircleXmark />
+              </IconButton>
+            </>
+          )}
+        </div>
+        <span className="canvas-tool-divider" />
+        {/* ② 视图缩放 */}
         <ButtonGroup>
           <IconButton size="sm" variant="secondary" label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>
             <Minus />
@@ -1081,6 +1128,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           </IconButton>
         </ButtonGroup>
         <span className="canvas-tool-divider" />
+        {/* ③ 视图开关：都是「看得见什么」的开关，不改动内容 */}
         <IconButton
           size="sm"
           variant="ghost"
@@ -1097,19 +1145,19 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         >
           <Frame />
         </IconButton>
-        <span className="canvas-tool-divider" />
-        <IconButton
-          size="sm"
-          variant={miniMapOpen ? 'primary' : 'ghost'}
-          label="小地图"
-          aria-pressed={miniMapOpen}
-          /* hidden lg:inline-flex：与 MiniMap 自身的 `hidden lg:block` 对齐（见上方注释） */
-          className="hidden lg:inline-flex"
-          onPress={() => setMiniMapOpen((v) => !v)}
-        >
-          <MapPin />
-        </IconButton>
-        <span className="canvas-tool-divider" />
+        {showMinimapUnit && (
+          <IconButton
+            size="sm"
+            variant={miniMapOpen ? 'primary' : 'ghost'}
+            label="小地图"
+            aria-pressed={miniMapOpen}
+            /* hidden lg:inline-flex：与 MiniMap 自身的 `hidden lg:block` 对齐（见上方注释） */
+            className="hidden lg:inline-flex"
+            onPress={() => setMiniMapOpen((v) => !v)}
+          >
+            <MapPin />
+          </IconButton>
+        )}
         {/* 溯源层开关（UI 文案；代码里叫 lineage）：**不加 `hidden lg:inline-flex`** —— 它不是 240px 的面板，窄屏也能用
             （与小地图开关的区别就在这：那个开关必须与组件自身的断点对齐） */}
         <IconButton
@@ -1121,44 +1169,164 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         >
           <Hierarchy />
         </IconButton>
-        {/* 按来源整理：只在溯源打开时出现（不打开溯源就没必要谈「按来源排」）。
-            它**不自动触发** —— 开关只管显示线，重排必须由用户点（切视图开关就偷改摆放是惊吓式行为） */}
-        {lineageOpen && (
+        {/* ④ 内容操作：会**改写摆放**或**读写文件**，与上面那些纯视图开关不是一类，故单列一组。
+            ⚠️ 整理布局与按来源整理是**两件事**，不合并成一个下拉：
+            前者按网格空位重排、后者按溯源树形铺开，误操作的代价是用户手工摆的位置被覆盖。 */}
+        {showContentGroup && <span className="canvas-tool-divider" />}
+        {showArrangeUnit && (
           <>
-            <span className="canvas-tool-divider" />
             <IconButton
               size="sm"
-              variant={showTreeHint ? 'primary' : 'ghost'}
-              label="按来源整理"
-              isDisabled={treePlan.length === 0}
-              onPress={arrangeByLineage}
+              variant="ghost"
+              label="整理布局"
+              tooltip="把所有图片重排进网格空位"
+              onPress={arrangeAll}
             >
               <LayoutCellsLarge />
             </IconButton>
+            {/* 按来源整理：只在溯源打开时出现（不打开溯源就没必要谈「按来源排」）。
+                它**不自动触发** —— 开关只管显示线，重排必须由用户点（切视图开关就偷改摆放是惊吓式行为） */}
+            {lineageOpen && (
+              <IconButton
+                size="sm"
+                variant={showTreeHint ? 'primary' : 'ghost'}
+                label="按来源整理"
+                tooltip="按溯源关系树形铺开"
+                isDisabled={treePlan.length === 0}
+                onPress={arrangeByLineage}
+              >
+                <LayoutCellsLarge />
+              </IconButton>
+            )}
           </>
         )}
-        <span className="canvas-tool-divider" />
-        <ToggleButtonGroup
-          aria-label="网格样式"
-          selectionMode="single"
-          selectedKeys={new Set([meta.background])}
-          onSelectionChange={(keys) => {
-            const next = BACKGROUND_OPTIONS.find((o) => o.key === [...keys][0])
-            if (next) useCanvasStore.getState().setBackground(next.key)
-          }}
-        >
-          {/* ToggleButton 不走 IconButton：它是另一个组件（选中态由 ToggleButtonGroup 的 context 驱动），
-              但同样能被 Tooltip 直接包住 —— ToggleButtonGroup 不 clone 子元素、只提供 context
-              （toggle-button-group.js 的 Root 原样透传 children），context 会穿过 Tooltip，CSS 也仍按后代选择器命中 */}
-          {BACKGROUND_OPTIONS.map((o) => (
-            <Tooltip key={o.key} delay={0}>
-              <ToggleButton id={o.key} size="sm" aria-label={o.label}>
-                {o.icon}
-              </ToggleButton>
-              <Tooltip.Content>{o.label}</Tooltip.Content>
-            </Tooltip>
-          ))}
-        </ToggleButtonGroup>
+        {/* 画布归档（导出/导入）。⚠️ 触发件用 Dropdown 的**直接子元素**（官方 default demo 的写法）：
+            `Dropdown.Trigger` 内部会再渲染一个 HeroUI Button，写成 `<Trigger><Button/></Trigger>`
+            会得到 `<button>` 套 `<button>`（React 19 报 validateDOMNesting，且 isDisabled 落在内层、
+            靠冒泡被吃掉才偶然生效）。
+            ✅ Tooltip 与 Dropdown 触发件**可以共存**（2026-09-21 运行时实证）：MenuTrigger 经
+            PressResponderContext 下发 trigger props、并原样渲染 children（不 clone Element），React context
+            会穿过 Tooltip —— 实测 aria-haspopup/aria-expanded 正常接线、菜单正常开合、Tooltip 正常浮现 */}
+        {showArchiveUnit && (
+          <>
+            <Dropdown>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                label={zipping ? '打包中…' : importing ? '导入中…' : '画布归档'}
+                isDisabled={zipping || importing}
+              >
+                {zipping || importing ? <ArrowRotateRight className="animate-spin" /> : <Archive />}
+              </IconButton>
+              {/* 工具栏贴底，菜单向上弹才不会盖住画布底部（placement 交给 HeroUI 自动翻转也行，
+                  但显式 top 更稳：底部工具栏的可用空间只在上方） */}
+              <Dropdown.Popover placement="top end">
+                <Dropdown.Menu onAction={(key) => void onArchiveAction(String(key))}>
+                  <Dropdown.Item id="export" textValue="导出画布（zip）">
+                    <Label>导出画布（zip）</Label>
+                  </Dropdown.Item>
+                  <Dropdown.Item id="import" textValue="导入画布（zip）">
+                    <Label>导入画布（zip）</Label>
+                  </Dropdown.Item>
+                  {/* 说明用禁用项承载：菜单里只允许 menuitem/group/separator，裸 Label 不是合法菜单内容 */}
+                  <Dropdown.Item id="import-hint" textValue="导入只恢复布局与视口，不会把图片导进来" isDisabled>
+                    <Label>导入只恢复布局与视口，不会把图片导进来</Label>
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          </>
+        )}
+        {/* 隐藏的 file input **必须始终挂载**：溢出菜单在 showArchiveUnit 为 false（窄屏档位 ≥3）时
+            仍提供「导入画布（zip）」项，而它的动作是 `importRef.current?.click()` ——
+            input 若随归档单元一起卸载，窄屏点这一项就是静默无反应（无 toast 无日志）。 */}
+        <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
+        {/* ⑤ 画布背景：纯外观，放最后 */}
+        {showBackgroundUnit && (
+          <>
+            <span className="canvas-tool-divider" />
+            <ToggleButtonGroup
+              aria-label="网格样式"
+              selectionMode="single"
+              selectedKeys={new Set([meta.background])}
+              onSelectionChange={(keys) => {
+                const next = BACKGROUND_OPTIONS.find((o) => o.key === [...keys][0])
+                if (next) useCanvasStore.getState().setBackground(next.key)
+              }}
+            >
+              {/* ToggleButton 不走 IconButton：它是另一个组件（选中态由 ToggleButtonGroup 的 context 驱动），
+                  但同样能被 Tooltip 直接包住 —— ToggleButtonGroup 不 clone 子元素、只提供 context
+                  （toggle-button-group.js 的 Root 原样透传 children），context 会穿过 Tooltip，CSS 也仍按后代选择器命中 */}
+              {BACKGROUND_OPTIONS.map((o) => (
+                <Tooltip key={o.key} delay={0}>
+                  <ToggleButton id={o.key} size="sm" aria-label={o.label}>
+                    {o.icon}
+                  </ToggleButton>
+                  <Tooltip.Content>{o.label}</Tooltip.Content>
+                </Tooltip>
+              ))}
+            </ToggleButtonGroup>
+          </>
+        )}
+        {/* ⑥ 溢出菜单：被收走的那些单元在这里**以文字菜单项**复现（动作与按钮上的是同一个 handler）。
+            ⚠️ 背景三态在菜单里用「当前项带 ✓」表达选中态 —— Dropdown.Menu 的 selectionMode 是整菜单级的，
+            与「其余项是纯动作」混在一起会把动作项也变成可选项，语义不对。 */}
+        {toolbarLevel > 0 && (
+          <>
+            <span className="canvas-tool-divider" />
+            <Dropdown>
+              <IconButton size="sm" variant="ghost" label="更多画布操作">
+                <Ellipsis />
+              </IconButton>
+              <Dropdown.Popover placement="top end">
+                <Dropdown.Menu
+                  onAction={(key) => {
+                    const k = String(key)
+                    if (k === 'arrange') return arrangeAll()
+                    if (k === 'arrange-lineage') return arrangeByLineage()
+                    if (k === 'export' || k === 'import') return void onArchiveAction(k)
+                    if (k.startsWith('bg:')) {
+                      const mode = BACKGROUND_OPTIONS.find((o) => o.key === k.slice(3))
+                      if (mode) useCanvasStore.getState().setBackground(mode.key)
+                    }
+                  }}
+                >
+                  {/* ⚠️ 这里**故意没有**小地图的兜底项：菜单只在工具栏溢出时打开，而溢出意味着
+                      画布宽 < ~533px（工具栏自身只要 509px，而 ≥1024 时画布宽 = 窗口宽），
+                      那时 `wide` 必然是 false —— 小地图组件（`hidden lg:block`）根本不渲染，
+                      加一项只会是「点得动却什么都不会发生」。工具栏上那个开关按钮同理带着
+                      `hidden lg:inline-flex`，两者成对，见 MiniMap.tsx 的注释。 */}
+                  {!showArrangeUnit && (
+                    <Dropdown.Item id="arrange" textValue="整理布局">
+                      <Label>整理布局</Label>
+                    </Dropdown.Item>
+                  )}
+                  {!showArrangeUnit && lineageOpen && (
+                    <Dropdown.Item id="arrange-lineage" textValue="按来源整理">
+                      <Label>按来源整理</Label>
+                    </Dropdown.Item>
+                  )}
+                  {!showArchiveUnit && (
+                    <Dropdown.Item id="export" textValue="导出画布（zip）">
+                      <Label>导出画布（zip）</Label>
+                    </Dropdown.Item>
+                  )}
+                  {!showArchiveUnit && (
+                    <Dropdown.Item id="import" textValue="导入画布（zip）">
+                      <Label>导入画布（zip）</Label>
+                    </Dropdown.Item>
+                  )}
+                  {!showBackgroundUnit &&
+                    BACKGROUND_OPTIONS.map((o) => (
+                      <Dropdown.Item key={o.key} id={`bg:${o.key}`} textValue={`背景 ${o.label}`}>
+                        <Label>{meta.background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
+                      </Dropdown.Item>
+                    ))}
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          </>
+        )}
       </Toolbar>
 
       {/* 屏幕阅读器图片清单 */}
@@ -1168,7 +1336,15 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         ))}
       </ul>
 
-      {/* 灯箱预览（HeroUI Modal 容器；点背景/✕/Esc 关闭）—— 与既有实现逐字一致 */}
+      {/* 灯箱预览（HeroUI Modal 容器；点背景/✕/Esc 关闭）。
+          2026-09-21 用户裁决：预览**只要「蒙层 + 图片 + 关闭按钮」**，不要 HeroUI 默认那层白色卡片 ——
+          把 Dialog 自身的底色/边框/阴影/内边距都去掉（`className` 是 HeroUI 的公开出口，
+          文档的 modal/custom-styles demo 就是这么改的，不算「覆盖组件内部样式」）。
+          ⚠️ `w-fit` 不能省：Dialog 默认 `w-full`，透明之后图片左右会各留一片「点了没反应」的空白 ——
+          那片空白属于 Dialog，点它**不**触发 backdrop 的 isDismissable。w-fit 让盒子贴住图片，
+          图片之外的点就都落在蒙层上 → 能关。
+          `rounded-none` 同理不能省：Dialog 自带圆角，底色去掉后 `overflow: hidden` 会照着那个圆角
+          把图片的角裁圆（用户 2026-09-21 反馈「图片上面有两个圆角」），预览的图片必须是直角。 */}
       {preview && (
         <Modal.Backdrop
           isOpen
@@ -1177,21 +1353,24 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           }}
         >
           <Modal.Container>
-            <Modal.Dialog aria-label="图片预览" className="max-w-[min(920px,92vw)]">
+            <Modal.Dialog
+              aria-label="图片预览"
+              className="w-fit max-w-[min(920px,92vw)] rounded-none border-0 bg-transparent p-0 shadow-none"
+            >
               {/* 不写 children：HeroUI 的 CloseButton 缺省就渲染自带 CloseIcon（close-button.js 里
                   `children ?? <CloseIcon/>`），手写「✕」字形属于自造图标 */}
               <Modal.CloseTrigger aria-label="关闭预览" />
-              <Modal.Body className="p-0">
+              {/* `m-0 p-0` 必须成对：HeroUI 给 `.modal__body` 写了 `margin:-3px; padding:3px`
+                  （一负一正互相抵消，让内容贴齐 dialog）。只去 padding 会剩负 margin ——
+                  body 反而比 dialog 宽 6px，图片被 dialog 的 `overflow:clip` 左右各裁 3px。
+                  `m-0` 同时压掉 `.modal__body{margin-top:8px}`。 */}
+              <Modal.Body className="m-0 p-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={preview.src} alt={preview.name} onClick={(e) => e.stopPropagation()} style={{ display: 'block', maxWidth: '100%', maxHeight: '72vh' }} />
               </Modal.Body>
-              <Modal.Footer className="justify-center">
-                <p className="canvas-lightbox-caption">
-                  #{String(preview.serial).padStart(3, '0')} {preview.name}
-                  {/* 升级前转正的历史行 width/height 仍是 0：不显示「0×0」 */}
-                  {preview.width > 0 && preview.height > 0 && ` · ${preview.width}×${preview.height}`}
-                </p>
-              </Modal.Footer>
+              {/* 2026-09-21 用户裁决：预览不要说明文字（「只需要有个蒙层和图片就好」+ 一个关闭按钮）。
+                  原先那行「#003 名称 · W×H」挂在 `Modal.Footer` 里，去掉它顺带消掉
+                  `.modal__body + .modal__footer{margin-top:20px}` 那条 20px 透明死区。 */}
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>

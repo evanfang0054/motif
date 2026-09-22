@@ -5,13 +5,17 @@ import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
 import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
 import { api } from '@/lib/client'
+import { useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query'
 import { TopNav } from './TopNav'
+import { sizeLabelOf } from '@/lib/templates'
+import { LayoutSideContentLeft, LayoutSideContentRight, Plus } from '@gravity-ui/icons'
+import { IconButton } from '@/components/ui/icon-button'
 import { CanvasEmptyGuide } from './CanvasEmptyGuide'
 import { CanvasStage } from '@/components/canvas/CanvasStage'
 import { deleteImageConfirmText } from './canvas-geometry'
 import { planRegenerateFromImage } from '@/lib/canvas/regenerate'
 import { TaskPanel } from './TaskPanel'
-import { TaskDrawer } from './TaskDrawer'
+import { TopicPanel } from './TopicPanel'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
 import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
@@ -35,8 +39,15 @@ export interface PanelState {
 
 const IDLE_PANEL: PanelState = {
   prompt: '',
-  count: 4,
-  size: '1024x1024',
+  /* 张数默认 1（2026-09-21 用户裁决）：默认值原先是 4。
+     4 张是**四倍的扣额**，而多数时候用户只想先出一张看看效果；
+     要批量再自己加，比「默认多花钱、发现不对再减」安全。 */
+  count: 1,
+  /* 尺寸默认「自动」（2026-09-21 用户裁决）：默认值原先是 1024×1024（方图），
+     但「方图」是一个**具体的构图承诺**，而多数提示词并不要求方形 ——
+     默认成自动（由模型按提示词决定，见 core/validation.ts 里 auto 的兜底 1024×1024）才不会
+     让用户在没注意尺寸的时候被动接受一个方形构图。 */
+  size: 'auto',
   customW: 1024,
   customH: 1024,
   referenceIds: [],
@@ -55,20 +66,25 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<TopicDetail | null>(null)
   const [panel, setPanel] = useState<PanelState>(IDLE_PANEL)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  /**
+   * 两侧浮动面板的展开态。`null` = 还不知道屏幕多宽（SSR / hydration 首帧）→ 先不渲染面板。
+   *
+   * 2026-09-21 用户裁决：宽屏（≥1024）**默认展开**、窄屏**默认收起**（窄屏展开时面板铺满画布 + 遮罩）。
+   * 宽度由 `useMediaQuery` 给（它用 useSyncExternalStore，hydration 后同帧修正，不会闪）。
+   */
+  const wide = useMediaQuery(WIDE_QUERY)
+  const [leftOpen, setLeftOpen] = useState<boolean | null>(null)
+  const [rightOpen, setRightOpen] = useState<boolean | null>(null)
   /** 任务列表是否已加载完：用于区分「还在加载」与「确实一个任务都没有」 */
   const [topicsLoaded, setTopicsLoaded] = useState(false)
   /** 详情拉取失败：不能一直转圈（长轮询会继续重试，成功后自动复位） */
   const [detailFailed, setDetailFailed] = useState(false)
   const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | 'promptLibrary' | null>(null)
-  const [panelOpen, setPanelOpen] = useState(true)
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: 'image'; ids: CanvasImage[] }
     | { kind: 'topic'; id: string; title: string }
     | null
   >(null)
-  // 强制改密软提示仅本次会话可关闭；下次登录仍会提醒（标记仍在库里）
-  const [passwordHintDismissed, setPasswordHintDismissed] = useState(false)
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
   /**
@@ -281,10 +297,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
     }
   }, [activeId, refreshTopics])
 
-  /** 顶栏/抽屉「＋ 新任务」：真正新建（或复用空闲空任务）并切换过去 */
+  /** 顶部浮动条 / 面板内的「＋ 新任务」：真正新建（或复用空闲空任务）并切换过去 */
   const createTopic = useCallback(
     async () => {
-      setDrawerOpen(false)
       setPanel(IDLE_PANEL)
       try {
         const { topic, reused } = await fetch('/api/topics', {
@@ -544,6 +559,78 @@ function Workspace({ initialUser }: { initialUser: User }) {
     return (detail?.canvasImages ?? []).filter((i) => panel.referenceIds.includes(i.id) && !stagedIds.has(i.id))
   }, [detail, panel.referenceIds, panel.staged])
 
+  /**
+   * 面板展开态的初始化与宽度联动（2026-09-21 用户裁决）：
+   * 宽屏默认展开、窄屏默认收起；**从宽变窄时自动收起**（否则两侧面板在窄屏会铺满画布并互相叠住）。
+   * 用户的收起选择在宽度不变时一直保留 —— 拖窗口不会把用户手动收起的面板又弹开。
+   */
+  useEffect(() => {
+    if (wide === null) return
+    const next = (v: boolean | null) => (wide ? (v ?? true) : false)
+    setLeftOpen(next)
+    setRightOpen(next)
+  }, [wide])
+
+  /** 窄屏下两侧面板都是「铺满画布」的浮层，同时开会叠住 → 开一侧就关另一侧。
+   * ⚠️ 联动必须写在更新器**外面**：setState 的更新器必须是纯函数（StrictMode 会双调用，
+   * 队列 rebase 时还会在渲染期重算），在里面派发另一个 setState 无法保证「每个动作恰好执行一次」。 */
+  const toggleLeft = useCallback(() => {
+    const open = !leftOpen
+    setLeftOpen(open)
+    if (open && wide === false) setRightOpen(false)
+  }, [leftOpen, wide])
+
+  const toggleRight = useCallback(() => {
+    const open = !rightOpen
+    setRightOpen(open)
+    if (open && wide === false) setLeftOpen(false)
+  }, [rightOpen, wide])
+
+  /**
+   * 双击画布收起面板。
+   *
+   * 2026-09-21 用户裁决：
+   * ① 右侧面板**不设收起按钮**，宽屏下收起入口只有这一个手势；而且必须是**双击**
+   *    （单击留给画布自己的语义 —— 点空白取消选中、拖拽平移、Shift 框选；
+   *    单击就收会把「点一下取消选中」变成「顺手把面板关了」）。
+   * ② **窄屏两侧都是抽屉**，双击空白把当前打开的那个收回去（两侧行为一致）。
+   *    窄屏的主路径其实是**单击遮罩**（见下面的 .ws-float-scrim），双击只是同一条兜底。
+   * ③ 宽屏只收右侧 —— 左侧面板是常驻的任务列表，宽屏下它有自己的收起按钮，
+   *    而且宽屏画布是主要工作区，双击顺手关掉任务列表会很烦。
+   *
+   * 豁免：图片卡片自己的双击是「放大预览」，工具栏/面板/弹层上的双击都不该顺手收起面板。
+   */
+  const onCanvasDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const t = e.target as HTMLElement
+      if (t.closest('figure, [data-canvas-no-zoom], [role="dialog"], .ws-float-panel, .ws-collapsed-bar, .ws-nav')) return
+      if (wide === false) {
+        setLeftOpen(false)
+        setRightOpen(false)
+        return
+      }
+      if (rightOpen) setRightOpen(false)
+    },
+    [wide, rightOpen]
+  )
+
+  /**
+   * 窄屏抽屉的键盘出口。
+   * 去掉面板上的收起按钮后，鼠标路径是「双击空白」，键盘用户则完全没有了出口 ——
+   * Esc 是抽屉的通用约定（也能覆盖遮罩挡住画布、只剩双击这一条鼠标路径的情况）。
+   * 窄屏两侧都收（与双击一致）；宽屏不挂监听（那边面板是常驻的，Esc 不该有副作用）。
+   */
+  useEffect(() => {
+    if (wide !== false || (leftOpen !== true && rightOpen !== true)) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setLeftOpen(false)
+      setRightOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [wide, leftOpen, rightOpen])
+
   const logout = useCallback(async () => {
     await api.logout()
     router.refresh()
@@ -560,150 +647,204 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   return (
     <main className="ws-shell">
+      {/* 导航头：**保持原样**（占位式顶栏），浮在画布上的是两侧面板而不是它。
+          2026-09-21 二次裁决：顶栏左侧的「＋新任务」与任务名**已移除** —— 前者只在左侧面板与
+          左上浮动条里，后者只在左侧面板头与左上浮动条里，顶栏不再重复。 */}
       <TopNav
         user={user}
-        topicTitle={detail?.topic.title ?? '新任务'}
-        onOpenTasks={() => setDrawerOpen(true)}
-        onNewTask={() => void createTopic()}
         onOpenBilling={() => setDialog('billing')}
         onOpenProfile={() => setDialog('profile')}
         onLogout={() => void logout()}
       />
 
-      {/* 改密入口即既有的个人资料弹窗（ProfileDialog 内含改密表单） */}
+      {/* 改密入口即既有的个人资料弹窗（ProfileDialog 内含改密表单）。
+          「稍后」的持久化与「本次会话已处理」都在 PasswordHintBanner 内部，
+          这里只负责「账号是否被标记为需改密」这一个条件。 */}
       <PasswordHintBanner
-        show={!!user?.mustChangePassword && !passwordHintDismissed}
+        show={!!user?.mustChangePassword}
+        userId={user?.id ?? ''}
         onChangePassword={() => setDialog('profile')}
-        onDismiss={() => setPasswordHintDismissed(true)}
       />
 
-      <div className="ws-grid">
-        <section className="ws-canvas">
-          {/* 四态：等列表/等详情 → Spinner；详情拉取失败 → 失败态 + 重试；有图 → 画布；
-              无图（含新手一个任务都没有）→ 新手引导。
-              ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
-              说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
-              注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
-              要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
-              模板入口已收敛到右侧表单。 */}
-          {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
-            <div className="flex h-full items-center justify-center">
-              <Spinner />
-            </div>
-          ) : detail === null && detailFailed ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
-              <Button
-                variant="secondary"
-                onPress={() => {
-                  if (activeId) void refreshDetail(activeId).then(() => setDetailFailed(false)).catch(() => {})
-                }}
-              >
-                重试
-              </Button>
-            </div>
-          ) : detail && detail.canvasImages.length > 0 ? (
-            <CanvasStage
-              key={detail.topic.id}
-              topicId={detail.topic.id}
-              images={detail.canvasImages}
-              messages={detail.messages}
-              onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
-              onAddReferences={addReferencesFromCanvas}
-              onRegenerate={regenerateFrom}
-            />
-          ) : (
-            <CanvasEmptyGuide onOpenPromptLibrary={() => setDialog('promptLibrary')} />
-          )}
-          {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
-          {busy && (
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                position: 'absolute',
-                top: 12,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 20,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 16px',
-                borderRadius: 999,
-                border: '1px solid var(--border)',
-                background: 'color-mix(in srgb, var(--surface-primary) 92%, transparent)',
-                boxShadow: 'var(--shadow-soft)',
-                fontSize: 13,
-                color: 'var(--foreground)',
-                pointerEvents: 'none',
+      {/* 画布区容器：双击收起生成面板（豁免见 onCanvasDoubleClick）。挂在容器上而不是遮罩上，
+          是为了让宽屏（遮罩 display:none）也走同一条路径 —— 两档行为一致，不再分叉。 */}
+      <section className="ws-canvas" onDoubleClick={onCanvasDoubleClick}>
+        {/* 四态：等列表/等详情 → Spinner；详情拉取失败 → 失败态 + 重试；有图 → 画布；
+            无图（含新手一个任务都没有）→ 新手引导。
+            ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
+            说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
+            注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
+            要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
+            模板入口已收敛到右侧表单。 */}
+        {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
+          <div className="flex h-full items-center justify-center">
+            <Spinner />
+          </div>
+        ) : detail === null && detailFailed ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3">
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
+            <Button
+              variant="secondary"
+              onPress={() => {
+                if (activeId) void refreshDetail(activeId).then(() => setDetailFailed(false)).catch(() => {})
               }}
             >
-              <Spinner size="sm" />
-              云端生成中，完成后图片会自动出现在画布
-            </div>
-          )}
-        </section>
-
-        {panelOpen ? (
-          <TaskPanel
-            status={detail?.topic.status ?? 'idle'}
-            prompt={panel.prompt}
-            count={panel.count}
-            size={panel.size}
-            customW={panel.customW}
-            customH={panel.customH}
-            referenceCount={panel.referenceIds.length}
-            staged={panel.staged}
-            stagedPreviews={panel.stagedPreviews}
-            canvasReferences={canvasReferences}
-            onRemoveStaged={removeStaged}
-            onRemoveCanvasReference={removeCanvasReference}
-            busy={!!busy}
-            credits={user.credits}
-            lastError={lastError}
-            onPromptChange={(prompt) => setPanel((p) => ({ ...p, prompt }))}
-            onCountChange={(count) => setPanel((p) => ({ ...p, count }))}
-            onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
-            onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
-            onUploadReference={(f) => void uploadReference(f)}
-            onOpenPromptLibrary={() => setDialog('promptLibrary')}
-            onGenerate={() => void submitGenerate()}
-            onCancel={() => void cancelRunning()}
-            onNewTask={() => void createTopic()}
-            onCollapse={() => setPanelOpen(false)}
+              重试
+            </Button>
+          </div>
+        ) : detail && detail.canvasImages.length > 0 ? (
+          <CanvasStage
+            key={detail.topic.id}
+            topicId={detail.topic.id}
+            images={detail.canvasImages}
+            messages={detail.messages}
+            onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
+            onAddReferences={addReferencesFromCanvas}
+            onRegenerate={regenerateFrom}
           />
         ) : (
-          <div className="lg:hidden">
-            <Button variant="secondary" onPress={() => setPanelOpen(true)}>展开生成面板</Button>
+          <CanvasEmptyGuide onOpenPromptLibrary={() => setDialog('promptLibrary')} />
+        )}
+        {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」。
+            ⚠️ `top: 68` 而不是 12：顶部那一条现在是两条浮动条的地盘（12..56），
+            状态条居中放同一行时，窄屏上会与左右两条撞在一起 */}
+        {busy && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              top: 68,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 999,
+              border: '1px solid var(--border)',
+              background: 'color-mix(in srgb, var(--surface-primary) 92%, transparent)',
+              boxShadow: 'var(--shadow-soft)',
+              fontSize: 13,
+              color: 'var(--foreground)',
+              pointerEvents: 'none',
+            }}
+          >
+            <Spinner size="sm" />
+            云端生成中，完成后图片会自动出现在画布
           </div>
         )}
-      </div>
+        {/* 两侧浮动面板 / 收起后的浮动条：都在**画布区内**绝对定位（顶栏仍是占位的，面板从它下面开始）。
+            2026-09-21 用户裁决：面板展开时占据该侧位置；**收起后原位换成一条小浮动条**，
+            里面放该侧的关键动作 —— 左：展开按钮 + 任务名 + 新建任务；右：展开按钮 + 生成/取消 + 张数尺寸摘要。
+            这样收起面板也不会丢掉「切任务」与「一键生成」这两个主路径。 */}
 
-      {drawerOpen && (
-        <TaskDrawer
-          topics={topics}
-          activeId={activeId}
-          onSelect={(id) => {
-            setActiveId(id)
-            setDrawerOpen(false)
-          }}
-          onRename={(id, t) => void renameTopic(id, t)}
-          onDelete={(id) => {
-            const t = topics.find((x) => x.id === id)
-            setConfirmDelete({ kind: 'topic', id, title: t?.title ?? '该任务' })
-          }}
-          onClose={() => setDrawerOpen(false)}
-          onInvite={() => {
-            setDrawerOpen(false)
-            setDialog('invite')
-          }}
-          onFeedback={() => {
-            setDrawerOpen(false)
-            setDialog('feedback')
-          }}
-        />
-      )}
+        {/* 窄屏遮罩：宽屏下 display:none ⇒ 既不显示也不参与命中测试。
+            2026-09-21 用户裁决：**两侧抽屉都要有这层背景**（变暗 + 挡住画布交互），
+            所以任一侧展开就渲染；**点它就收起抽屉**（2026-09-21 用户裁决）——
+            窄屏下遮罩铺满画布，点空白即收起是抽屉的通用约定；
+            宽屏没有遮罩，收起走画布的**双击**（见 onCanvasDoubleClick）。
+            它是纯背景，所以 aria-hidden + 不进 Tab 序；键盘出口是 Esc。
+            放在面板**之前**：z-index 更低（24 < 25），点面板仍可交互 */}
+        {leftOpen || rightOpen ? (
+          <div
+            className="ws-float-scrim"
+            aria-hidden="true"
+            onClick={() => {
+              setLeftOpen(false)
+              setRightOpen(false)
+            }}
+          />
+        ) : null}
+
+        {/* ⚠️ `leftOpen === null` = 还不知道屏幕多宽（SSR / hydration 首帧）→ **两边都不渲染**。
+            若把它当 false 处理，宽屏首帧会先冒出一条「已收起」的浮动条再被面板替换（闪错态）。 */}
+        {leftOpen === null ? null : leftOpen ? (
+          <aside className="ws-float-panel ws-float-left" aria-label="任务面板">
+            <TopicPanel
+              topics={topics}
+              activeId={activeId}
+              activeTitle={detail?.topic.title ?? '新任务'}
+              onSelect={(id) => setActiveId(id)}
+              onRename={(id, t) => void renameTopic(id, t)}
+              onDelete={(id) => {
+                const t = topics.find((x) => x.id === id)
+                setConfirmDelete({ kind: 'topic', id, title: t?.title ?? '该任务' })
+              }}
+              onNewTask={() => void createTopic()}
+              onCollapse={toggleLeft}
+              onInvite={() => setDialog('invite')}
+              onFeedback={() => setDialog('feedback')}
+            />
+          </aside>
+        ) : (
+          <div className="ws-collapsed-bar ws-collapsed-left">
+            <IconButton variant="secondary" label="展开任务面板" onPress={toggleLeft}>
+              <LayoutSideContentLeft />
+            </IconButton>
+            {/* 任务名只在 ≥lg 显示：窄屏两条浮动条会挤在一起（见 globals.css 的说明） */}
+            <span
+              className="hidden min-w-0 truncate text-sm lg:inline"
+              style={{ color: 'var(--muted-strong)' }}
+              title={detail?.topic.title ?? '新任务'}
+            >
+              {detail?.topic.title ?? '新任务'}
+            </span>
+            <IconButton variant="secondary" label="新建任务" onPress={() => void createTopic()}>
+              <Plus />
+            </IconButton>
+          </div>
+        )}
+
+        {rightOpen === null ? null : rightOpen ? (
+          <aside className="ws-float-panel ws-float-right" aria-label="生成面板">
+            <TaskPanel
+              status={detail?.topic.status ?? 'idle'}
+              prompt={panel.prompt}
+              count={panel.count}
+              size={panel.size}
+              customW={panel.customW}
+              customH={panel.customH}
+              referenceCount={panel.referenceIds.length}
+              staged={panel.staged}
+              stagedPreviews={panel.stagedPreviews}
+              canvasReferences={canvasReferences}
+              onRemoveStaged={removeStaged}
+              onRemoveCanvasReference={removeCanvasReference}
+              busy={!!busy}
+              credits={user.credits}
+              lastError={lastError}
+              onPromptChange={(prompt) => setPanel((p) => ({ ...p, prompt }))}
+              onCountChange={(count) => setPanel((p) => ({ ...p, count }))}
+              onSizeChange={(size) => setPanel((p) => ({ ...p, size }))}
+              onCustomSizeChange={(w, h) => setPanel((p) => ({ ...p, customW: w, customH: h }))}
+              onUploadReference={(f) => void uploadReference(f)}
+              onOpenPromptLibrary={() => setDialog('promptLibrary')}
+              onGenerate={() => void submitGenerate()}
+              onCancel={() => void cancelRunning()}
+              onNewTask={() => void createTopic()}
+            />
+          </aside>
+        ) : (
+          <div className="ws-collapsed-bar ws-collapsed-right">
+            <IconButton variant="secondary" label="展开生成面板" onPress={toggleRight}>
+              <LayoutSideContentRight />
+            </IconButton>
+            {busy ? (
+              <Button variant="secondary" onPress={() => void cancelRunning()}>取消生成</Button>
+            ) : (
+              <Button variant="primary" onPress={() => void submitGenerate()} isDisabled={!panel.prompt.trim()}>
+                {panel.prompt.trim() ? `生成（${panel.count} 张）` : '生成'}
+              </Button>
+            )}
+            {/* 摘要只在 ≥md 显示：窄屏放不下（同左条的任务名） */}
+            <span className="hidden whitespace-nowrap text-xs md:inline" style={{ color: 'var(--muted)' }}>
+              {panel.count} 张 · {sizeLabelOf(panel.size)}
+            </span>
+          </div>
+        )}
+      </section>
 
       {dialog === 'promptLibrary' && (
         <PromptLibraryModal

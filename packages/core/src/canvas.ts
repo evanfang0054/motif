@@ -87,7 +87,13 @@ export const DEFAULT_CANVAS_META: CanvasMeta = {
 
 const BACKGROUND_MODES: CanvasBackgroundMode[] = ['dots', 'lines', 'blank']
 
-function finiteNumber(v: unknown, fallback: number): number {
+/**
+ * 数值兜底：非 number 或非有限值一律回退默认。
+ *
+ * 导出给调用方共用 —— HeroUI / RAC 的 `NumberField` 在输入框被清空并失焦时给的是 `NaN`
+ * （不是 `null`），`v ?? 默认值` 接不住，各处都要用这个判据；各写一份必然改一处漏一处。
+ */
+export function finiteNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback
 }
 
@@ -161,6 +167,35 @@ export function displaySize(naturalWidth: number, naturalHeight: number, maxW = 
   if (!(naturalWidth > 0) || !(naturalHeight > 0)) return { width: maxW, height: maxH }
   const scale = Math.min(1, maxW / naturalWidth, maxH / naturalHeight)
   return { width: naturalWidth * scale, height: naturalHeight * scale }
+}
+
+/**
+ * 把一组矩形整体平移，让**包围盒居中于视口可见区域**。
+ *
+ * 2026-09-21 用户裁决：「整理布局」原先从 `origin`（视口左上角的世界坐标）起铺 4 列网格，
+ * 结果整块贴在画布左上角；用户要的是「规整到中间的区域」。
+ *
+ * ⚠️ 块比可见区大时**不做居中**，退回「左上角对齐 origin」：
+ * 居中的话左半/上半会被推到屏幕外（比原来更糟），而对齐原点至少能看见开头几行。
+ * 空数组直接返回，不做 `Math.min()`（会得到 Infinity）。
+ */
+export function centerRectsInViewport(
+  rects: CanvasRect[],
+  origin: { x: number; y: number },
+  viewW: number,
+  viewH: number
+): CanvasRect[] {
+  if (rects.length === 0) return rects
+  const minX = Math.min(...rects.map((r) => r.x))
+  const minY = Math.min(...rects.map((r) => r.y))
+  const maxX = Math.max(...rects.map((r) => r.x + r.w))
+  const maxY = Math.max(...rects.map((r) => r.y + r.h))
+  const blockW = maxX - minX
+  const blockH = maxY - minY
+  const dx = blockW <= viewW ? origin.x + (viewW - blockW) / 2 - minX : origin.x - minX
+  const dy = blockH <= viewH ? origin.y + (viewH - blockH) / 2 - minY : origin.y - minY
+  if (dx === 0 && dy === 0) return rects
+  return rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
 }
 
 function intersects(a: CanvasRect, b: CanvasRect): boolean {

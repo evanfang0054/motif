@@ -27,8 +27,10 @@ export function clampScale(k: number): number {
 
 /** 源缩放归一：k 非正/非有限时按 1 处理。
  * ⚠️ 必须是全函数：任何公式都不得拿 0/NaN 当分母，否则会产出 NaN 坐标 ——
- * 与 `@motif/core` 的 `viewportOrigin` 同一约定（那边 NaN 落库会撞 NOT NULL 直接抛错）。 */
-function baseScale(k: number): number {
+ * 与 `@motif/core` 的 `viewportOrigin` 同一约定（那边 NaN 落库会撞 NOT NULL 直接抛错）。
+ * 导出给调用方共用（`gridStyle`、`CanvasStage.arrangeAll` 都要这条归一），
+ * 内联写 `k > 0 ? k : 1` 会漏掉 Infinity。 */
+export function baseScale(k: number): number {
   const v = Number.isFinite(k) ? k : 1
   return v > 0 ? v : 1
 }
@@ -67,12 +69,21 @@ export function fitView(bounds: Rect, viewportW: number, viewportH: number, padd
   return { k, x: viewportW / 2 - cx * k, y: viewportH / 2 - cy * k }
 }
 
-/** 浮动工具栏的锚点偏移：贴在被选内容包围盒的「上方居中」处，抬高一点避免压住卡片 */
-export const TOOLBAR_LIFT = 12
+/**
+ * 浮动工具栏的锚点偏移：贴在被选内容包围盒的「上方居中」处。
+ *
+ * ⚠️ 值必须 ≥ 工具栏**自身高度**（sm 图标按钮 + 4px 内边距 + 1px 边框 ≈ 42px）——
+ * `top` 定的是工具栏的**上边缘**，工具栏从锚点往下长；只抬 12px 时它会压住卡片顶部约 30px
+ * （2026-09-21 用户反馈「工具栏挡住图片」的根因）。56 = 42 高度 + 14 间隙。
+ */
+export const TOOLBAR_LIFT = 56
+
+/** 翻转（贴顶时落到卡片**下方**）的偏移：这里 `top` 是上边缘，只需留一点间隙 */
+export const TOOLBAR_DROP = 12
 
 /**
  * 浮动工具栏的定位：被选矩形（世界坐标）包围盒的**顶部居中**，转成容器内屏幕坐标；
- * **贴顶时自动翻到包围盒下方**（首行卡片 `y = 0` 时 `top` 会是 -12，被画布 `overflow-hidden` 裁掉上沿）。
+ * **贴顶时自动翻到包围盒下方**（首行卡片 `y = 0` 时 `top` 会是负数，被画布 `overflow-hidden` 裁掉上沿）。
  *
  * ⚠️ 返回的键名必须是 **`left`/`top`** —— 直接返回 `worldToScreen(...)` 的 `{x, y}` 会被
  * React 当成 CSS 属性 `x`/`y`（那是 SVG 语义，对绝对定位元素不生效），
@@ -101,5 +112,5 @@ export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: 
   // 卡片与视口底边之间，本就不会被裁；反过来翻到上方只会盖住卡片内容。
   if (top >= 0) return { left: above.x, top }
   const below = worldToScreen(cx, maxY, v)
-  return { left: below.x, top: below.y + TOOLBAR_LIFT }
+  return { left: below.x, top: below.y + TOOLBAR_DROP }
 }

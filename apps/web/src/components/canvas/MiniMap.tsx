@@ -72,8 +72,15 @@ function MiniMap({ rects, viewport, size, onJump }: Props) {
       /* data-canvas-no-zoom：小地图在画布容器内，不豁免的话滚轮会变成画布缩放 */
       data-canvas-no-zoom
       /* hidden lg:block：窄屏（<1024）不渲染 —— 240px 宽在手机上占掉近半屏。
-         与右下视图簇里那个开关按钮的 `hidden lg:inline-flex` 必须成对，改一处要改两处。 */
-      className="absolute bottom-24 left-6 z-30 hidden touch-none overflow-hidden rounded-lg border shadow-lg lg:block"
+         与工具栏里那个开关按钮的 `hidden lg:inline-flex` 必须成对，改一处要改两处。
+         ⚠️ 位置（2026-09-21 二次调整）：回到**左下角**（`bottom-3 left-3`）。
+         上一轮曾因「左下角被左侧浮动面板（left-12 起、z-25）占住，小地图 z-20 会被盖住」
+         而挪到画布正中；本轮用户要求回左下角，于是改成**由左侧面板让位** ——
+         globals.css 里有一条 `:has()` 规则，小地图在场时把 `.ws-float-left` 的 bottom 抬到 184px
+         （12 + 160 + 12），左下角这块就空出来了。左侧于是变成「面板在上、小地图在下」的一条竖列，
+         比「小地图盖住面板页脚」或「悬在画布正中挡图」都合理。
+         bottom-3 = 12px，与底部工具栏同一条基线（工具栏居中，横向不冲突）。 */
+      className="absolute bottom-3 left-3 z-20 hidden touch-none overflow-hidden rounded-lg border shadow-lg lg:block"
       style={{
         width: MINIMAP_W,
         height: MINIMAP_H,
