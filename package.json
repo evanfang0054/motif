@@ -12,6 +12,7 @@
     "test:e2e": "bash e2e/run.sh",
     "cdk": "node scripts/cdk.mjs",
     "worker": "tsx scripts/worker.mjs",
+    "storage:migrate": "tsx scripts/storage-migrate.mjs",
     "admin:reset": "node scripts/admin.mjs --reset",
     "admin:list": "node scripts/admin.mjs --list"
   },

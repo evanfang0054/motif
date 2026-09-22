@@ -101,8 +101,13 @@ function s3Storage(values: Record<string, string | undefined>): Storage {
       try {
         await client.statObject(bucket, key)
         return true
-      } catch {
-        return false
+      } catch (e) {
+        // ⚠️ 只把「确实不存在」当 false，其余（连接失败 / 鉴权失败 / 桶不存在）必须冒泡：
+        // 全吞成 false 会把「远端不可达」伪装成「远端没有」—— dry-run 会虚报待搬数量，
+        // 双读也会把网络故障误报成「文件不存在」，把真正的原因藏起来。
+        const code = (e as { code?: string }).code
+        if (code === 'NotFound' || code === 'NoSuchKey') return false
+        throw e
       }
     },
   }
@@ -117,6 +122,20 @@ export function createStorageFromConfig(values: Record<string, string | undefine
   if (driver === 'local') return localStorage(dataDir)
   if (driver === 's3') return s3Storage(values)
   throw new Error(`[motif] STORAGE_DRIVER 只能是 local 或 s3，当前为「${values.STORAGE_DRIVER}」`)
+}
+
+/**
+ * 把存储层抛出的异常渲染成一句能看的话。
+ *
+ * ⚠️ minio 的 `S3Error` 在服务端响应里没有 `<Message>` 时，**`message` 是空串**
+ * （`String(e)` 也只剩 `"S3Error"`）。直接插值会打出「搬迁失败：」这种什么都没说的日志，
+ * 运维根本无从下手。故按 message → code → name 依次兜底，并把 code 一并带上。
+ */
+export function describeStorageError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e)
+  const code = (e as { code?: string }).code
+  if (e.message) return code ? `${e.message}（${code}）` : e.message
+  return code ? `${e.name}: ${code}` : e.name
 }
 
 /**

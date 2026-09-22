@@ -2,7 +2,7 @@ import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
 import { createLlmFromConfig } from './llm'
-import { createStorageFromConfig } from './storage'
+import { createStorageFromConfig, describeStorageError } from './storage'
 import { createPaymentGateway } from './payment'
 
 /**
@@ -367,7 +367,9 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
       build()
       return { group, ready: true, reason: null }
     } catch (e) {
-      return { group, ready: false, reason: e instanceof Error ? e.message : String(e) }
+      // ⚠️ 用 describeStorageError 而不是 `e.message`：minio 的 S3Error 可能 message 为空串，
+      // 直接取会让页面的「未就绪原因」变成空白（看起来像 bug，实际是没拿到服务端 <Message>）。
+      return { group, ready: false, reason: describeStorageError(e) }
     }
   }
   return [

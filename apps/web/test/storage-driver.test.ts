@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { storagePathFor } from '@motif/db'
-import { createStorageFromConfig, readImageWithFallback, type Storage } from '@/server/storage'
+import { createStorageFromConfig, describeStorageError, readImageWithFallback, type Storage } from '@/server/storage'
 
 let dir: string
 beforeEach(() => {
@@ -111,6 +111,35 @@ describe('双读判定（本地优先）', () => {
     await local.write(KEY, Buffer.from('only-local'))
     expect((await readImageWithFallback(local, null, KEY)).toString()).toBe('only-local')
     await expect(readImageWithFallback(local, null, 'nope.png')).rejects.toThrow()
+  })
+})
+
+describe('异常渲染成能看的话', () => {
+  it('普通 Error 原样返回 message（不加 code）', () => {
+    expect(describeStorageError(new Error('STORAGE_DRIVER=s3 缺少配置：S3_BUCKET'))).toBe(
+      'STORAGE_DRIVER=s3 缺少配置：S3_BUCKET'
+    )
+  })
+
+  it('message 非空且带 code 时两者都给出（便于定位鉴权 / 桶名问题）', () => {
+    const e = Object.assign(new Error('Access Denied.'), { code: 'AccessDenied' })
+    expect(describeStorageError(e)).toBe('Access Denied.（AccessDenied）')
+  })
+
+  it('⚠️ minio 的 S3Error 在服务端没回 <Message> 时 message 是空串 —— 必须回退到 code，不能输出空串', () => {
+    // 实测构造：S3Error 的 message === ''、String(e) === 'S3Error'
+    const e = Object.assign(new Error(''), { name: 'S3Error', code: 'NoSuchKey' })
+    expect(describeStorageError(e)).toBe('S3Error: NoSuchKey')
+  })
+
+  it('连 code 都没有时回退到 name（仍然不是空串）', () => {
+    const e = Object.assign(new Error(''), { name: 'S3Error' })
+    expect(describeStorageError(e)).toBe('S3Error')
+  })
+
+  it('非 Error 值也能渲染', () => {
+    expect(describeStorageError('boom')).toBe('boom')
+    expect(describeStorageError(undefined)).toBe('undefined')
   })
 })
 
