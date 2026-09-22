@@ -631,14 +631,6 @@
   color: var(--danger-quiet); /* AA：文字角色 */
 }
 
-.admin-confirm-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0;
-  font-size: 13px;
-}
-
 /* ---------- 渠道引导卡 ---------- */
 /* 不用 .admin-panel：引导卡嵌在设置分组内部，双边框 + 双阴影会形成「卡中卡」；
    这里用浅底（--surface-secondary）+ 无阴影，视觉上从属于所在分组。 */

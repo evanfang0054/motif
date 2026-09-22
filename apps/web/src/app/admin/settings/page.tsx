@@ -339,17 +339,23 @@ export default function AdminSettingsPage() {
                   })()}
                 </div>
               ))}
+              {/* 未选中态必须有可见边框（WCAG 2.1 SC 1.4.11 要求控件边界对相邻背景 ≥3:1）。
+                  边框色用 --muted 而非 --border / --border-strong：后两者是发丝线级别的弱令牌，
+                  实测对面板底仅 1.14:1（亮）/ 1.35:1（暗）与 1.57:1 / 1.75:1，均不达标；
+                  --muted 实测 5.13:1（亮）/ 6.16:1（暗），是当前调色板里唯一过线且不过重的选择。
+                  走 Checkbox.Control 的 className 是官方定制面（见 demos/cn/checkbox/custom-styles.tsx），
+                  不是覆盖组件内部样式。 */}
               <Checkbox
-                className="admin-confirm-line"
+                className="my-3"
                 isSelected={confirmed}
                 onChange={(sel) => setConfirmed(sel)}
               >
                 <Checkbox.Content>
-                  <Checkbox.Control>
+                  <Checkbox.Control className="border border-solid border-[var(--muted)]">
                     <Checkbox.Indicator />
                   </Checkbox.Control>
+                  <Label>我已了解上述后果</Label>
                 </Checkbox.Content>
-                我已了解上述后果
               </Checkbox>
               {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
                   文字色走 --danger-quiet（暗色 #eb6962）保证 AA。 */}
