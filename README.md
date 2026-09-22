@@ -123,11 +123,13 @@ motif/
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · **763 个单元测试**（core 55 · db 77 · provider 8 · web 623）
+- pnpm monorepo · TypeScript strict · **860 个单元测试**（core 58 · db 78 · provider 8 · web 716）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
 - Docker 多阶段构建一键部署，数据卷持久化，健康检查
+- **部署形态可配**：图片存储 local/S3 可切换（双读 + 一次性搬迁）、队列 worker 进程内/独立进程、
+  提示词增强独立 LLM 配置 —— 三项都在「系统设置」里改，不碰代码（见「部署形态」）
 
 ## 二、部署与配置
 
@@ -156,6 +158,26 @@ motif/
 | `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
 | `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
+| `STORAGE_DRIVER` | `local` | 图片存储驱动：`local`（默认，存 `dataDir/storage`）/ `s3`（S3 兼容对象存储，自建 MinIO 也可） |
+| `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY_ID` `S3_SECRET_ACCESS_KEY` | — | 驱动为 `s3` 时**必填**；`S3_REGION` 多数自建服务不校验、`S3_FORCE_PATH_STYLE` 自建 MinIO 需开 |
+| `MOTIF_INPROC_WORKER` | `true` | `false` = web 进程不跑生成队列 worker，改由独立进程 `pnpm worker` 接管（**改后需重启服务**） |
+| `LLM_ENHANCE_ENABLED` | `false` | 提示词增强总开关；开启后**还需**配好 `LLM_API_BASE_URL` + `LLM_API_KEY` 才真正生效（缺则静默降级为原文） |
+| `LLM_API_BASE_URL` `LLM_API_KEY` `LLM_MODEL` `LLM_TIMEOUT_MS` | — | 增强用的 OpenAI 兼容 `chat/completions` 网关（与生图网关相互独立，可不同域名/密钥） |
+
+### 部署形态（都在「系统设置」里改，不碰代码）
+
+三项原本写死的部署假设现在都可配，保存即生效（`MOTIF_INPROC_WORKER` 需重启）：
+
+1. **图片存储 local ⇄ S3**：「系统设置 → 图片存储」选 `s3` 并填端点/桶/凭据。切换后**已有老图仍可读**
+   （读路径「本地优先、本地没有才读远端」，不必等搬迁跑完）；新图按驱动写入。
+   搬迁老图：`pnpm storage:migrate --dry-run` 先看清单（不动任何数据），确认后去掉 `--dry-run` 执行；
+   **可反复执行**，远端已存在的不重复上传（中断后重跑即断点续跑）。
+2. **队列 worker 进程内 ⇄ 独立进程**：关掉「本进程内运行生成队列 worker」后，用 `pnpm worker`
+   起独立消费进程。⚠️ 推荐**先关掉进程内 worker 再跑独立进程**：并发认领本身安全（租约语义），
+   但单批耗时超过租约（30 分钟）时两个进程可能并发执行同一条消息。
+3. **提示词增强（可选）**：「系统设置 → 提示词增强」开启后填 LLM 端点与密钥。分区顶部会显示
+   配置就绪状态（未启用 / 已就绪 / 未就绪 + 原因）。调用失败一律**降级为原文**、不阻断生成、
+   不影响额度，并在生成记录里如实标记是否真的增强过。
 
 ### 渠道快速接入（发信 / 收款，管理后台操作）
 
@@ -198,7 +220,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 763 个单元测试（core 55 · db 77 · provider 8 · web 623）
+pnpm test             # 860 个单元测试（core 58 · db 78 · provider 8 · web 716）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布
@@ -224,6 +246,14 @@ pnpm admin:list          # 查看现有管理员账号
 ```
 
 登录后访问 `/admin` 进入管理后台；工作台顶栏也会为管理员显示「管理后台」入口。
+
+### 运维命令（部署形态相关）
+
+```bash
+pnpm worker                    # 独立队列消费进程（配 MOTIF_INPROC_WORKER=false 使用）
+pnpm storage:migrate --dry-run # 图片搬迁：只看清单，不动任何数据
+pnpm storage:migrate           # 正式搬迁（可反复执行，已存在的不重复上传）
+```
 
 ## 快速开始（本地开发）
 
