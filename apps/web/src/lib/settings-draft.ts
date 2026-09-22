@@ -1,5 +1,5 @@
 import type { AdminSettingItem } from './client'
-import { mailerFieldVisible, paymentFieldVisible } from './setting-visibility'
+import { mailerFieldVisible, paymentFieldVisible, storageFieldVisible } from './setting-visibility'
 
 /**
  * 枚举下拉的选项列表。
@@ -34,6 +34,8 @@ export function pickUpdates(input: {
   const visible = (key: string): boolean => {
     if (group === 'mailer') return mailerFieldVisible({ key }, draftChannel('MOTIF_MAILER'))
     if (group === 'payment') return paymentFieldVisible({ key }, draftChannel('PAYMENT_CHANNEL'))
+    // 切回 local 时 S3_* 被隐藏，其草稿值不应再被提交（与 mailer/payment 同口径）
+    if (group === 'storage') return storageFieldVisible({ key }, draftChannel('STORAGE_DRIVER'))
     return true
   }
   return Object.fromEntries(Object.entries(dirty).filter(([k]) => keys.has(k) && visible(k)))

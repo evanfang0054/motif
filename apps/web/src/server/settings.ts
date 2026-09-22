@@ -2,6 +2,7 @@ import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
 import { createLlmFromConfig } from './llm'
+import { createStorageFromConfig } from './storage'
 import { createPaymentGateway } from './payment'
 
 /**
@@ -18,7 +19,7 @@ import { createPaymentGateway } from './payment'
  * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
-export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'prompts' | 'danger' | 'security' | 'data'
+export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -80,6 +81,17 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'LLM_API_KEY', group: 'llm', label: 'LLM 密钥', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
   { key: 'LLM_MODEL', group: 'llm', label: '增强模型', kind: 'string', defaultHint: 'gpt-4o-mini' },
   { key: 'LLM_TIMEOUT_MS', group: 'llm', label: '增强超时（毫秒）', kind: 'number', defaultHint: '20000', hint: '增强失败不阻断生成，超时只是让降级更快发生。' },
+
+  // ---- 图片存储 ----
+  // 驱动为 local 时全部 S3_* 隐藏（见 lib/setting-visibility.ts）。
+  // 切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。
+  { key: 'STORAGE_DRIVER', group: 'storage', label: '图片存储驱动', kind: 'enum', options: ['local', 's3'], defaultHint: 'local', hint: '切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。' },
+  { key: 'S3_ENDPOINT', group: 'storage', label: 'S3 端点', kind: 'url', required: true, hint: '含协议，例如 https://s3.example.com（自建 MinIO 也填这里）' },
+  { key: 'S3_REGION', group: 'storage', label: '区域', kind: 'string', defaultHint: 'us-east-1', hint: '多数自建服务不校验，可留空使用默认。' },
+  { key: 'S3_BUCKET', group: 'storage', label: '存储桶', kind: 'string', required: true },
+  { key: 'S3_ACCESS_KEY_ID', group: 'storage', label: 'Access Key ID', kind: 'string', required: true },
+  { key: 'S3_SECRET_ACCESS_KEY', group: 'storage', label: 'Secret Access Key', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
+  { key: 'S3_FORCE_PATH_STYLE', group: 'storage', label: '强制 path-style 寻址', kind: 'boolean', defaultHint: 'false', hint: '自建 MinIO / 无 DNS 泛解析的兼容服务需开启。' },
 
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
@@ -375,6 +387,9 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
     }),
     // 判据复用 createLlmFromConfig（必需字段清单不手写第二份）。
     // ⚠️ 开关关闭时**不算未就绪**：未启用是运营的选择，不是配置缺失 —— 否则页面会一直挂一个假告警。
+    // 判据复用 createStorageFromConfig（必需字段清单不手写第二份）。
+    // dataDir 传 cwd 即可：local 分支不用它，s3 分支也不用它（只做配置校验，不建连接）。
+    probe('storage', () => createStorageFromConfig(values, process.cwd())),
     probe('llm', () => {
       if (!resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false)) return null
       createLlmFromConfig(values)

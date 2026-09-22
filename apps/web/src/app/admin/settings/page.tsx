@@ -8,7 +8,7 @@ import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
-import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
+import { mailerFieldVisible, paymentFieldVisible, storageFieldVisible } from '@/lib/setting-visibility'
 import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
@@ -17,6 +17,7 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   payment: '支付与套餐',
   mailer: '邮件发信',
   llm: '提示词增强',
+  storage: '图片存储',
   // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
   prompts: '提示词库',
   security: '会话与安全',
@@ -24,7 +25,7 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'llm', 'prompts', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'llm', 'storage', 'prompts', 'security', 'data']
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
@@ -175,15 +176,18 @@ export default function AdminSettingsPage() {
     if (group === 'prompts') return <PromptSourcePanel />
     // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
     // 否则 mock/console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通
-    const savedChannel = items.find((i) => i.key === (group === 'mailer' ? 'MOTIF_MAILER' : 'PAYMENT_CHANNEL'))?.value ?? null
-    const dirtyKey = group === 'mailer' ? dirty['MOTIF_MAILER'] : dirty['PAYMENT_CHANNEL']
+    const selectorKey = group === 'mailer' ? 'MOTIF_MAILER' : group === 'payment' ? 'PAYMENT_CHANNEL' : 'STORAGE_DRIVER'
+    const savedChannel = items.find((i) => i.key === selectorKey)?.value ?? null
+    const dirtyKey = dirty[selectorKey]
     const draftChannel = dirtyKey ?? savedChannel
     const visibleOf =
       group === 'mailer'
         ? (key: string) => mailerFieldVisible({ key }, draftChannel)
         : group === 'payment'
           ? (key: string) => paymentFieldVisible({ key }, draftChannel)
-          : null
+          : group === 'storage'
+            ? (key: string) => storageFieldVisible({ key }, draftChannel)
+            : null
     const shownItems = visibleOf ? groupItems.filter((i) => visibleOf(i.key)) : groupItems
     const channelDirty = !!dirtyKey && dirtyKey !== savedChannel
     const guideCards =

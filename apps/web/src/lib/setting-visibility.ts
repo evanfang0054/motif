@@ -36,3 +36,9 @@ export function paymentFieldVisible(item: { key: string }, channel: string | nul
   const allowed = PAYMENT_FIELDS[channel ?? 'mock'] ?? []
   return allowed.includes(item.key)
 }
+
+/** storage 组显隐：驱动为 s3 时显示 S3_*，否则隐藏（null = 未设置，按 local 处理）；其他组的键一律可见 */
+export function storageFieldVisible(item: { key: string }, driver: string | null): boolean {
+  if (!item.key.startsWith('S3_')) return true
+  return driver === 's3'
+}
