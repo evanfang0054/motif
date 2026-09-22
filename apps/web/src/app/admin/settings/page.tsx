@@ -175,14 +175,21 @@ export default function AdminSettingsPage() {
    * 为什么需要它：`llm` 与 `storage` 都是**开了开关但配置不全就静默降级**的能力 ——
    * 增强失败会降级为原文、存储写不进去只在服务端报错。若页面上不给就绪判据，运维只会看到
    * 「功能没生效」而找不到原因（判据其实早就在接口里，只是没人渲染）。
+   *
+   * @param switchKey 该分区的总开关键。关闭时显示「未启用」而不是「已就绪」——
+   *   probe 对关闭态刻意返回 ready（未启用是运营选择、不是配置缺失），但紧挨一个关着的开关
+   *   显示「已就绪」会被读成「功能已生效」，是误导。
    */
-  function healthLine(group: string) {
+  function healthLine(group: string, switchKey?: string) {
     const h = health.find((x) => x.group === group)
     if (!h) return null
+    const switchedOff = switchKey ? !isOn(switchKey) : false
     return (
       <p className="admin-field-hint" data-slot="config-health">
         {HEALTH_LABEL[group] ?? group}配置：
-        {h.ready ? (
+        {switchedOff ? (
+          <>未启用（开关关闭，生成时不会调用）</>
+        ) : h.ready ? (
           <>
             <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
             已就绪
@@ -195,6 +202,12 @@ export default function AdminSettingsPage() {
         )}
       </p>
     )
+  }
+
+  /** 草稿优先的布尔值：与字段渲染同一口径（未保存的改动立即反映到提示行） */
+  function isOn(key: string): boolean {
+    const raw = dirty[key] ?? items.find((i) => i.key === key)?.value
+    return raw === 'true' || raw === '1'
   }
 
   /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */
@@ -234,7 +247,8 @@ export default function AdminSettingsPage() {
         )}
         {guideCards.length > 0 && <GuideCardSection cards={guideCards} />}
         {/* 只有「开关型 + 静默降级」的两个分区需要就绪行（payment 的就绪提示在危险区 PAYMENT_CHANNEL 旁） */}
-        {(group === 'llm' || group === 'storage') && healthLine(group)}
+        {group === 'llm' && healthLine('llm', 'LLM_ENHANCE_ENABLED')}
+        {group === 'storage' && healthLine('storage')}
         {channelDirty && (
           <p className="admin-field-hint">
             渠道已改为「{dirtyKey}」尚未保存：下方字段与引导卡已按新渠道显示，填好后点「保存」生效。

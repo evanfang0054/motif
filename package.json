@@ -21,7 +21,9 @@
   },
   "packageManager": "pnpm@11.20.0",
   "devDependencies": {
-    "better-sqlite3": "^12.2.0",
+    "better-sqlite3": "^12.2.0"
+  },
+  "dependencies": {
     "tsx": "^4.23.15"
   }
 }

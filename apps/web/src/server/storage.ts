@@ -102,9 +102,15 @@ function s3Storage(values: Record<string, string | undefined>): Storage {
         await client.statObject(bucket, key)
         return true
       } catch (e) {
-        // ⚠️ 只把「确实不存在」当 false，其余（连接失败 / 鉴权失败 / 桶不存在）必须冒泡：
+        // ⚠️ 只把「确实不存在」当 false，其余（连接失败 / 鉴权失败）必须冒泡：
         // 全吞成 false 会把「远端不可达」伪装成「远端没有」—— dry-run 会虚报待搬数量，
         // 双读也会把网络故障误报成「文件不存在」，把真正的原因藏起来。
+        //
+        // 关于 code 的实测口径（minio@8.0.7）：statObject 走 HEAD，404 响应**没有 body**，
+        // 于是 parseResponseError 按状态码给出 `NotFound`。因此**桶名配错（NoSuchBucket）也会
+        // 落到这里被当成 false** —— 这是 HEAD 语义下的固有取舍，不是漏判。
+        // 真要把「桶配错」区分出来，唯一可靠的位置是**写路径**（putObject 会带回 NoSuchBucket），
+        // 而写路径本就按驱动走、不经过本函数。故此处保持「404 即不存在」。
         const code = (e as { code?: string }).code
         if (code === 'NotFound' || code === 'NoSuchKey') return false
         throw e

@@ -5,8 +5,13 @@
  * 用法：pnpm worker
  *
  * 用途：把队列消费从 web 进程拆出去。配合系统设置里把「本进程内运行生成队列 worker」
- * 关掉（`MOTIF_INPROC_WORKER=false`）使用；**两者同时开着也安全** —— 认领走
- * `leaseNextMessage` 的租约语义，同一条消息只会被一个进程拿到，另一个进程那一轮取不到活。
+ * 关掉（`MOTIF_INPROC_WORKER=false`）使用。
+ *
+ * ⚠️ 「两者同时开着」在**并发认领**层面是安全的（`leaseNextMessage` 的租约语义保证同一条消息
+ * 只会被一个进程拿到，另一个进程那一轮取不到活），但**单批耗时超过租约（LEASE_MS，30 分钟）时
+ * 不安全**：另一进程的 `requeueExpiredLeases` 只排除**自己进程内**的 inFlight，会把对方正在跑的
+ * 消息当成过期重排并再次认领 → 同一消息被两个进程并发执行、可能超额出图。
+ * 故推荐做法是**先关掉进程内 worker 再跑本进程**，而不是两者长期共存。
  *
  * ⚠️ 必须先 bootstrapConfig 再 startWorker：配置的真相在 settings 表，不先播种就读不到
  * 库里已改的配置（照抄 apps/web/src/instrumentation.ts 的启动顺序）。
