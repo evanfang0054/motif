@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { existsSync, readFileSync } from 'node:fs'
-import { storagePathFor } from '@motif/db'
-import { getRuntime } from '@/server/context'
+import { getRuntime, resolveRemoteStorage, resolveStorage } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
+import { readImageWithFallback } from '@/server/storage'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -21,13 +20,16 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   try {
     const user = requireUser(req)
     const { id } = await params
-    const { store, dataDir } = getRuntime()
+    const { store } = getRuntime()
     const ref = store.getReferenceUpload(id)
     const topic = ref ? store.getTopic(ref.topicId) : null
     if (!ref || !topic || topic.userId !== user.id) throw new ServiceError(404, '参考图不存在。')
-    const abs = storagePathFor(dataDir, ref.imageKey)
-    if (!existsSync(abs)) throw new ServiceError(404, '参考图文件不存在。')
-    return new NextResponse(new Uint8Array(readFileSync(abs)), {
+    // 双读：切到 s3 后老参考图仍可读；**两边都没有仍是 404**（不降级成 500 兜底文案）
+    const storage = resolveStorage()
+    const remote = resolveRemoteStorage()
+    const found = (await storage.exists(ref.imageKey)) || (remote ? await remote.exists(ref.imageKey) : false)
+    if (!found) throw new ServiceError(404, '参考图文件不存在。')
+    return new NextResponse(new Uint8Array(await readImageWithFallback(storage, remote, ref.imageKey)), {
       headers: {
         'Content-Type': ref.mimeType,
         'Cache-Control': 'private, max-age=31536000',

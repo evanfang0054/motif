@@ -31,6 +31,11 @@ import {
   type PromptQuery,
 } from '@/lib/prompts'
 import { checkRate } from './rate-limit'
+/**
+ * ⚠️ 本文件里对 `node:fs` 的直读**不在图片存储驱动的改造范围内**：
+ * 读的是 `public/` 下随仓库分发的**提示词库示例图**（静态资源），不是用户上传/生成的图片。
+ * 用户图片一律走 `server/storage.ts` 的分派层（支持 local/s3 双读）。
+ */
 import { saveReferenceImage, ServiceError } from './services'
 
 export { parsePromptQuery } from '@/lib/prompts'
@@ -387,7 +392,7 @@ export async function attachPromptImage(
     const localBuffer = readFileSync(abs)
     const localMime = detectImageMime(localBuffer)
     if (!localMime) throw new ServiceError(415, '示例图不是可用的图片格式。')
-    return { reference: saveReferenceImage(store, dataDir, user, input.topicId, { buffer: localBuffer, mimeType: localMime, name: entry.title }) }
+    return { reference: await saveReferenceImage(store, dataDir, user, input.topicId, { buffer: localBuffer, mimeType: localMime, name: entry.title }) }
   }
   if (!isSafeRemoteImageUrl(url)) throw new ServiceError(400, '示例图地址不可用。')
 
@@ -404,5 +409,5 @@ export async function attachPromptImage(
   const buffer = await readCapped(res, ATTACH_MAX_BYTES)
   const mime = detectImageMime(buffer)
   if (!mime) throw new ServiceError(415, '示例图不是可用的图片格式。')
-  return { reference: saveReferenceImage(store, dataDir, user, input.topicId, { buffer, mimeType: mime, name: entry.title }) }
+  return { reference: await saveReferenceImage(store, dataDir, user, input.topicId, { buffer, mimeType: mime, name: entry.title }) }
 }

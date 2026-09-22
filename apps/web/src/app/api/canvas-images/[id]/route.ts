@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { unlinkSync } from 'node:fs'
-import { getRuntime } from '@/server/context'
+import { getRuntime, resolveRemoteStorage, resolveStorage } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
-import { storagePathFor } from '@motif/db'
+import { readImageWithFallback } from '@/server/storage'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -12,11 +11,11 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
   try {
     const user = requireUser(req)
     const { id } = await params
-    const { store, dataDir } = getRuntime()
+    const { store } = getRuntime()
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id) throw new ServiceError(404, '图片不存在。')
-    const abs = storagePathFor(dataDir, img.imageKey)
-    const buf = await import('node:fs').then((fs) => fs.readFileSync(abs))
+    // 双读：本地优先，本地没有读远端（切到 s3 后老图仍可读）
+    const buf = await readImageWithFallback(resolveStorage(), resolveRemoteStorage(), img.imageKey)
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         'Content-Type': img.mimeType,
@@ -33,15 +32,12 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   try {
     const user = requireUser(req)
     const { id } = await params
-    const { store, dataDir } = getRuntime()
+    const { store } = getRuntime()
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id) throw new ServiceError(404, '图片不存在。')
     store.deleteCanvasImage(id)
-    try {
-      unlinkSync(storagePathFor(dataDir, img.imageKey))
-    } catch {
-      // 文件可能已被清理，忽略
-    }
+    // 只删当前驱动下的对象：local 驱动删本地、s3 驱动删远端（不跨驱动误删）
+    await resolveStorage().remove(img.imageKey)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)
