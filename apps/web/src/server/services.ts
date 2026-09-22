@@ -233,6 +233,31 @@ export async function enqueueGeneration(
     }
   }
 
+  // 提示词增强：**服务端权威**——前端传 enhance 只是意愿，这里再 AND 一次配置（双保险）。
+  // 失败一律降级为原文：增强是可选增益，不该让生成失败，也不该动额度。
+  // 每轮现构造客户端（不缓存）：配置可在管理后台热改，缓存会让「改了 LLM 密钥、页面显示成功、
+  // 实际仍打旧网关」静默失效 —— 与 provider / worker 的处理一致。
+  //
+  // ⚠️ **必须放在 deductCredits 之前**：这是一次最长 20s 的网络调用（LLM_TIMEOUT_MS），
+  // 而「扣费之后、createMessage 之前」是不守恒窗口 —— 退额只发生在 executeMessage 的
+  // catch / finishCancel 里，两者都要求消息已存在；若进程在这个窗口里被 kill / 滚动重启，
+  // 额度已扣却没有消息行，worker 永远不会退这笔钱。放在扣费前，窗口里就只剩本地 IO。
+  // 代价：额度不足的用户会白调一次 LLM（不产出任何东西）—— 与「掉额度」相比这个代价小得多。
+  const basePrompt = input.prompt.trim()
+  let finalPrompt = basePrompt
+  let enhanced = false
+  if (input.enhance && resolveLlmReady(store, process.env)) {
+    try {
+      const out = await createLlmFromConfig(resolveConfigValues(store, process.env)).enhance(basePrompt)
+      if (out.trim()) {
+        finalPrompt = out.trim()
+        enhanced = true
+      }
+    } catch (e) {
+      console.error('[motif] 提示词增强失败，降级为原文:', e)
+    }
+  }
+
   const cost = input.count
   // refId 留空：扣费发生在 createMessage 之前，此刻还没有消息 id（把扣费挪后又会改变
   // 「额度不足时不建 topic/message」的既有语义）
@@ -252,25 +277,6 @@ export async function enqueueGeneration(
   const validRefs = [...canvasRefIds, ...stagedCanvasIds]
 
   const size = sizeCheck.value
-
-  // 提示词增强：**服务端权威**——前端传 enhance 只是意愿，这里再 AND 一次配置（双保险）。
-  // 失败一律降级为原文：增强是可选增益，不该让生成失败，也不该动额度（额度按张预扣，与本段无关）。
-  // 每轮现构造客户端（不缓存）：配置可在管理后台热改，缓存会让「改了 LLM 密钥、页面显示成功、
-  // 实际仍打旧网关」静默失效 —— 与 provider / worker 的处理一致。
-  const basePrompt = input.prompt.trim()
-  let finalPrompt = basePrompt
-  let enhanced = false
-  if (input.enhance && resolveLlmReady(store, process.env)) {
-    try {
-      const out = await createLlmFromConfig(resolveConfigValues(store, process.env)).enhance(basePrompt)
-      if (out.trim()) {
-        finalPrompt = out.trim()
-        enhanced = true
-      }
-    } catch (e) {
-      console.error('[motif] 提示词增强失败，降级为原文:', e)
-    }
-  }
 
   const message = store.createMessage({
     topicId: topic.id,
@@ -321,16 +327,18 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
   try {
     // 图生图：读取参考图文件传给 Provider（网关 images/edits 端点）
     // 双读：本地优先、本地没有才问远端 —— 切到 s3 后老参考图仍能参与生成
-    // ⚠️ 用 resolveReadStorages：「本地」永远是本地目录（拿 resolveStorage() 会在 s3 驱动下
-    // 退化成「远端 vs 远端」，本地老图读不到 → 参考图被静默降级掉）
-    const { local: storage, remote } = resolveReadStorages(dataDir)
+    // ⚠️ 读用 resolveReadStorages（「本地」永远是本地目录），**写必须用 resolveStorage（按驱动）**。
+    // 两者不能共用一个变量：s3 驱动下 resolveStorage() 返回远端，拿它当「本地」会让双读退化；
+    // 反过来把 local 当写入目标，新图就永远只落本地盘、根本进不了 S3。
+    const { local, remote } = resolveReadStorages(dataDir)
+    const writeStorage = resolveStorage(dataDir)
     const referenceImages = (
       await Promise.all(
         (msg.referenceIds ?? []).map(async (id) => {
           const meta = store.getCanvasImage(id)
           if (!meta) return null
           try {
-            return { buffer: await readImageWithFallback(storage, remote, meta.imageKey), mimeType: meta.mimeType }
+            return { buffer: await readImageWithFallback(local, remote, meta.imageKey), mimeType: meta.mimeType }
           } catch {
             return null // 参考图文件缺失时降级为纯文生图
           }
@@ -358,7 +366,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       })
       const ext = img.mimeType.includes('png') ? 'png' : img.mimeType.includes('jpeg') ? 'jpg' : 'webp'
       const imageKey = buildImageKey(msg.userId, msg.topicId, msg.id, `${randomUUID()}.${ext}`)
-      await storage.write(imageKey, img.buffer)
+      await writeStorage.write(imageKey, img.buffer)
       // 位置列与图片行在**同一条 INSERT** 落库：不存在「有图无位置」的中间态。
       // ⚠️ 不要拆成「先插图、再 UPDATE 位置」两步。
       const size = displaySize(img.width, img.height)

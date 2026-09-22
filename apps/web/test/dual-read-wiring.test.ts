@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MotifStore, storagePathFor } from '@motif/db'
+import type { GeneratedImage, ImageProvider } from '@motif/image-provider'
 import { resolveLocalStorage, resolveReadStorages, resolveRemoteStorage, resolveStorage } from '@/server/context'
 import { writeSettings } from '@/server/settings'
 import { readImageWithFallback } from '@/server/storage'
+import { enqueueGeneration } from '@/server/services'
+import { runWorkerTick, type WorkerState } from '@/server/worker'
 
 /**
  * 双读的**接线**测试（不是判定测试）。
@@ -110,5 +113,90 @@ describe('s3 驱动下「本地」仍指本地目录', () => {
     // 而正确接线读得到
     const { local, remote } = resolveReadStorages()
     await expect(readImageWithFallback(local, remote, KEY)).resolves.toEqual(Buffer.from('legacy-bytes'))
+  })
+})
+
+/**
+ * 生成图的**写入落点**必须按驱动走。
+ *
+ * 这一组是被实测暴露的回归钉住的：把 `resolveReadStorages()` 解构出的 `local` 直接当写入目标，
+ * 会让 s3 驱动下新图永远只落本地盘、根本进不了 S3（而因为读路径「本地优先」，dev 与单测都看不出来）。
+ * 反向证明手法与上面一致：把远端指向**必然不可达**的端点 ——
+ *   s3 驱动 → 写远端会抛错，且本地目录必须**保持为空**（若代码写本地，这里会变红）
+ *   local 驱动 → 写本地成功，且本地目录**必须出现文件**
+ */
+describe('生成图的写入落点按驱动走', () => {
+  const stubProvider: ImageProvider = {
+    name: 'stub',
+    generate: async (): Promise<GeneratedImage> => ({
+      buffer: Buffer.from('stub-bytes'),
+      mimeType: 'image/png',
+      width: 1,
+      height: 1,
+    }),
+  }
+
+  function installRuntime(provider: ImageProvider) {
+    const g = globalThis as unknown as { __motifRuntime?: unknown }
+    g.__motifRuntime = {
+      store,
+      provider,
+      mailer: { mailer: { name: 'stub', sendVerificationCode: async () => {} }, isConsole: true },
+      dataDir: dir,
+    }
+  }
+
+  /** 本地 storage 目录下的文件数（目录不存在算 0） */
+  function localFileCount(): number {
+    try {
+      let n = 0
+      const walk = (d: string) => {
+        for (const e of readdirSync(d, { withFileTypes: true })) {
+          if (e.isDirectory()) walk(join(d, e.name))
+          else n += 1
+        }
+      }
+      walk(join(dir, 'storage'))
+      return n
+    } catch {
+      return 0
+    }
+  }
+
+  async function runOneGeneration() {
+    installRuntime(stubProvider)
+    const user = store.createUser({ email: `w-${Date.now()}@b.co`, passwordHash: 'h', name: 'w', credits: 4 })
+    const res = await enqueueGeneration(store, stubProvider, dir, user, {
+      prompt: '晨光中的白瓷马克杯',
+      count: 1,
+      size: '1024x1024',
+      enhance: false,
+      topicId: null,
+      referenceCanvasImageIds: [],
+    })
+    const state: WorkerState = {
+      store,
+      dataDir: dir,
+      workerId: 'worker-test',
+      busy: false,
+      timer: null,
+      inFlight: new Set<string>(),
+    }
+    await runWorkerTick(state)
+    return res
+  }
+
+  it('local 驱动：生成图落到本地盘，消息完成', async () => {
+    const res = await runOneGeneration()
+    expect(store.getMessage(res.messageId)!.status).toBe('completed')
+    expect(localFileCount()).toBe(1)
+  })
+
+  it('⚠️ 回归：s3 驱动下生成图**不许**写本地盘（远端不可达时消息应失败，本地目录仍为空）', async () => {
+    writeSettings(store, { STORAGE_DRIVER: 's3', ...UNREACHABLE }, { danger: false })
+    const res = await runOneGeneration()
+    // 写远端失败 → 消息失败（而不是「悄悄写进本地盘、消息照常 completed」）
+    expect(store.getMessage(res.messageId)!.status).toBe('failed')
+    expect(localFileCount()).toBe(0)
   })
 })

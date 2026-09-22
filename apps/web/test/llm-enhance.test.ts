@@ -123,4 +123,21 @@ describe('提示词增强接线', () => {
       store.getUserById(off.id)!.credits,
     ]).toEqual([7, 7, 7])
   })
+
+  it('⚠️ 回归：增强必须发生在**扣费之前** —— 否则「扣费后、建消息前」的不守恒窗口被拉长到最长 20s', async () => {
+    // 不守恒窗口 = deductCredits 之后、createMessage 之前：退额只发生在 executeMessage 的
+    // catch / finishCancel 里，两者都要求消息已存在。进程若在这个窗口里被 kill，额度已扣却
+    // 没有消息行，worker 永远不会退这笔钱。增强是一次最长 20s 的网络调用，绝不能落在这个窗口里。
+    // 可观测的判据：额度不足（402）时**已经**调过 LLM —— 说明增强排在扣费检查之前。
+    enableLlm()
+    const fetchMock = vi.fn(async () => okResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const broke = newUser('broke@b.co', 0)
+    await expect(enqueueGeneration(store, provider, dir, broke, { ...base, prompt: '白瓷马克杯', enhance: true })).rejects.toThrow(
+      /额度不足/
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    // 且没有产生任何消息（额度不足不该建任务消息）
+    expect(store.listMessages(store.createTopic(broke.id, 'x').id)).toEqual([])
+  })
 })
