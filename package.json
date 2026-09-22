@@ -11,6 +11,7 @@
     "test": "pnpm -r test",
     "test:e2e": "bash e2e/run.sh",
     "cdk": "node scripts/cdk.mjs",
+    "worker": "tsx scripts/worker.mjs",
     "admin:reset": "node scripts/admin.mjs --reset",
     "admin:list": "node scripts/admin.mjs --list"
   },
@@ -19,6 +20,7 @@
   },
   "packageManager": "pnpm@11.20.0",
   "devDependencies": {
-    "better-sqlite3": "^12.2.0"
+    "better-sqlite3": "^12.2.0",
+    "tsx": "^4.23.15"
   }
 }

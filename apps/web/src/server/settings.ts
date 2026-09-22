@@ -46,6 +46,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'IMAGE_API_BASE_URL', group: 'generation', label: '网关地址', kind: 'url', required: true, affectsRuntime: true, hint: 'OpenAI 兼容网关的根地址，例如 https://api.example.com/v1' },
   { key: 'IMAGE_API_KEY', group: 'generation', label: 'API 密钥', kind: 'secret', required: true, affectsRuntime: true, hint: '只写不读：保存后页面只显示掩码' },
   { key: 'IMAGE_MODEL', group: 'generation', label: '模型', kind: 'string', defaultHint: 'gpt-image-2', affectsRuntime: true },
+  // 关闭后本进程不再跑队列，改由独立进程 `pnpm worker` 接管（两者可共存，租约保证不双跑）。
+  // ⚠️ 刻意**不是** affectsRuntime：它不涉及 provider/mailer 重建，需重启进程才生效（hint 写明）。
+  { key: 'MOTIF_INPROC_WORKER', group: 'generation', label: '本进程内运行生成队列 worker', kind: 'boolean', defaultHint: 'true', hint: '关闭后需另跑 `pnpm worker` 独立进程接管出图，否则队列无人消费。改动后需重启服务生效。' },
 
   // ---- 额度与奖励 ----
   // 分组名取 credits 而非 invite：注册赠送不属于邀请活动，放 invite 组语义不对。

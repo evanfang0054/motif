@@ -1,6 +1,7 @@
 import type { MotifStore } from '@motif/db'
 import { executeMessage, type WorkerDeps } from './services'
 import { getRuntime } from './context'
+import { resolveBool } from './settings'
 
 /**
  * 进程内生成队列 worker：
@@ -64,9 +65,23 @@ export async function runWorkerTick(state: WorkerState): Promise<void> {
   }
 }
 
-export function startWorker(): void {
-  if (g.__motifWorker) return
+/**
+ * 启动进程内 worker。
+ *
+ * @returns 真的启动了返回 `true`；因开关关闭而没启动返回 `false`。
+ *   调用方**必须**区分这两种情况：独立进程入口要靠它决定「是保活还是直接退出」——
+ *   开关关着却继续保活，会留下一个什么都不干的僵尸进程（运维会以为它在消费队列）。
+ */
+export function startWorker(): boolean {
+  if (g.__motifWorker) return true
   const { store, dataDir } = getRuntime()
+  // 开关读库优先、回退 env（与全站配置口径一致）。
+  // 关掉只是「本进程不跑」：runWorkerTick 的能力**刻意保留** —— 独立进程 `pnpm worker`
+  // 与单测都靠直接调用它驱动队列，把能力也一起关掉会让两者都无从下手。
+  if (!resolveBool(store, process.env, 'MOTIF_INPROC_WORKER', true)) {
+    console.log('[motif] MOTIF_INPROC_WORKER=false：本进程不启动生成队列 worker（请另跑 `pnpm worker` 接管）')
+    return false
+  }
   const state: WorkerState = {
     store,
     dataDir,
@@ -81,7 +96,8 @@ export function startWorker(): void {
   if (state.timer.unref) state.timer.unref()
   // 启动即执行一轮：进程重启后立即恢复历史 queued 消息、重排过期租约，不等首个 600ms
   void runWorkerTick(state)
-  console.log('[motif] 生成队列 worker 已启动')
+  console.log(`[motif] 生成队列 worker 已启动（${state.workerId}）`)
+  return true
 }
 
 /** 停止 worker（测试与未来优雅停机用） */
