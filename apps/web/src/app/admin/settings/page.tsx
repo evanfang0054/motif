@@ -8,7 +8,7 @@ import { GuideCardSection } from '@/components/admin/GuideCardSection'
 import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
-import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
+import { mailerFieldVisible, paymentFieldVisible, storageFieldVisible } from '@/lib/setting-visibility'
 import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
@@ -16,6 +16,8 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   credits: '额度与奖励',
   payment: '支付与套餐',
   mailer: '邮件发信',
+  llm: '提示词增强',
+  storage: '图片存储',
   // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
   prompts: '提示词库',
   security: '会话与安全',
@@ -23,12 +25,14 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'prompts', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'llm', 'storage', 'prompts', 'security', 'data']
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
   payment: '支付渠道',
   mailer: '邮件发信',
+  llm: '提示词增强',
+  storage: '图片存储',
 }
 
 export default function AdminSettingsPage() {
@@ -165,6 +169,47 @@ export default function AdminSettingsPage() {
     )
   }
 
+  /**
+   * 分区的「配置就绪」提示行。
+   *
+   * 为什么需要它：`llm` 与 `storage` 都是**开了开关但配置不全就静默降级**的能力 ——
+   * 增强失败会降级为原文、存储写不进去只在服务端报错。若页面上不给就绪判据，运维只会看到
+   * 「功能没生效」而找不到原因（判据其实早就在接口里，只是没人渲染）。
+   *
+   * @param switchKey 该分区的总开关键。关闭时显示「未启用」而不是「已就绪」——
+   *   probe 对关闭态刻意返回 ready（未启用是运营选择、不是配置缺失），但紧挨一个关着的开关
+   *   显示「已就绪」会被读成「功能已生效」，是误导。
+   */
+  function healthLine(group: string, switchKey?: string) {
+    const h = health.find((x) => x.group === group)
+    if (!h) return null
+    const switchedOff = switchKey ? !isOn(switchKey) : false
+    return (
+      <p className="admin-field-hint" data-slot="config-health">
+        {HEALTH_LABEL[group] ?? group}配置：
+        {switchedOff ? (
+          <>未启用（开关关闭，生成时不会调用）</>
+        ) : h.ready ? (
+          <>
+            <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+            已就绪
+          </>
+        ) : (
+          <>
+            <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
+            未就绪：{h.reason ?? '配置不完整'}
+          </>
+        )}
+      </p>
+    )
+  }
+
+  /** 草稿优先的布尔值：与字段渲染同一口径（未保存的改动立即反映到提示行） */
+  function isOn(key: string): boolean {
+    const raw = dirty[key] ?? items.find((i) => i.key === key)?.value
+    return raw === 'true' || raw === '1'
+  }
+
   /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */
   function renderGroupBody(group: AdminSettingItem['group']) {
     const groupItems = items.filter((i) => i.group === group)
@@ -173,15 +218,18 @@ export default function AdminSettingsPage() {
     if (group === 'prompts') return <PromptSourcePanel />
     // 显隐按「草稿优先」裁决：未保存的渠道选择立即生效于字段展示，
     // 否则 mock/console 渠道下凭据字段不渲染，「先填凭据→保存」的接入路径走不通
-    const savedChannel = items.find((i) => i.key === (group === 'mailer' ? 'MOTIF_MAILER' : 'PAYMENT_CHANNEL'))?.value ?? null
-    const dirtyKey = group === 'mailer' ? dirty['MOTIF_MAILER'] : dirty['PAYMENT_CHANNEL']
+    const selectorKey = group === 'mailer' ? 'MOTIF_MAILER' : group === 'payment' ? 'PAYMENT_CHANNEL' : 'STORAGE_DRIVER'
+    const savedChannel = items.find((i) => i.key === selectorKey)?.value ?? null
+    const dirtyKey = dirty[selectorKey]
     const draftChannel = dirtyKey ?? savedChannel
     const visibleOf =
       group === 'mailer'
         ? (key: string) => mailerFieldVisible({ key }, draftChannel)
         : group === 'payment'
           ? (key: string) => paymentFieldVisible({ key }, draftChannel)
-          : null
+          : group === 'storage'
+            ? (key: string) => storageFieldVisible({ key }, draftChannel)
+            : null
     const shownItems = visibleOf ? groupItems.filter((i) => visibleOf(i.key)) : groupItems
     const channelDirty = !!dirtyKey && dirtyKey !== savedChannel
     const guideCards =
@@ -198,6 +246,9 @@ export default function AdminSettingsPage() {
           </p>
         )}
         {guideCards.length > 0 && <GuideCardSection cards={guideCards} />}
+        {/* 只有「开关型 + 静默降级」的两个分区需要就绪行（payment 的就绪提示在危险区 PAYMENT_CHANNEL 旁） */}
+        {group === 'llm' && healthLine('llm', 'LLM_ENHANCE_ENABLED')}
+        {group === 'storage' && healthLine('storage')}
         {channelDirty && (
           <p className="admin-field-hint">
             渠道已改为「{dirtyKey}」尚未保存：下方字段与引导卡已按新渠道显示，填好后点「保存」生效。

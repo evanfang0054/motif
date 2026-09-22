@@ -33,8 +33,8 @@ afterEach(() => {
 })
 
 describe('暂存参考图（上传不进画布）', () => {
-  it('上传后：暂存表有记录，画布为空', () => {
-    const ref = saveReferenceImage(store, dataDir, store.getUserById(userId)!, topicId, { buffer: PNG, mimeType: 'image/png', name: '商品图.png' })
+  it('上传后：暂存表有记录，画布为空', async () => {
+    const ref = await saveReferenceImage(store, dataDir, store.getUserById(userId)!, topicId, { buffer: PNG, mimeType: 'image/png', name: '商品图.png' })
     expect(ref.id.startsWith('refu_')).toBe(true)
     expect(ref.name).toBe('商品图.png')
     expect(store.listReferenceUploads(topicId).length).toBe(1)
@@ -43,7 +43,7 @@ describe('暂存参考图（上传不进画布）', () => {
 
   it('resolveStagedReferences：转正为画布图（origin=uploaded）并删除暂存行', async () => {
     const user = store.getUserById(userId)!
-    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     expect(ids.length).toBe(1)
     const img = store.getCanvasImage(ids[0])!
@@ -56,14 +56,14 @@ describe('暂存参考图（上传不进画布）', () => {
   it('别人的暂存参考不可转正', async () => {
     const other = store.createUser({ name: 'x', email: 'x@e.com', passwordHash: 'x', role: 'user' })
     const otherTopic = store.createTopic(other.id, '别人的任务').id
-    const ref = saveReferenceImage(store, dataDir, other, otherTopic, { buffer: PNG, mimeType: 'image/png' })
+    const ref = await saveReferenceImage(store, dataDir, other, otherTopic, { buffer: PNG, mimeType: 'image/png' })
     const me = store.getUserById(userId)!
     await expect(resolveStagedReferences(store, dataDir, me, topicId, [ref.id])).rejects.toThrow(ServiceError)
   })
 
-  it('removeStagedReference：本人可删、幂等；删除后画布仍为空', () => {
+  it('removeStagedReference：本人可删、幂等；删除后画布仍为空', async () => {
     const user = store.getUserById(userId)!
-    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
     removeStagedReference(store, user, ref.id)
     removeStagedReference(store, user, ref.id) // 幂等
     expect(store.listReferenceUploads(topicId)).toEqual([])
@@ -99,7 +99,7 @@ describe('暂存参考图（上传不进画布）', () => {
 
   it('转正失败不留半截：多张参考里有一张非法时，画布与暂存表都保持原样', async () => {
     const user = store.getUserById(userId)!
-    const ok = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: 'ok.png' })
+    const ok = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: 'ok.png' })
     // 第二张非法 → 两遍走的第一遍就抛，不该留下 ok.png 已转正的痕迹
     await expect(resolveStagedReferences(store, dataDir, user, topicId, [ok.id, 'refu_gone'])).rejects.toThrow(ServiceError)
     expect(store.listCanvasImages(topicId)).toEqual([])

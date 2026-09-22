@@ -117,7 +117,7 @@ describe('生成产出自动带位置', () => {
 describe('暂存参考转正也带位置', () => {
   it('上传后画布为空；转正后该图有非零位置、origin=uploaded，且读的是原图真实尺寸', async () => {
     const user = store.getUserById(userId)!
-    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: '参考图.png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: '参考图.png' })
     expect(store.listCanvasImages(topicId)).toHaveLength(0) // 上传不进画布
     // 上传的是坏字节（只有 PNG 头）：读尺寸失败 → 回退 0，仍要能转正
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
@@ -134,7 +134,7 @@ describe('暂存参考转正也带位置', () => {
     const user = store.getUserById(userId)!
     const file = join(dir, 'landscape.png')
     await sharp({ create: { width: 400, height: 300, channels: 3, background: '#fff' } }).png().toFile(file)
-    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '横版.png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '横版.png' })
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     const img = store.getCanvasImage(ids[0])!
     expect(img.width).toBe(400)
@@ -148,7 +148,7 @@ describe('暂存参考转正也带位置', () => {
     const user = store.getUserById(userId)!
     const file = join(dir, 'portrait.png')
     await sharp({ create: { width: 300, height: 400, channels: 3, background: '#fff' } }).png().toFile(file)
-    const ref = saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '竖版.png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '竖版.png' })
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     const img = store.getCanvasImage(ids[0])!
     expect(img.width).toBe(300)

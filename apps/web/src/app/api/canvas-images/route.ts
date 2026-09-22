@@ -18,7 +18,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const mime = detectImageMime(buffer)
     if (!mime) throw new ServiceError(415, '仅支持 PNG / JPG / WebP。')
     const name = file instanceof File && file.name ? file.name : undefined
-    const reference = saveReferenceImage(getRuntime().store, getRuntime().dataDir, user, topicId, {
+    const reference = await saveReferenceImage(getRuntime().store, getRuntime().dataDir, user, topicId, {
       buffer,
       mimeType: mime,
       name,

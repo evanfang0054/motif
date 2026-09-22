@@ -1,6 +1,8 @@
 import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
+import { createLlmFromConfig } from './llm'
+import { createStorageFromConfig, describeStorageError } from './storage'
 import { createPaymentGateway } from './payment'
 
 /**
@@ -17,7 +19,7 @@ import { createPaymentGateway } from './payment'
  * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
-export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
+export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -46,6 +48,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'IMAGE_API_BASE_URL', group: 'generation', label: '网关地址', kind: 'url', required: true, affectsRuntime: true, hint: 'OpenAI 兼容网关的根地址，例如 https://api.example.com/v1' },
   { key: 'IMAGE_API_KEY', group: 'generation', label: 'API 密钥', kind: 'secret', required: true, affectsRuntime: true, hint: '只写不读：保存后页面只显示掩码' },
   { key: 'IMAGE_MODEL', group: 'generation', label: '模型', kind: 'string', defaultHint: 'gpt-image-2', affectsRuntime: true },
+  // 关闭后本进程不再跑队列，改由独立进程 `pnpm worker` 接管（两者可共存，租约保证不双跑）。
+  // ⚠️ 刻意**不是** affectsRuntime：它不涉及 provider/mailer 重建，需重启进程才生效（hint 写明）。
+  { key: 'MOTIF_INPROC_WORKER', group: 'generation', label: '本进程内运行生成队列 worker', kind: 'boolean', defaultHint: 'true', hint: '关闭后需另跑 `pnpm worker` 独立进程接管出图，否则队列无人消费。改动后需重启服务生效。' },
 
   // ---- 额度与奖励 ----
   // 分组名取 credits 而非 invite：注册赠送不属于邀请活动，放 invite 组语义不对。
@@ -67,6 +72,26 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'SMTP_PASS', group: 'mailer', label: 'SMTP 密码 / 授权码', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
   { key: 'RESEND_API_KEY', group: 'mailer', label: 'Resend 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
   { key: 'SENDGRID_API_KEY', group: 'mailer', label: 'SendGrid 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
+
+  // ---- 提示词增强（独立 LLM） ----
+  // 独立于生图网关：增强走 chat/completions、生图走 images，两者域名与密钥通常不同（D12）。
+  // 端点与密钥**必填**：开关开着但没配齐时 configHealth 判未就绪，生成链路按「不增强」走。
+  { key: 'LLM_ENHANCE_ENABLED', group: 'llm', label: '启用提示词增强', kind: 'boolean', defaultHint: 'false', hint: '开启后生成前会先调 LLM 改写提示词；需同时配好端点与密钥才真正生效。' },
+  { key: 'LLM_API_BASE_URL', group: 'llm', label: 'LLM 接口地址', kind: 'url', required: true, hint: 'OpenAI 兼容的 chat/completions 根地址，例如 https://api.example.com/v1' },
+  { key: 'LLM_API_KEY', group: 'llm', label: 'LLM 密钥', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
+  { key: 'LLM_MODEL', group: 'llm', label: '增强模型', kind: 'string', defaultHint: 'gpt-4o-mini' },
+  { key: 'LLM_TIMEOUT_MS', group: 'llm', label: '增强超时（毫秒）', kind: 'number', defaultHint: '20000', hint: '增强失败不阻断生成，超时只是让降级更快发生。' },
+
+  // ---- 图片存储 ----
+  // 驱动为 local 时全部 S3_* 隐藏（见 lib/setting-visibility.ts）。
+  // 切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。
+  { key: 'STORAGE_DRIVER', group: 'storage', label: '图片存储驱动', kind: 'enum', options: ['local', 's3'], defaultHint: 'local', hint: '切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。' },
+  { key: 'S3_ENDPOINT', group: 'storage', label: 'S3 端点', kind: 'url', required: true, hint: '含协议，例如 https://s3.example.com（自建 MinIO 也填这里）' },
+  { key: 'S3_REGION', group: 'storage', label: '区域', kind: 'string', defaultHint: 'us-east-1', hint: '多数自建服务不校验，可留空使用默认。' },
+  { key: 'S3_BUCKET', group: 'storage', label: '存储桶', kind: 'string', required: true },
+  { key: 'S3_ACCESS_KEY_ID', group: 'storage', label: 'Access Key ID', kind: 'string', required: true },
+  { key: 'S3_SECRET_ACCESS_KEY', group: 'storage', label: 'Secret Access Key', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
+  { key: 'S3_FORCE_PATH_STYLE', group: 'storage', label: '强制 path-style 寻址', kind: 'boolean', defaultHint: 'false', hint: '自建 MinIO / 无 DNS 泛解析的兼容服务需开启。' },
 
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
@@ -342,7 +367,9 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
       build()
       return { group, ready: true, reason: null }
     } catch (e) {
-      return { group, ready: false, reason: e instanceof Error ? e.message : String(e) }
+      // ⚠️ 用 describeStorageError 而不是 `e.message`：minio 的 S3Error 可能 message 为空串，
+      // 直接取会让页面的「未就绪原因」变成空白（看起来像 bug，实际是没拿到服务端 <Message>）。
+      return { group, ready: false, reason: describeStorageError(e) }
     }
   }
   return [
@@ -360,5 +387,31 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
       }
       return null
     }),
+    // 判据复用 createLlmFromConfig（必需字段清单不手写第二份）。
+    // ⚠️ 开关关闭时**不算未就绪**：未启用是运营的选择，不是配置缺失 —— 否则页面会一直挂一个假告警。
+    // 判据复用 createStorageFromConfig（必需字段清单不手写第二份）。
+    // dataDir 传 cwd 即可：local 分支不用它，s3 分支也不用它（只做配置校验，不建连接）。
+    probe('storage', () => createStorageFromConfig(values, process.cwd())),
+    probe('llm', () => {
+      if (!resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false)) return null
+      createLlmFromConfig(values)
+      return null
+    }),
   ]
+}
+
+/**
+ * 提示词增强是否真的可用：开关开 **且** 配置齐备。
+ *
+ * 服务端权威判定 —— 前端传 `enhance: true` 只是意愿，生成链路在这里再 AND 一次（双保险）：
+ * 前端被绕过或版本不一致时，服务端仍不会去调未配置的 LLM。
+ */
+export function resolveLlmReady(store: MotifStore, env: Record<string, string | undefined>): boolean {
+  if (!resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false)) return false
+  try {
+    createLlmFromConfig(resolveConfigValues(store, env))
+    return true
+  } catch {
+    return false
+  }
 }

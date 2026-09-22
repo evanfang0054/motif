@@ -3,6 +3,7 @@ import { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv, type ImageProvider } from '@motif/image-provider'
 import { MisconfiguredMailer, createMailerFromConfig, type MailerConfig } from './mailer'
 import { ConfigError } from './config-error'
+import { createStorageFromConfig, type Storage } from './storage'
 import { resolveConfigValues } from './settings'
 
 /**
@@ -85,4 +86,52 @@ export function invalidateRuntime(): void {
   if (!cur) return
   cur.provider = buildProvider(cur.store)
   cur.mailer = buildMailer(cur.store)
+}
+
+/**
+ * 按当前配置取图片存储实现。
+ *
+ * 为什么放 context 而不是 storage.ts：`storage.ts` 要被 `settings.ts` 引用（健康探针复用其
+ * 构造器），若它反过来 import settings 就成环 —— context 同时依赖两者，是天然汇合点。
+ *
+ * ⚠️ **不缓存**（每次重新构造）：与 worker 不缓存 provider 同理，配置可在管理后台热改，
+ * 缓存它会让「改了驱动、页面显示成功、实际仍写旧位置」静默失效。s3 客户端构造是纯对象组装
+ * （无网络），开销可忽略。
+ */
+export function resolveStorage(dataDir?: string): Storage {
+  const rt = getRuntime()
+  // ⚠️ 必须尊重调用方显式传入的 dataDir：services 层把它当参数一路透传（测试与 CLI 用临时目录），
+  // 若这里一律取 runtime 的，文件会被写到 cwd/.data 而不是调用方指定的目录。
+  return createStorageFromConfig(resolveConfigValues(rt.store, process.env), dataDir ?? rt.dataDir)
+}
+
+/**
+ * 双读里的「远端」：**只在当前驱动为 s3 时才存在**。
+ * local 驱动下返回 null，让 readImageWithFallback 跳过远端探测（不做无意义的构造与网络调用）。
+ */
+export function resolveRemoteStorage(dataDir?: string): Storage | null {
+  const rt = getRuntime()
+  const values = resolveConfigValues(rt.store, process.env)
+  if ((values.STORAGE_DRIVER || 'local').toLowerCase() !== 's3') return null
+  return createStorageFromConfig(values, dataDir ?? rt.dataDir)
+}
+
+/**
+ * 双读里的「本地」：**永远指向本地目录**，与当前驱动无关。
+ *
+ * ⚠️ 不能拿 `resolveStorage()` 当本地用 —— s3 驱动下它返回的是**远端**，于是双读的两个入参
+ * 变成同一个远端，「本地优先」直接失效：切到 s3 且还没搬迁时，本地老图会 404（实测复现过）。
+ * 「本地」的语义是「这个进程所在机器上的 dataDir」，不是「当前驱动的目标」。
+ */
+export function resolveLocalStorage(dataDir?: string): Storage {
+  const rt = getRuntime()
+  return createStorageFromConfig({ STORAGE_DRIVER: 'local' }, dataDir ?? rt.dataDir)
+}
+
+/**
+ * 一次拿到双读的两侧，**避免调用方各自拼错**（这正是「s3 驱动下把远端当本地」的成因）。
+ * 读图片一律走这个，不要自己拿 `resolveStorage()` 凑。
+ */
+export function resolveReadStorages(dataDir?: string): { local: Storage; remote: Storage | null } {
+  return { local: resolveLocalStorage(dataDir), remote: resolveRemoteStorage(dataDir) }
 }

@@ -18,6 +18,8 @@ export const PUBLIC_CONFIG_KEYS = [
   'INVITE_REWARD_CREDITS',
   'INVITE_REWARD_MAX_INVITEES',
   'SIGNUP_BONUS_CREDITS',
+  // 前端据此决定是否请求提示词增强（只暴露布尔，不暴露端点/密钥）
+  'LLM_ENHANCE_ENABLED',
 ] as const
 
 export interface PublicConfig {
@@ -25,6 +27,7 @@ export interface PublicConfig {
   inviteRewardCredits: number
   inviteRewardMaxInvitees: number
   signupBonusCredits: number
+  llmEnhanceEnabled: boolean
 }
 
 /** 读公开配置。只回白名单里的非密钥值；数值类键非法时回退默认值（口径与注册链路共用 resolvePositiveInt）。 */
@@ -34,5 +37,6 @@ export function readPublicConfig(store: MotifStore, env: Record<string, string |
     inviteRewardCredits: resolvePositiveInt(store, env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
     inviteRewardMaxInvitees: resolvePositiveInt(store, env, 'INVITE_REWARD_MAX_INVITEES', DEFAULT_INVITE_REWARD_MAX_INVITEES),
     signupBonusCredits: resolvePositiveInt(store, env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS),
+    llmEnhanceEnabled: resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false),
   }
 }
