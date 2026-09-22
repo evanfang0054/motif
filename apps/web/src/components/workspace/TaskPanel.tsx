@@ -137,7 +137,7 @@ function TaskPanel(p: Props) {
               文字直说原因（见下方 atReferenceCap 分支） */}
           <div className="mb-2 flex items-center justify-between">
             <span className="ws-panel-label">参考图</span>
-            <span className="text-xs" style={{ color: atReferenceCap ? 'var(--status-failed, #b3402e)' : 'var(--muted)' }}>
+            <span className="text-xs" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
               {p.referenceCount} / {MAX_REFERENCE_IMAGES}
             </span>
           </div>
@@ -373,7 +373,7 @@ function TaskPanel(p: Props) {
       <div className="ws-panel-footer">
         {/* 提交前的额度预期：本次消耗多少、余额是否够，都亮在按钮旁边而不是等服务端报错 */}
         {!p.busy && (
-          <div className="text-xs" style={{ color: insufficient ? 'var(--status-failed, #b3402e)' : 'var(--muted)', minHeight: 16 }}>
+          <div className="text-xs" style={{ color: insufficient ? 'var(--danger-quiet)' : 'var(--muted)', minHeight: 16 }}>
             {insufficient
               ? `本次将消耗 ${p.count} 张，当前余额仅 ${credits} 张，请充值或调小张数`
               : typeof credits === 'number'

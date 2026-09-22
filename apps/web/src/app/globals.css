@@ -117,16 +117,19 @@ html[data-theme="dark"] {
  * 亮暗同值 #cc785c：暗下对最深表面 5.47:1 已达标，提亮反而降低珊瑚底奶白文字对比。
  * --danger 保持双角色：按钮底色沿用上方 --danger（白字对比更好）；
  * 表面危险文字角色新增 --danger-quiet（暗色提亮至主要表面 ≥4.5:1，管理后台危险区消费）。
+ * 同理新增 --success-quiet 作表面成功文字角色（亮色需压深，原 --success 对 --success-soft 仅 2.14:1）。
  */
 :root,
 [data-theme="light"] {
   --accent: var(--brand-warm); /* 珊瑚 #cc785c */
   --danger-quiet: var(--danger); /* 亮色沿用 #c64545 */
+  --success-quiet: #2f6b3c; /* 实测对 --success-soft #e9f2ea 5.58:1 */
 }
 
 html[data-theme="dark"] {
   --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
   --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
+  --success-quiet: var(--success); /* 暗色沿用 #5db872：对 --success-soft #1c2b20 实测 6.05:1 */
   --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
 }
 

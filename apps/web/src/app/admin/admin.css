@@ -187,7 +187,7 @@
     display: block;
     position: fixed;
     inset: 0;
-    background: #00000059;
+    background: var(--scrim); /* 与工作台同源：项目已把遮罩收敛为 --scrim（暗色更重） */
     z-index: 60;
   }
   /* 抽屉常驻 DOM，用 transform 控制显隐；visibility 让关闭时不会被 Tab 聚焦到 */
@@ -291,7 +291,7 @@
 
 .admin-alert-ok {
   background: var(--success-soft);
-  color: var(--success);
+  color: var(--success-quiet); /* 亮色压深至 5.58:1（原 --success 仅 2.14:1）；暗色沿用 --success 6.05:1 */
 }
 
 .admin-alert-err {
@@ -332,9 +332,11 @@
   background: var(--surface-tertiary);
 }
 
-.admin-chip.is-unredeemed { background: var(--status-pending); color: #fff; }
-.admin-chip.is-redeemed { background: var(--status-completed); color: #fff; }
-.admin-chip.is-revoked { background: var(--status-canceled); color: #fff; }
+/* 徽标底由状态色 color-mix 压深至 70%，白字实测 ≥5.9:1（原白字对 --status-pending 仅 3.22:1、
+   对 --status-completed 仅 3.30:1）。用 color-mix 而非新令牌：底色仍派生自状态色这一唯一真相，不会漂移。 */
+.admin-chip.is-unredeemed { background: color-mix(in srgb, var(--status-pending) 70%, #000); color: #fff; }
+.admin-chip.is-redeemed { background: color-mix(in srgb, var(--status-completed) 70%, #000); color: #fff; }
+.admin-chip.is-revoked { background: color-mix(in srgb, var(--status-canceled) 70%, #000); color: #fff; }
 
 /* 窄屏：表格转卡片，避免横向滚动（td 的 data-label 由页面提供） */
 @media (max-width: 767px) {
@@ -482,7 +484,7 @@
 .admin-modal-mask {
   position: fixed;
   inset: 0;
-  background: #00000066;
+  background: var(--scrim); /* 同上：不再硬编码黑 */
   display: flex;
   align-items: center;
   justify-content: center;

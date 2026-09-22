@@ -118,7 +118,7 @@ function PromptSourcePanel() {
                     <Table.Cell data-label="上次成功">{fmtTime(s.lastSuccessAt)}</Table.Cell>
                     <Table.Cell data-label="上次错误">
                       {s.lastError ? (
-                        <span style={{ color: 'var(--status-failed, #b3402e)' }} title={s.lastError}>
+                        <span style={{ color: 'var(--danger-quiet)' }} title={s.lastError}>
                           {s.lastError.length > 60 ? `${s.lastError.slice(0, 60)}…` : s.lastError}
                         </span>
                       ) : (
