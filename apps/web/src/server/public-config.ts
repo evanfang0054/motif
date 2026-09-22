@@ -18,7 +18,7 @@ export const PUBLIC_CONFIG_KEYS = [
   'INVITE_REWARD_CREDITS',
   'INVITE_REWARD_MAX_INVITEES',
   'SIGNUP_BONUS_CREDITS',
-  // 批 5 追加：前端据此决定是否请求提示词增强（只暴露布尔，不暴露端点/密钥）
+  // 前端据此决定是否请求提示词增强（只暴露布尔，不暴露端点/密钥）
   'LLM_ENHANCE_ENABLED',
 ] as const
 
