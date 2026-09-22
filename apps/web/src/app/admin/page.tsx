@@ -181,7 +181,7 @@ export default function AdminHomePage() {
           {ledgerDiff === 0 ? (
             <>
               <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
-              对账一致：发放+期初+管理调整(增)+退回−管理调整(减)−扣费 = {closed}，与存量 {c.balance} 一致
+              对账一致：发放+期初+管理调整（增）+退回−管理调整（减）−扣费 = {closed}，与存量 {c.balance} 一致
             </>
           ) : (
             <>

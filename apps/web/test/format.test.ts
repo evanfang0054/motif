@@ -35,6 +35,12 @@ describe('formatMoney（分 → 带币种符号的两位小数）', () => {
     expect(formatMoney(100, 'sek')).toBe('SEK 1.00')
   })
 
+  it('币种缺失/空白：只出数字，不留前导空格', () => {
+    expect(formatMoney(100, '')).toBe('1.00')
+    expect(formatMoney(100, '   ')).toBe('1.00')
+    expect(formatMoney(100, null as unknown as string)).toBe('1.00')
+  })
+
   it('零与不足一元都补齐两位小数', () => {
     expect(formatMoney(0, 'hkd')).toBe('HK$0.00')
     expect(formatMoney(5, 'hkd')).toBe('HK$0.05')

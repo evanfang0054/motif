@@ -37,6 +37,10 @@ const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: 'US$', hkd: 'H
 
 /** 金额一律以「分」存储，展示时换算为两位小数：`formatMoney(868, 'hkd')` → `HK$8.68` */
 export function formatMoney(amountMinor: number, currency: string): string {
-  const symbol = CURRENCY_SYMBOL[currency.toLowerCase()] ?? `${currency.toUpperCase()} `
+  // 币种缺失时不给符号也不留空格（`'' .toUpperCase() + ' '` 会产出前导空格，拼进
+  // `join(' + ')` 就是「 8.68 + HK$9.00」这种怪串）。正常路径不可达（列 NOT NULL + enum）。
+  const code = (currency ?? '').trim()
+  if (!code) return (amountMinor / 100).toFixed(2)
+  const symbol = CURRENCY_SYMBOL[code.toLowerCase()] ?? `${code.toUpperCase()} `
   return `${symbol}${(amountMinor / 100).toFixed(2)}`
 }

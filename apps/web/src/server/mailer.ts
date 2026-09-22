@@ -185,6 +185,10 @@ export class SendGridMailer implements Mailer {
  *
  * 抛 `ConfigError` 而非普通 Error：注册链路里没人包 try/catch，普通 Error 会被
  * `jsonError` 归一成「服务器开小差了」，运营只能翻日志才查得出是配置问题。
+ *
+ * 注：`sendTest` 的 ConfigError 在 HTTP 层是**无效**的 —— `sendTestMail` 会先把它包成
+ * `ServiceError(502)` 并原样透传底层原因（管理后台调试需要看到 SMTP 535 之类的原文）。
+ * 这里仍抛同一类型，只为「配置失败就是配置失败」这一语义一致。
  */
 export class MisconfiguredMailer implements Mailer {
   readonly name = 'misconfigured'

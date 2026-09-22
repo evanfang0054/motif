@@ -7,8 +7,8 @@
  * `detail`（缺哪些键、哪个渠道选错）只进服务端日志；对外的 message 是固定指引，
  * 不含内部键名 —— 与 `startCheckout` 的 503 口径一致。
  *
- * 独立成文件是为了避免循环依赖：`context.ts` 与 `mailer.ts` 都要用它，
- * 而 `context.ts` 已被 `services.ts` / `http.ts` 依赖。
+ * 独立成文件是为了避免循环依赖：`context.ts` 与 `mailer.ts` 都要用它，而 `mailer.ts` 已被
+ * `context.ts` 依赖（放进 `context.ts` 就会成环 `mailer → context → mailer`）。
  */
 export class ConfigError extends Error {
   /** 面向用户的固定指引（不透内部键名） */
