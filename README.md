@@ -19,11 +19,13 @@
 
 | 层 | 选型 |
 | --- | --- |
-| 前端 | Next.js 15 (App Router) · React 19 · Tailwind CSS 4 · 原生 CSS 设计令牌（暗/亮双主题） |
+| 前端 | Next.js 15 (App Router) · React 19 · Tailwind CSS 4 · **HeroUI v3**（唯一控件来源，语义令牌桥接 `DESIGN.md`）· 图标 `@gravity-ui/icons` |
 | 服务端 | Next.js Route Handlers（与前端同仓同进程） |
+| 状态 | zustand（画布 store：视口 / 摆放 / 选择 / 撤销栈） |
 | 存储 | SQLite（better-sqlite3, WAL），图片文件存于 `.data/storage/` |
 | 队列 | 进程内生成 Worker：租约认领 → 逐张生成 → 崩溃回收重排 |
 | 生图 | `OpenAICompatProvider`：文生图（images/generations）+ 图生图（images/edits，参考图 multipart） |
+| 提示词 | 服务端代理上游开源提示词源 + 落 SQLite 缓存（浏览器不直连外部） |
 | 邮件 | `Mailer` 抽象：console（本地直出）/ SMTP（QQ·163·Gmail 等）/ Resend / SendGrid |
 | 测试 | Vitest 单测（core / db / provider / 服务层 / mailer） + ego-browser 端到端测试 |
 | 工程 | pnpm workspace monorepo · TypeScript strict · Docker 多阶段构建 |
@@ -37,13 +39,15 @@ motif/
 │   │   ├── page.tsx           # / ：未登录落地页 / 已登录工作台
 │   │   ├── admin/             # 管理后台（服务端角色守卫）：概览 · 用户 · CDK · 订单 · 反馈 · 生成日志 · 审计 · 系统设置
 │   │   ├── billing/            # 收银台与结果页：mock / epay / stripe 渠道分流，支付结果展示
-│   │   └── api/               # auth · topics(+watch) · generate-images · canvas-images
-│   │                          #   · billing · redeem · feedback · messages/cancel · admin
-│   ├── src/components/        # landing / workspace 组件（含交互画布）
-│   ├── src/server/            # 会话、业务服务、队列 worker、Mailer、支付渠道适配层
-│   └── src/lib/               # 模板定义（原创文案）· API client
-├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 校验
-├── packages/db/               # SQLite 存储层（12 张表 + 仓储）
+│   │   └── api/               # auth · topics(+watch, +canvas) · generate-images · canvas-images
+│   │                          #   · prompts · reference-uploads · billing · redeem · feedback
+│   │                          #   · messages/cancel · admin
+│   ├── src/components/        # landing / workspace / canvas（交互画布）/ ui（IconButton 等）/ admin
+│   ├── src/server/            # 会话、业务服务、队列 worker、Mailer、支付渠道适配层、提示词代理
+│   ├── src/lib/               # 模板定义（原创文案）· 提示词源清单 · 画布内核 · API client
+│   └── src/stores/            # zustand store（画布视口 / 摆放 / 选择 / 撤销栈）
+├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 画布几何 · 校验
+├── packages/db/               # SQLite 存储层（15 张表 + 仓储）
 ├── packages/image-provider/   # 生图 Provider（OpenAI 兼容网关）
 ├── scripts/cdk.mjs            # CDK 发放 CLI
 ├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
@@ -67,12 +71,25 @@ motif/
 - 图生图：上传参考图后自动切换 `POST /v1/images/edits`（multipart）
 - 尺寸：方图 1024×1024 / 竖图 1024×1536 / 横图 1536×1024 / auto / 自定义（按比例吸附三档）
 - 张数 1–12；提示词上限 4000 字；云端排队生成，前端 watch 长轮询实时感知
+- **提示词库**：可检索的现成提示词——服务端代理 5 个上游开源提示词源（只留 GPT 系）并落库缓存，
+  8 个内置模板并入「系统自带」源（本地播种、永不抓取）；首次打开不阻塞（后台抓取 + 前端轮询），
+  失败源 5 分钟内不自动重试；选中即填，改改就能用
 
 ### 任务系统（真实）
 - 任务（Topic）增删改查、重命名、状态机七态（空闲/排队中/生成中/正在停止生成/已完成/失败/已取消）
 - 生成取消：未完成张数自动退回额度（含守恒验收）
-- 画布：图片自由拖拽、缩放（±/100%/适应/滚轮）、整理布局吸附网格、多选、
-  选中浮动工具栏（放大预览 / @引用 / 下载 / 删除确认）、双击灯箱
+- **状态回流**：切到别的任务改提示词时，原任务跑完（或跑挂、被取消退额）会弹回执，不用切回去看
+
+### 画布（展示墙，见 [#38](https://github.com/evanfang0054/motif/pull/38)–[#41](https://github.com/evanfang0054/motif/pull/41)）
+- 平移缩放（± / 100% / 适应 / 滚轮，钳制 0.25–3×）、框选多选（**Shift + 左键**）、
+  撤销重做（`Ctrl+Z` / `Ctrl+Shift+Z`）、全选与删除（走二次确认）
+- 位置与尺寸**持久化到库**（刷新、换设备都保持），旧任务首访自动落位
+- 背景图案三态（点 / 线 / 空白，跨刷新保持）、小地图（点击跳转并把该点居中）、图片右键菜单
+- 选中浮动工具栏（放大预览 / @引用 / 以它为参考再生成 / 下载 / 删除确认）、双击灯箱预览
+- **整理布局**把整块图片居中到可视区域；**溯源**开关打开后可「按来源整理」，
+  把画布铺成从左到右的分层树（没有上游的排最左列，同一轮产出同列）
+- 画布归档：导出为单个 zip（布局清单 + 图片副本）/ 导入恢复布局
+- 窄屏最小可用：单指拖图 / 框选 / 点按缩放（不自创双指手势）
 
 ### 运营与计费（真实）
 - 额度：按张扣费、失败/取消退回、余额不足拦截；每笔额度变动写入 `credit_ledger` 流水表（账目与余额同事务一致）
@@ -82,7 +99,7 @@ motif/
 - CDK：CLI 发码 + 管理后台「CDK 管理」页发放/查询 + 页面兑换（真实）
 - 邀请：专属邀请码/链接，好友经邀请链接注册自动带上邀请码，双方得利（+3 张/人，上限 3 人）（真实）
 - 反馈：提交入库 + 管理后台反馈处理（真实）
-- 参考图：上传 PNG/JPG/WebP ≤10MB 作为生成依据
+- 参考图：上传 PNG/JPG/WebP ≤10MB，**暂存制** —— 点「开始生成」扣费后才转正进画布
 
 ### 管理后台（已上线，见 [#16](https://github.com/evanfang0054/motif/issues/16)）
 - **三级角色**：普通用户 / 管理员 / 超级管理员，角色比较收敛在 `packages/core/src/roles.ts`
@@ -106,7 +123,9 @@ motif/
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · 344 个单元测试（core 27 · db 51 · provider 8 · web 258）
+- pnpm monorepo · TypeScript strict · **763 个单元测试**（core 55 · db 77 · provider 8 · web 623）
+- **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
+  桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
 - Docker 多阶段构建一键部署，数据卷持久化，健康检查
 
@@ -179,7 +198,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 285 个单元测试（core 27 · db 51 · provider 8 · web 199）
+pnpm test             # 763 个单元测试（core 55 · db 77 · provider 8 · web 623）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布
