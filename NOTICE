@@ -23,8 +23,10 @@ Copyright (c) 2026 Evan Fang (evanfang0054)
    - Freestylefly GPT Image 2 — MIT
    - Awesome GPT Image — MIT
    - Awesome GPT-4o — MIT
-   - YouMind GPT Image 2 — CC BY 4.0（署名要求）
-   其中 YouMind 一源为 CC BY 4.0，属强制署名；Motif 以本文件承载该署名义务，
+   - YouMind GPT Image 2 — CC BY 4.0（署名要求），许可证全文见
+     https://creativecommons.org/licenses/by/4.0/
+   其中 YouMind 一源为 CC BY 4.0，属强制署名；依该许可证要求，Motif 提供上述
+   许可证链接、以仓库地址作署名，并声明**未修改**其内容（与本节开头所述一致）。
    故上文所列各仓库地址须保留。DavidWu 一源未声明许可证的情况另见仓库 issue 记录。
 
 3. 第三方依赖
