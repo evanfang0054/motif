@@ -7,6 +7,7 @@ import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
+import { usePublicConfig } from '@/lib/use-public-config'
 
 /** 通用弹窗外壳：受控开合在 Backdrop 上；关闭后把焦点还原到打开前的元素 */
 function WorkspaceModal({
@@ -183,11 +184,20 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
 function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
   const link = typeof window !== 'undefined' ? `${window.location.origin}/?invite=${user.inviteCode}` : ''
   const [copied, setCopied] = useState(false)
+  const cfg = usePublicConfig()
 
   return (
     <Modal title="邀请好友（获得额度）" onClose={onClose}>
       <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-        好友通过你的链接注册成功后，你获得 3 张额度，最多奖励 3 人。
+        {cfg ? (
+          <>
+            好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励{' '}
+            {cfg.inviteRewardMaxInvitees} 人。
+          </>
+        ) : (
+          // 配置未取到时**不写数字**（而不是写 0）—— 与入口显隐、注册页文案同一口径
+          <>好友通过你的链接注册成功后，你会获得额度奖励。</>
+        )}
         当前已邀请 <b>{user.invitedCount}</b> 人，你的邀请码：<b>{user.inviteCode}</b>
       </p>
       <div className="mt-3 flex gap-2">

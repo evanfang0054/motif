@@ -6,6 +6,7 @@ import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, Text
 import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
+import { usePublicConfig } from '@/lib/use-public-config'
 
 type Mode = 'login' | 'register' | 'reset'
 
@@ -181,8 +182,16 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
   }, [])
 
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
+  const cfg = usePublicConfig()
   const subtitle =
-    mode === 'reset' ? '输入注册邮箱与验证码设置新密码。' : mode === 'register' ? '注册即送 3 张生成额度，无需绑卡。' : '登录后继续你的生成任务。'
+    mode === 'reset'
+      ? '输入注册邮箱与验证码设置新密码。'
+      : mode === 'register'
+        ? // 配置未取到时**不写数字**（而不是写一个可能过期的 3）
+          cfg
+          ? `注册即送 ${cfg.signupBonusCredits} 张生成额度，无需绑卡。`
+          : '注册即送生成额度，无需绑卡。'
+        : '登录后继续你的生成任务。'
 
   return (
     <HeroModal.Backdrop
@@ -285,7 +294,16 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
               )}
 
               <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
-                {busy ? '处理中…' : mode === 'login' ? '登录并开始生成' : mode === 'register' ? '注册并领取 3 张额度' : '重置密码'}
+                {busy
+                  ? '处理中…'
+                  : mode === 'login'
+                    ? '登录并开始生成'
+                    : mode === 'register'
+                      ? // 与副标题同源：配置未取到时**不写数字**
+                        cfg
+                        ? `注册并领取 ${cfg.signupBonusCredits} 张额度`
+                        : '注册并领取额度'
+                      : '重置密码'}
               </Button>
             </form>
 

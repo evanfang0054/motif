@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   costFor,
   inviteRewardFor,
+  DEFAULT_INVITE_REWARD_CREDITS,
+  DEFAULT_INVITE_REWARD_MAX_INVITEES,
   newCanvasImageId,
   newInviteCode,
   newMessageId,
@@ -52,6 +54,20 @@ describe('credits', () => {
     expect(inviteRewardFor(2)).toBe(3)
     expect(inviteRewardFor(3)).toBe(0)
     expect(inviteRewardFor(5)).toBe(0)
+  })
+  it('邀请奖励按传入规则计算，而非写死 3/3', () => {
+    expect(inviteRewardFor(0, { credits: 7, maxInvitees: 5 })).toBe(7)
+    expect(inviteRewardFor(4, { credits: 7, maxInvitees: 5 })).toBe(7)
+    expect(inviteRewardFor(5, { credits: 7, maxInvitees: 5 })).toBe(0)
+    expect(inviteRewardFor(99, { credits: 7, maxInvitees: 5 })).toBe(0)
+  })
+  it('不传规则时回退默认值（保持既有行为）', () => {
+    expect(inviteRewardFor(0)).toBe(DEFAULT_INVITE_REWARD_CREDITS)
+    expect(inviteRewardFor(DEFAULT_INVITE_REWARD_MAX_INVITEES)).toBe(0)
+  })
+  it('maxInvitees 为 1 时只有第一个被邀请人得奖励', () => {
+    expect(inviteRewardFor(0, { credits: 2, maxInvitees: 1 })).toBe(2)
+    expect(inviteRewardFor(1, { credits: 2, maxInvitees: 1 })).toBe(0)
   })
 })
 

@@ -5,7 +5,17 @@ import { useEffect, useState } from 'react'
 import { Button } from '@heroui/react'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
+import { usePublicConfig } from '@/lib/use-public-config'
 import { AuthModal, type Mode } from './AuthModal'
+
+/**
+ * 「注册即送 N 张…」文案：数字随配置。函数声明有提升，故可定义在使用处之前。
+ * 配置未取到时**不写数字**，避免显示一个可能已过期的 3。
+ */
+function SignupBonusPhrase({ tail }: { tail: string }) {
+  const cfg = usePublicConfig()
+  return <>{cfg ? `注册即送 ${cfg.signupBonusCredits} 张${tail}` : `注册即送${tail}`}</>
+}
 
 /** 未登录落地页：导航 + 主视觉（hero）+ 三段满幅色带 + 页脚 + 登录弹窗 */
 function Landing() {
@@ -93,7 +103,7 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />注册即送 3 张额度</span>
+                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></span>
                 <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</span>
                 <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</span>
               </div>
@@ -176,7 +186,7 @@ function Landing() {
               height={96}
             />
             <h2 className="lp-section-title">准备好开始了吗？</h2>
-            <p className="lp-section-sub">注册即送 3 张生成额度，不需要绑卡。</p>
+            <p className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></p>
             <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
           </div>
         </section>

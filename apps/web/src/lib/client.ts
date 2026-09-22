@@ -103,9 +103,17 @@ export interface AdminAuditRow {
 }
 
 /** 管理后台：一项系统配置。密钥项的 value 恒为 null，只给掩码与「已设置」标记 */
+/** 公开配置（无需登录）：字段与服务端 `server/public-config.ts` 保持一致（服务端模块不可被客户端组件导入，故镜像一份） */
+export interface PublicConfig {
+  inviteRewardEnabled: boolean
+  inviteRewardCredits: number
+  inviteRewardMaxInvitees: number
+  signupBonusCredits: number
+}
+
 export interface AdminSettingItem {
   key: string
-  group: 'generation' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
+  group: 'generation' | 'credits' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
   label: string
   kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
@@ -298,6 +306,8 @@ export const api = {
     call<{ ok: true; deleted: number; auditDeleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
   adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }>(`/api/admin/audit${toQuery(params)}`),
+  /** 公开配置（无需登录）：仅含白名单里的非密钥值 */
+  publicConfig: () => call<PublicConfig>('/api/public-config'),
   adminGetSettings: () => call<{ items: AdminSettingItem[]; health: AdminConfigHealth[] }>('/api/admin/settings'),
   adminSaveSettings: (updates: Record<string, string>) =>
     call<{ ok: true; updated: string[]; runtimeReloaded: boolean }>('/api/admin/settings', {

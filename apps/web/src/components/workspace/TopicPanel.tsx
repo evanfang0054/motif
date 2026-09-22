@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button, Input, TextField } from '@heroui/react'
 import { ChevronLeft, Pencil, Plus, TrashBin } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
+import { usePublicConfig } from '@/lib/use-public-config'
 import type { Topic } from '@motif/core'
 import { TOPIC_STATUS_LABEL } from '@motif/core'
 
@@ -133,14 +134,27 @@ function TopicPanel(p: Props) {
       </div>
 
       <div className="ws-panel-footer">
-        <Button variant="secondary" className="w-full" onPress={p.onInvite}>
-          邀请好友（获得额度）
-        </Button>
+        <InviteEntry onPress={p.onInvite} />
         <Button variant="secondary" className="w-full" onPress={p.onFeedback}>
           提交反馈
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * 邀请入口：按「邀请好友送额度」开关显隐。
+ * 首帧配置未到（`cfg === null`）时不渲染 —— 保守默认与「关闭」一致，
+ * 避免出现「入口可见但拿不到奖励」。代价是开启时入口晚一帧出现。
+ */
+function InviteEntry({ onPress }: { onPress: () => void }) {
+  const cfg = usePublicConfig()
+  if (!cfg?.inviteRewardEnabled) return null
+  return (
+    <Button variant="secondary" className="w-full" onPress={onPress}>
+      邀请好友（获得额度）
+    </Button>
   )
 }
 
