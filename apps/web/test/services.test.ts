@@ -14,7 +14,7 @@ import {
 } from '@/server/services'
 import { MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
-import { SIGNUP_BONUS_CREDITS } from '@motif/core'
+import { DEFAULT_INVITE_REWARD_CREDITS, DEFAULT_SIGNUP_BONUS_CREDITS, SIGNUP_BONUS_CREDITS } from '@motif/core'
 import { ConsoleMailer, type MailerConfig } from '@/server/mailer'
 
 let dir: string
@@ -121,6 +121,20 @@ describe('auth 流程', () => {
       await registerOne(`cons-new-${enabled}@b.co`, inviter.inviteCode)
       expect(ledgerSum(), `enabled=${enabled} 时守恒被破坏`).toBe(creditsSum())
     }
+  })
+
+  it('脏配置不影响注册：非法额度回退默认值，不把 NaN 写进额度与流水', async () => {
+    // 模拟 .env 里写错值被 seedSettings 不经校验地播种入库（setSetting 正是那条原始写入口）
+    store.setSetting('SIGNUP_BONUS_CREDITS', 'abc')
+    store.setSetting('INVITE_REWARD_CREDITS', 'abc')
+    store.setSetting('INVITE_REWARD_ENABLED', 'true')
+    const inviter = store.createUser({ email: 'dirty@b.co', passwordHash: 'h', name: '邀请人', credits: 0 })
+
+    const invitee = await registerOne('dirty-new@b.co', inviter.inviteCode)
+
+    expect(invitee.credits).toBe(DEFAULT_SIGNUP_BONUS_CREDITS)
+    expect(store.getUserById(inviter.id)!.credits).toBe(DEFAULT_INVITE_REWARD_CREDITS)
+    expect(ledgerSum()).toBe(creditsSum()) // NaN 一旦进库，守恒会立刻不成立
   })
 
   it('改小额度不回溯既有奖励流水', async () => {

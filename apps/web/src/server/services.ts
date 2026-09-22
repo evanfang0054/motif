@@ -31,7 +31,7 @@ import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
 import { createPaymentGateway } from './payment'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveConfigValues, resolveSetting, yuanToFen } from './settings'
+import { resolveBool, resolveConfigValues, resolvePositiveInt, resolveSetting, yuanToFen } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -115,10 +115,11 @@ export function register(
   }
   if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
 
-  // 额度与奖励配置：读一次、传下去，避免同一函数里多处现读造成口径漂移
-  const values = resolveConfigValues(store, process.env)
+  // 额度与奖励配置：读一次、传下去，避免同一函数里多处现读造成口径漂移。
+  // 用 resolvePositiveInt 而非裸 Number：脏值（如 .env 里的 `abc`）会被播种入库，
+  // 裸 Number 得 NaN 会把 NaN 绑进额度与流水（见 settings.ts 里该函数的注释）。
   const inviteEnabled = resolveBool(store, process.env, 'INVITE_REWARD_ENABLED', false)
-  const signupBonus = Number(values.SIGNUP_BONUS_CREDITS ?? DEFAULT_SIGNUP_BONUS_CREDITS)
+  const signupBonus = resolvePositiveInt(store, process.env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS)
 
   // ⚠️ 邀请关系的**唯一裁决点**：关闭时不解析邀请码，故 invitedBy 恒为 null，
   // 后续 recordInvite 根本不会被调用 —— 不把「是否发奖励」再散落到别处判一次。
@@ -140,8 +141,8 @@ export function register(
   if (invitedBy) {
     const inviter = store.getUserById(invitedBy)!
     const reward = inviteRewardFor(inviter.invitedCount, {
-      credits: Number(values.INVITE_REWARD_CREDITS ?? DEFAULT_INVITE_REWARD_CREDITS),
-      maxInvitees: Number(values.INVITE_REWARD_MAX_INVITEES ?? DEFAULT_INVITE_REWARD_MAX_INVITEES),
+      credits: resolvePositiveInt(store, process.env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
+      maxInvitees: resolvePositiveInt(store, process.env, 'INVITE_REWARD_MAX_INVITEES', DEFAULT_INVITE_REWARD_MAX_INVITEES),
     })
     store.recordInvite(invitedBy, reward, user.id)
   }

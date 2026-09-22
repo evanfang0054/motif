@@ -294,7 +294,16 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
               )}
 
               <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
-                {busy ? '处理中…' : mode === 'login' ? '登录并开始生成' : mode === 'register' ? '注册并领取 3 张额度' : '重置密码'}
+                {busy
+                  ? '处理中…'
+                  : mode === 'login'
+                    ? '登录并开始生成'
+                    : mode === 'register'
+                      ? // 与副标题同源：配置未取到时**不写数字**
+                        cfg
+                        ? `注册并领取 ${cfg.signupBonusCredits} 张额度`
+                        : '注册并领取额度'
+                      : '重置密码'}
               </Button>
             </form>
 

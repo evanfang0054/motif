@@ -189,8 +189,15 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
   return (
     <Modal title="邀请好友（获得额度）" onClose={onClose}>
       <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
-        好友通过你的链接注册成功后，你获得 {cfg?.inviteRewardCredits ?? 0} 张额度，最多奖励{' '}
-        {cfg?.inviteRewardMaxInvitees ?? 0} 人。
+        {cfg ? (
+          <>
+            好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励{' '}
+            {cfg.inviteRewardMaxInvitees} 人。
+          </>
+        ) : (
+          // 配置未取到时**不写数字**（而不是写 0）—— 与入口显隐、注册页文案同一口径
+          <>好友通过你的链接注册成功后，你会获得额度奖励。</>
+        )}
         当前已邀请 <b>{user.invitedCount}</b> 人，你的邀请码：<b>{user.inviteCode}</b>
       </p>
       <div className="mt-3 flex gap-2">

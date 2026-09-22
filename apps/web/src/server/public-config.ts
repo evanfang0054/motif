@@ -4,7 +4,7 @@ import {
   DEFAULT_INVITE_REWARD_MAX_INVITEES,
   DEFAULT_SIGNUP_BONUS_CREDITS,
 } from '@motif/core'
-import { resolveBool, resolveConfigValues } from './settings'
+import { resolveBool, resolvePositiveInt } from './settings'
 
 /**
  * 面向**未登录用户**的公开配置白名单。
@@ -27,19 +27,12 @@ export interface PublicConfig {
   signupBonusCredits: number
 }
 
-/** 数值类键非法（非整数 / 小于 1）时回退默认值 —— 脏配置不该影响注册链路 */
-function positiveInt(raw: string | undefined, fallback: number): number {
-  const n = Number(raw)
-  return Number.isInteger(n) && n >= 1 ? n : fallback
-}
-
-/** 读公开配置。只回白名单里的非密钥值。 */
+/** 读公开配置。只回白名单里的非密钥值；数值类键非法时回退默认值（口径与注册链路共用 resolvePositiveInt）。 */
 export function readPublicConfig(store: MotifStore, env: Record<string, string | undefined>): PublicConfig {
-  const v = resolveConfigValues(store, env)
   return {
     inviteRewardEnabled: resolveBool(store, env, 'INVITE_REWARD_ENABLED', false),
-    inviteRewardCredits: positiveInt(v.INVITE_REWARD_CREDITS, DEFAULT_INVITE_REWARD_CREDITS),
-    inviteRewardMaxInvitees: positiveInt(v.INVITE_REWARD_MAX_INVITEES, DEFAULT_INVITE_REWARD_MAX_INVITEES),
-    signupBonusCredits: positiveInt(v.SIGNUP_BONUS_CREDITS, DEFAULT_SIGNUP_BONUS_CREDITS),
+    inviteRewardCredits: resolvePositiveInt(store, env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
+    inviteRewardMaxInvitees: resolvePositiveInt(store, env, 'INVITE_REWARD_MAX_INVITEES', DEFAULT_INVITE_REWARD_MAX_INVITEES),
+    signupBonusCredits: resolvePositiveInt(store, env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS),
   }
 }

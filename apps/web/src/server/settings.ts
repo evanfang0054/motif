@@ -138,6 +138,26 @@ export function resolveBool(
 }
 
 /**
+ * 读一个正整数配置（DB 优先、回退 env、最后回退 fallback）。
+ *
+ * ⚠️ **不要用裸 `Number(value ?? fallback)`**：`??` 只兜 null / undefined，**兜不住 NaN** ——
+ * 而 `seedSettings` 把 env 值**不经校验**地播种入库（只跳过空值），所以 `.env` 里写
+ * `SIGNUP_BONUS_CREDITS=abc` 会被原样存进库，裸 Number 得 NaN，进而把 NaN 绑进
+ * `credits = credits + ?` 与 `credit_ledger.delta`，污染额度守恒。
+ */
+export function resolvePositiveInt(
+  store: MotifStore,
+  env: Record<string, string | undefined>,
+  key: string,
+  fallback: number
+): number {
+  const raw = resolveSetting(store, env, key)
+  if (raw === null || raw === '') return fallback
+  const n = Number(raw)
+  return Number.isInteger(n) && n >= 1 ? n : fallback
+}
+
+/**
  * 密钥掩码：保留前 3 与后 4 字符。
  * 8 位及以内**全部遮蔽** —— 否则「前 3 + 后 4」就等于把短密钥原样回显。
  */
