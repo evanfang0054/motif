@@ -15,6 +15,7 @@ export {
   SLOT_STEP,
   SLOT_COLS,
   allocateSlots,
+  centerRectsInViewport,
   displaySize,
   placementRect,
   rectToPlacement,

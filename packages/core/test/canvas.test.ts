@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CANVAS_META,
   allocateSlots,
+  centerRectsInViewport,
   displaySize,
   normalizeCanvasMeta,
   parseCanvasMeta,
@@ -95,6 +96,44 @@ describe('allocateSlots', () => {
     const occupied = [{ x: 0, y: 0, w: 240, h: 240 }]
     const slots = allocateSlots(occupied, [{ width: 240, height: 240 }], { x: 0, y: 0 })
     expect(slots[0]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
+  })
+})
+
+describe('centerRectsInViewport', () => {
+  const eight = () => allocateSlots([], Array.from({ length: 8 }, () => ({ width: 240, height: 240 })), { x: 0, y: 0 })
+
+  it('装得下时把包围盒摆到视口正中', () => {
+    const slots = centerRectsInViewport(eight(), { x: 0, y: 0 }, 1400, 800)
+    // 块 1080×520 → 左上角挪到 ((1400-1080)/2, (800-520)/2) = (160, 140)
+    expect(slots[0]).toEqual({ x: 160, y: 140, w: 240, h: 240 })
+    const minX = Math.min(...slots.map((r) => r.x))
+    const maxX = Math.max(...slots.map((r) => r.x + r.w))
+    const minY = Math.min(...slots.map((r) => r.y))
+    const maxY = Math.max(...slots.map((r) => r.y + r.h))
+    expect((minX + maxX) / 2).toBe(700)
+    expect((minY + maxY) / 2).toBe(400)
+  })
+
+  it('装不下时退回左上角对齐（居中的话开头会被推到屏幕外）', () => {
+    const slots = centerRectsInViewport(eight(), { x: 0, y: 0 }, 800, 400)
+    expect(slots[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+  })
+
+  it('只在一个方向装得下时，只居中那一个方向', () => {
+    // 宽 1080 ≤ 1400 → x 居中；高 520 > 400 → y 对齐原点
+    const slots = centerRectsInViewport(eight(), { x: 0, y: 0 }, 1400, 400)
+    expect(slots[0]).toEqual({ x: 160, y: 0, w: 240, h: 240 })
+  })
+
+  it('origin 非零时按 origin 的坐标系居中', () => {
+    const rects = [{ x: 100, y: 200, w: 240, h: 240 }]
+    // 视口左上角在世界坐标 (100, 200)，可见区 1000×600 → 块正好落在正中
+    const slots = centerRectsInViewport(rects, { x: 100, y: 200 }, 1000, 600)
+    expect(slots[0]).toEqual({ x: 480, y: 380, w: 240, h: 240 })
+  })
+
+  it('空数组原样返回（不做 Math.min，否则会得到 Infinity）', () => {
+    expect(centerRectsInViewport([], { x: 0, y: 0 }, 1000, 600)).toEqual([])
   })
 })
 

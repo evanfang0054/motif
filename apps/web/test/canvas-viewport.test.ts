@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE } from '@/lib/canvas/viewport'
+import { clampScale, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
 describe('缩放锚点', () => {
@@ -110,42 +110,54 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
     expect(a).not.toHaveProperty('y')
   })
 
-  it('单个矩形：锚在顶部居中并抬高 12', () => {
-    expect(toolbarAnchor([{ x: 100, y: 50, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({
+  it('抬升量必须让开工具栏自身高度（否则工具栏会压住卡片顶部）', () => {
+    // 工具栏 = 4px 内边距 ×2 + sm 图标按钮 32px + 1px 边框 ×2 ≈ 42px；抬升量小于它就会盖住图片
+    expect(TOOLBAR_LIFT).toBeGreaterThanOrEqual(42)
+  })
+
+  it('单个矩形：锚在顶部居中并抬高 TOOLBAR_LIFT', () => {
+    expect(toolbarAnchor([{ x: 100, y: 200, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({
       left: 220,
-      top: 38,
+      top: 200 - TOOLBAR_LIFT,
     })
   })
 
   it('多个矩形：取包围盒的顶部居中（不是第一张）', () => {
-    // 包围盒 x 100..580（中心 340），顶部 y=50 → top 38
+    // 包围盒 x 100..580（中心 340），顶部 y=200
     expect(
       toolbarAnchor(
         [
-          { x: 100, y: 80, w: 240, h: 240 },
-          { x: 340, y: 50, w: 240, h: 240 },
+          { x: 100, y: 230, w: 240, h: 240 },
+          { x: 340, y: 200, w: 240, h: 240 },
         ],
         { x: 0, y: 0, k: 1 }
       )
-    ).toEqual({ left: 340, top: 38 })
+    ).toEqual({ left: 340, top: 200 - TOOLBAR_LIFT })
   })
 
   it('随视口平移缩放换算（与 worldToScreen 一致）', () => {
     const v = { x: 40, y: -20, k: 2 }
-    const a = toolbarAnchor([{ x: 100, y: 50, w: 240, h: 240 }], v)!
+    const a = toolbarAnchor([{ x: 100, y: 200, w: 240, h: 240 }], v)!
     expect(a.left).toBe(100 * 2 + 40 + 240) // 中心 x=220 → 220*2+40
-    expect(a.top).toBe(50 * 2 - 20 - 12)
+    expect(a.top).toBe(200 * 2 - 20 - TOOLBAR_LIFT)
   })
 
-  it('贴顶（首行 y=0）翻到卡片下方：top = 底边屏幕 y + 12，且不为负', () => {
+  it('贴顶（首行 y=0）翻到卡片下方：top = 底边屏幕 y + TOOLBAR_DROP，且不为负', () => {
     const a = toolbarAnchor([{ x: 100, y: 0, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })!
-    expect(a.top).toBe(240 + 12)
+    expect(a.top).toBe(240 + TOOLBAR_DROP)
     expect(a.top).toBeGreaterThanOrEqual(0)
     expect(a.left).toBe(220) // 水平仍是中心
   })
 
-  it('刚好不贴顶时不翻转（y=30 → top=18 仍在上方）', () => {
-    expect(toolbarAnchor([{ x: 100, y: 30, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({ left: 220, top: 18 })
+  it('翻转边界：屏幕顶距恰好等于 TOOLBAR_LIFT 时不翻转，差 1px 就翻转', () => {
+    // 世界 y = 56、视口不动 → 屏幕 y = 56 = TOOLBAR_LIFT → top 正好 0，仍在卡片上方
+    expect(toolbarAnchor([{ x: 100, y: TOOLBAR_LIFT, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({
+      left: 220,
+      top: 0,
+    })
+    // 再往上 1px 就为负 → 翻到下方
+    const flipped = toolbarAnchor([{ x: 100, y: TOOLBAR_LIFT - 1, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })!
+    expect(flipped.top).toBe(TOOLBAR_LIFT - 1 + 240 + TOOLBAR_DROP)
   })
 
   it('多矩形贴顶时按包围盒底边翻转', () => {
@@ -157,13 +169,13 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
       { x: 0, y: 0, k: 1 }
     )!
     expect(a.left).toBe(340)
-    expect(a.top).toBe(300 + 12) // 底边取最高的那张（h=300）
+    expect(a.top).toBe(300 + TOOLBAR_DROP) // 底边取最高的那张（h=300）
   })
 
   it('翻转也随视口缩放换算', () => {
     const a = toolbarAnchor([{ x: 100, y: 0, w: 240, h: 240 }], { x: 0, y: -30, k: 2 })!
-    // 底边世界 y=240 → 屏幕 240*2-30=450，再 +12
-    expect(a.top).toBe(450 + 12)
+    // 底边世界 y=240 → 屏幕 240*2-30=450，再 +TOOLBAR_DROP
+    expect(a.top).toBe(450 + TOOLBAR_DROP)
   })
 })
 

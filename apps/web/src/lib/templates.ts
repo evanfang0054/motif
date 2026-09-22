@@ -11,3 +11,13 @@ export const SIZE_PRESETS = [
   { key: '1024x1536', label: '竖图', hint: '1024×1536' },
   { key: '1536x1024', label: '横图', hint: '1536×1024' },
 ] as const
+
+/**
+ * 尺寸的显示名。抽出来是因为**两处都要用**：生成面板的尺寸下拉（触发件文案）
+ * 与面板收起后那条浮动条上的摘要 —— 两处各写一份必然改一处漏一处。
+ */
+export function sizeLabelOf(size: string): string {
+  const preset = SIZE_PRESETS.find((s) => s.key === size)
+  if (preset) return preset.label
+  return size === 'auto' ? '自动' : '自定义'
+}

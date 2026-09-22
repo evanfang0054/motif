@@ -600,19 +600,24 @@ html[data-theme="dark"] .lp-hero {
   font-size: 13px;
 }
 
-/* ---------- 工作台 ---------- */
+/* ---------- 工作台：导航头占位 + 画布区（两侧浮动面板） ---------- */
 
+/* 2026-09-21 用户裁决（**修正了同日前一版的误解**）：**导航头保持不变**（仍是占位式顶栏、
+   横贯全宽、画布从它下面开始），不是把顶栏拆成浮在画布上的浮动条。
+   浮动的是**两侧面板**：它们浮在画布区之上、可收起；收起后各自的位置出现一条小浮动条。 */
 .ws-shell {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--background);
 }
 
 .ws-nav {
   position: relative;
   z-index: 30;
+  flex: none;
   display: flex;
   align-items: center;
   min-height: 64px;
@@ -622,52 +627,207 @@ html[data-theme="dark"] .lp-hero {
   background: var(--surface-primary);
 }
 
-
-
-
-
-
-
-
-/* .ws-badge 已移入文件顶部 @layer components（issue #6 层叠修复；顺带修复 ≥lg 余额双显） */
-
-.ws-grid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  overflow: hidden;
-}
-
-@media (min-width: 1024px) {
-  .ws-grid {
-    grid-template-columns: minmax(0, 1fr) 380px;
-  }
-}
-
+/* 画布区：两侧浮动面板、收起后的浮动条、底部工具栏都相对它定位（顶栏之下、占满剩余高度） */
 .ws-canvas {
   position: relative;
+  flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   background: var(--canvas-background);
   color: var(--canvas-foreground);
 }
 
-.ws-panel {
+/* 两侧浮动面板。⚠️ 底部让 64px 而不是 12px：底部工具栏贴底居中占 12+44=56，
+   画布窄到 ~1024 时面板下缘会压住工具栏左/右端（实测 30px 重叠） */
+.ws-float-panel {
+  position: absolute;
+  z-index: 25;
+  top: 12px;
+  bottom: 64px;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  border-left: 1px solid var(--border);
-  background: var(--surface-primary);
-  padding: 16px;
-  gap: 12px;
-  max-height: 52dvh;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
 }
 
+.ws-float-left {
+  left: 12px;
+  width: 280px;
+}
+
+/* 小地图展开时，左侧面板**让出左下角**（2026-09-21 用户裁决：小地图回到左下角）。
+   小地图 240×160 贴在 bottom-3/left-3，占 y ∈ [底-172, 底-12]；
+   左侧面板原本到 bottom-64，两者会叠 108px，而面板 z-25 > 小地图 z-20 → 小地图会被盖住。
+   把面板 bottom 抬到 184（12 + 160 + 12）后，左侧变成「面板在上、小地图在下」的一条竖列。
+   用 `:has()` 读小地图的存在，而不是把 miniMapOpen 提到 store 或往下传 prop ——
+   那个开关是 CanvasStage 的局部状态，为一条定位规则改数据流不划算。
+   （Tailwind v4 的最低浏览器版本已含 `:has()`，无需降级方案。） */
 @media (min-width: 1024px) {
-  .ws-panel {
-    max-height: none;
+  .ws-canvas:has([data-testid='canvas-minimap']) .ws-float-left {
+    bottom: 184px;
   }
+}
+
+.ws-float-right {
+  right: 12px;
+  width: 372px;
+}
+
+/* 窄屏：两侧面板改成**从下往上弹出的抽屉**（bottom sheet）—— 底部对齐、通栏、限高，
+   而不是铺满整个画布。铺满那种读起来像「整页被替换了」，抽屉读起来像「面板从画布下方升上来」，
+   后者才符合「面板是画布上的一层」这件事（2026-09-21 用户裁决）。
+   ⚠️ 必须保留 `top: auto`：上面那条规则给了 `top: 12px; bottom: 64px`，
+   只改 bottom 不改 top 的话高度会被钉死成「顶到 12px」，抽屉就变成通屏了。 */
+@media (max-width: 1023px) {
+  .ws-float-left,
+  .ws-float-right {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    /* 限高而不是定高：内容少时抽屉就该矮，内容多时到 78dvh 封顶、内部滚动 */
+    max-height: min(78dvh, 620px);
+    border-radius: 18px;
+  }
+}
+
+/* 抽屉升场动画。⚠️ 必须挂在 `prefers-reduced-motion: no-preference` 下 ——
+   ① 无障碍要求；② 验证环境里动画时钟不走，过渡会冻在中间帧（实测量到的尺寸整体被缩放 0.9 倍），
+   加了这道守卫就能用 `setEmulatedMedia(reduce)` 确定性地关掉动画再量。 */
+@media (max-width: 1023px) and (prefers-reduced-motion: no-preference) {
+  .ws-float-left,
+  .ws-float-right {
+    animation: ws-sheet-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+@keyframes ws-sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 窄屏遮罩：宽屏下 display:none ⇒ 既不显示也不参与命中测试。
+   2026-09-21 裁决后它**只负责收起右侧面板**（点画布空白处 = 收起生成面板）：
+   左侧面板只能由它自己的收起按钮关掉，所以左侧展开时**不渲染**遮罩（画布上方仍可操作）。 */
+.ws-float-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  display: none;
+  border: 0;
+  padding: 0;
+  background: var(--scrim);
+}
+
+@media (max-width: 1023px) {
+  .ws-float-scrim {
+    display: block;
+  }
+}
+
+/* 收起后的浮动条（2026-09-21 用户裁决：**只在该侧面板收起时出现**，展开时那个位置让给面板本身）。
+   左条：展开任务面板 + 任务名 + 新建任务；右条：展开生成面板 + 生成/取消 + 张数尺寸摘要。
+   ⚠️ 两条都在画布顶部，窄屏会挤 → 任务名 `hidden lg:inline`、摘要 `hidden md:inline`（见组件）。 */
+.ws-collapsed-bar {
+  position: absolute;
+  z-index: 25;
+  top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
+}
+
+/* 左条不许伸到右条底下：两条同时出现时各占一半（留出中缝与左右边距） */
+.ws-collapsed-left {
+  left: 12px;
+  max-width: calc(50% - 18px);
+}
+
+.ws-collapsed-right {
+  right: 12px;
+}
+
+/* 面板本体：外层不滚、内层滚、页脚固定（生成按钮吸底常驻）。
+   为什么不用 `position: sticky` 做吸底：实测（1190×560 视口）滚动到底时 sticky 元素会停在
+   内容的自然位置、比吸底位高 45px，底栏下方露出一条空隙 —— 那是 flex 容器 + 负外边距 +
+   sticky 三者叠加的结果，行为依赖内容高度，不可靠。改成「固定页脚 + 内层滚动」后
+   底栏是普通 flex 项，位置与内容多少无关。 */
+.ws-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+
+  /* 输入框可见边框（2026-09-21 用户裁决：面板里的输入框要有边框）。
+     HeroUI 的字段默认 border-width: 0px + border-color: transparent（靠阴影表达层级），
+     在暖米底上几乎看不出输入区的边界。这里只**覆盖令牌**、不碰组件内部样式。
+
+     ⚠️ 必须直接覆盖 --border-width-field 而不是 --field-border-width：
+     后者在 :root 就被 --border-width-field 消费掉了（`--border-width-field: var(--field-border-width, …)`），
+     自定义属性继承的是**代入后的计算值**，在 .ws-panel 改源头对后代无效。
+
+     ⚠️ --field-border-hover / -focus 同理必须一起覆盖：
+     它们在 :root 用 --field-border（transparent）算好了，只改 --field-border 的话
+     悬停/聚焦时边框反而会变透明（等于「一 hover 边框就消失」）。 */
+  --border-width-field: 1px;
+  --field-border: var(--border);
+  --field-border-hover: var(--border-strong);
+  --field-border-focus: var(--border-strong);
+}
+
+/* 面板头（状态 / 标题 + 操作）：不参与滚动 */
+.ws-panel-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 10px 16px;
+}
+
+/* 面板内唯一可滚动的区域 */
+.ws-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 16px 16px;
+}
+
+/* 面板底栏：生成/取消常驻，内容滚不滚它都在 */
+.ws-panel-footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* 面板内的分组段：用分隔线把「参考图 / 参数 / 提示词」分开 */
+.ws-panel-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
 }
 
 .ws-panel-label {
@@ -676,10 +836,31 @@ html[data-theme="dark"] .lp-hero {
   color: var(--muted-strong);
 }
 
-.ws-size-row {
+/* 参考图网格里的「上传」格：与缩略图同尺寸的虚线方块 */
+.ws-ref-add {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  aspect-ratio: 1 / 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.ws-ref-add:hover:not(:disabled) {
+  border-color: var(--brand-warm);
+  color: var(--brand-warm);
+}
+
+.ws-ref-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 
@@ -762,79 +943,81 @@ html[data-theme="dark"] .lp-hero {
   display: inline-block;
 }
 
-/* 画布顶部信息 pill */
-.canvas-pill {
+/* 工具栏最左的**画布状态读数**（2026-09-21 调整：原先是画布左上角一个独立 pill，
+   但左上角现在是浮动条的地盘，且状态读数放底部工具条是通用惯例）。
+   不做成带边框的 pill：它已经在工具栏里了，再加边框就是「盒子里套盒子」。 */
+.canvas-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface-primary);
-  border-radius: 999px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 0 6px;
   font-size: 12px;
-  box-shadow: 0 2px 8px #00000014;
+  color: var(--muted-strong);
+  white-space: nowrap;
 }
 
-.canvas-pill-count {
+.canvas-status-count {
   font-weight: 600;
   color: var(--foreground);
 }
 
-.canvas-pill-divider {
+.canvas-status-divider {
   width: 1px;
   height: 12px;
   background: var(--border);
   display: inline-block;
 }
 
-
-
-/* 右下缩放工具条 */
+/* 底部工具栏（2026-09-21 裁决：由右下角改为**水平居中贴底**；内容与视图按用途分了 4 组，
+   见 CanvasStage 里那四个分组注释）。居中用 left:50% + translateX(-50%) 而不是 `margin: auto`：
+   它是绝对定位元素，没有可撑开的父宽，auto 外边距不会居中。
+   ⚠️ **不换行**：放不下的项由 JS 按实际可用宽度收进「…」下拉（见 CanvasStage 的溢出逻辑），
+   换行会让工具栏高度随窗口抖动、并压住画布底部的卡片。 */
 .canvas-zoombar {
   position: absolute;
-  right: 12px;
+  z-index: 20;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: max(12px, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   gap: 2px;
+  max-width: calc(100% - 24px);
   border: 1px solid var(--border);
-  background: var(--surface-primary);
+  background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(10px);
   border-radius: 10px;
   padding: 4px;
   box-shadow: 0 2px 8px #00000014;
 }
 
-
-
-
-
-
-
-
-
-
-
-.canvas-lightbox-caption {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #ffffffcc;
-  font-size: 12.5px;
+/* 工具栏的直接子项**不参与收缩**：溢出判定读的是 `scrollWidth`，
+   而 flex 项默认 `flex-shrink: 1` 会把图标按钮压窄、让 scrollWidth 永远等于 clientWidth（判定失效）。
+   注意这与 `--toolbar-level` 无关 —— 收缩档位是 JS 算的，这里只是让量出来的宽度是真实宽度。 */
+.canvas-zoombar > * {
+  flex: none;
 }
 
 
 
 
 
+
+
+
+
+
+
+/* 任务列表行：**两行布局**（标题 + 操作按钮 / 状态徽标）。
+   左面板只有 280px 宽，挤成一行时标题会被徽标与两个图标按钮压到只剩几十像素。 */
 .ws-topic-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-secondary);
-  padding: 10px 12px;
+  padding: 10px 10px 10px 12px;
   cursor: pointer;
 }
 
@@ -884,10 +1067,12 @@ html[data-theme="dark"] .lp-hero {
 }
 
 /* ---------- 主题三态切换（浅色 / 深色 / 跟随系统） ---------- */
+/* 主题三态组合按钮：2026-09-21 用户裁决**去掉外框那 1px 边框** ——
+   三个分段自己已经有底（选中段珊瑚、其余浅灰），再套一圈描边就是「按钮上又描了一道」。
+   保留圆角 + overflow 是为了把首尾分段的直角裁成圆角，去掉它分段会变成方角。 */
 .ws-theme-toggle {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
 }
