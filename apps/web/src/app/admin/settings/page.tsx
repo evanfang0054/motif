@@ -9,6 +9,7 @@ import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
+import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
@@ -65,22 +66,8 @@ export default function AdminSettingsPage() {
 
   const setField = (key: string, value: string) => setDirty((d) => ({ ...d, [key]: value }))
 
-  /** 只提交本组里改动过且**当前可见**的键 —— 密钥框初值恒为空，未输入就不会进 dirty；
-   *  可见性过滤防止「切走渠道后，隐藏字段残留的 dirty 被一并提交」。 */
-  function pickedFrom(group: AdminSettingItem['group']): Record<string, string> {
-    const keys = new Set(items.filter((i) => i.group === group).map((i) => i.key))
-    const draftChannel = (selectorKey: string): string | null =>
-      dirty[selectorKey] ?? items.find((i) => i.key === selectorKey)?.value ?? null
-    const visible = (key: string): boolean => {
-      if (group === 'mailer') return mailerFieldVisible({ key }, draftChannel('MOTIF_MAILER'))
-      if (group === 'payment') return paymentFieldVisible({ key }, draftChannel('PAYMENT_CHANNEL'))
-      return true
-    }
-    return Object.fromEntries(Object.entries(dirty).filter(([k]) => keys.has(k) && visible(k)))
-  }
-
   async function save(group: AdminSettingItem['group']) {
-    const updates = pickedFrom(group)
+    const updates = pickUpdates({ items, dirty, group })
     if (Object.keys(updates).length === 0) {
       setMsg('没有改动需要保存。')
       setErr(null)
@@ -130,9 +117,9 @@ export default function AdminSettingsPage() {
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              {(item.options ?? []).map((o) => (
-                <ListBox.Item key={`opt-${item.key}-${o}`} id={`opt-${item.key}-${o}`}>
-                  {o}
+              {enumOptionItems(item.options).map((o) => (
+                <ListBox.Item key={`${item.key}-${o.id}`} id={o.id} textValue={o.label}>
+                  {o.label}
                 </ListBox.Item>
               ))}
             </ListBox>
@@ -352,17 +339,26 @@ export default function AdminSettingsPage() {
                   })()}
                 </div>
               ))}
+              {/* 未选中态必须有可见边框（WCAG 2.1 SC 1.4.11 要求控件边界对相邻背景 ≥3:1）。
+                  边框色用 --muted 而非 --border / --border-strong：后两者是发丝线级别的弱令牌，
+                  实测对面板底仅 1.14:1（亮）/ 1.35:1（暗）与 1.57:1 / 1.75:1，均不达标；
+                  --muted 实测 5.13:1（亮）/ 6.16:1（暗），是当前调色板里唯一过线且不过重的选择。
+                  走 Checkbox.Control 的 className 是官方定制面（见 demos/cn/checkbox/custom-styles.tsx），
+                  不是覆盖组件内部样式。
+                  ⚠️ 必须只在**未选中**态生效：HeroUI 组件样式在 layer(components)、Tailwind 工具类
+                  在 layer(utilities)，后者层序在后 —— 无条件加边框会盖掉组件自己的状态边框，
+                  导致选中态在珊瑚方块外多出一圈灰环。故用 group + data-[selected=true] 把它让回去。 */}
               <Checkbox
-                className="admin-confirm-line"
+                className="group my-3"
                 isSelected={confirmed}
                 onChange={(sel) => setConfirmed(sel)}
               >
                 <Checkbox.Content>
-                  <Checkbox.Control>
+                  <Checkbox.Control className="border border-solid border-[var(--muted)] group-data-[selected=true]:border-transparent">
                     <Checkbox.Indicator />
                   </Checkbox.Control>
+                  <Label>我已了解上述后果</Label>
                 </Checkbox.Content>
-                我已了解上述后果
               </Checkbox>
               {/* 危险按钮沿用后台既有的 .admin-btn-danger 描边样式（红字红边），
                   文字色走 --danger-quiet（暗色 #eb6962）保证 AA。 */}
