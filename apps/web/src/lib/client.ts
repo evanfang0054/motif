@@ -109,6 +109,7 @@ export interface PublicConfig {
   inviteRewardCredits: number
   inviteRewardMaxInvitees: number
   signupBonusCredits: number
+  llmEnhanceEnabled: boolean
 }
 
 export interface AdminSettingItem {

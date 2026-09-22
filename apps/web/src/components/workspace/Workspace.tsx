@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
 import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
 import { api } from '@/lib/client'
+import { usePublicConfig } from '@/lib/use-public-config'
 import { useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query'
 import { TopNav } from './TopNav'
 import { sizeLabelOf } from '@/lib/templates'
@@ -60,6 +61,9 @@ const TOPIC_LIST_POLL_MS = 5000
 
 /** 登录后工作台：顶栏 + 画布 + 右侧任务面板 + 任务抽屉 + 弹层 */
 function Workspace({ initialUser }: { initialUser: User }) {
+  // 提示词增强由服务端全局配置决定（D13：不做用户侧开关）——前端只跟随，不提供控件。
+  // 服务端仍会再 AND 一次配置，所以这里传错也不会真的打到未配置的 LLM。
+  const publicCfg = usePublicConfig()
   const router = useRouter()
   const [user, setUser] = useState<User>(initialUser)
   const [topics, setTopics] = useState<Topic[]>([])
@@ -336,7 +340,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         prompt: panel.prompt,
         count: panel.count,
         size: panel.size === 'custom' ? `${panel.customW}x${panel.customH}` : panel.size,
-        enhance: false,
+        enhance: publicCfg?.llmEnhanceEnabled ?? false,
         topicId: tid,
         referenceCanvasImageIds: sentRefIds,
       } satisfies GenerateImagesInput)

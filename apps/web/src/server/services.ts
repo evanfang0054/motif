@@ -29,9 +29,10 @@ import { buildImageKey, storagePathFor, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
+import { createLlmFromConfig } from './llm'
 import { createPaymentGateway } from './payment'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveConfigValues, resolvePositiveInt, resolveSetting, yuanToFen } from './settings'
+import { resolveBool, resolveConfigValues, resolveLlmReady, resolvePositiveInt, resolveSetting, yuanToFen } from './settings'
 
 export class ServiceError extends Error {
   constructor(
@@ -250,20 +251,41 @@ export async function enqueueGeneration(
   const validRefs = [...canvasRefIds, ...stagedCanvasIds]
 
   const size = sizeCheck.value
+
+  // 提示词增强：**服务端权威**——前端传 enhance 只是意愿，这里再 AND 一次配置（双保险）。
+  // 失败一律降级为原文：增强是可选增益，不该让生成失败，也不该动额度（额度按张预扣，与本段无关）。
+  // 每轮现构造客户端（不缓存）：配置可在管理后台热改，缓存会让「改了 LLM 密钥、页面显示成功、
+  // 实际仍打旧网关」静默失效 —— 与 provider / worker 的处理一致。
+  const basePrompt = input.prompt.trim()
+  let finalPrompt = basePrompt
+  let enhanced = false
+  if (input.enhance && resolveLlmReady(store, process.env)) {
+    try {
+      const out = await createLlmFromConfig(resolveConfigValues(store, process.env)).enhance(basePrompt)
+      if (out.trim()) {
+        finalPrompt = out.trim()
+        enhanced = true
+      }
+    } catch (e) {
+      console.error('[motif] 提示词增强失败，降级为原文:', e)
+    }
+  }
+
   const message = store.createMessage({
     topicId: topic.id,
     userId: user.id,
-    prompt: input.prompt.trim(),
-    finalPrompt: input.prompt.trim(),
+    prompt: basePrompt,
+    finalPrompt,
     size,
     requestedCount: input.count,
-    enhancePrompt: !!input.enhance,
+    // 记「真的增强过」而不是「用户请求了增强」：后者会让事后对账分不清到底调没调 LLM
+    enhancePrompt: enhanced,
     referenceIds: validRefs,
   })
-  store.setTopicActive(topic.id, message.id, input.prompt.trim(), 'pending')
+  store.setTopicActive(topic.id, message.id, basePrompt, 'pending')
 
   return {
-    prompt: input.prompt.trim(),
+    prompt: basePrompt,
     topic: store.getTopic(topic.id)!,
     messageId: message.id,
     queued: true,
