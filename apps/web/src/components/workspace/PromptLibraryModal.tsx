@@ -47,18 +47,15 @@ interface Props {
   onCopyPrompt: (entry: PromptLibraryEntry) => void
 }
 
-/** 一条提示词卡片：封面 + 标题 + 正文摘要 + 标签 + 来源外链；点整卡即选中 */
+/** 一条提示词卡片：封面 + 标题 + 正文摘要 + 标签；点整卡即选中。署名统一在 NOTICE，卡片不再露出上游地址与来源名 */
 function EntryCard({
   entry,
-  sourceHomepage,
   coverBroken,
   onBrokenCover,
   onSelect,
   onOpenDetail,
 }: {
   entry: PromptLibraryEntry
-  /** 该条目所属源的仓库地址：条目自身没有出处链接时回退到它（照抄上游 `item.sourceUrl || source.homepage`） */
-  sourceHomepage: string
   coverBroken: boolean
   onBrokenCover: (key: string) => void
   onSelect: () => void
@@ -66,11 +63,10 @@ function EntryCard({
   onOpenDetail: (() => void) | null
 }) {
   const key = `${entry.sourceId}:${entry.id}`
-  const origin = entry.sourceUrl || sourceHomepage
   return (
     <div
       className="flex flex-col overflow-hidden rounded-lg border"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+      style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
     >
       <button type="button" onClick={onSelect} aria-label={`选用提示词：${entry.title}`} className="block w-full text-start">
         {entry.coverUrl && !coverBroken ? (
@@ -109,22 +105,6 @@ function EntryCard({
             {t}
           </Chip>
         ))}
-        {/* 出处：内容来自上游开源仓库，按署名要求给到原仓库链接（浏览器唯一的「外链」，不发起 API 调用） */}
-        {origin ? (
-          <a
-            href={origin}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="ms-auto text-[11px] underline"
-            style={{ color: 'var(--muted)' }}
-          >
-            {entry.sourceName}
-          </a>
-        ) : (
-          <span className="ms-auto text-[11px]" style={{ color: 'var(--muted)' }}>
-            {entry.sourceName}
-          </span>
-        )}
       </div>
     </div>
   )
@@ -269,7 +249,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   }
 
   const hasFilter = Boolean(debouncedKeyword) || tags.length > 0 || source !== ALL_PROMPTS_OPTION
-  const homepageOf = (sourceId: string) => facetSources.find((s) => s.id === sourceId)?.homepage ?? ''
   /**
    * 内容为空时区分成因（按优先级判）：
    * 1. 有源抓失败（`failures` 非空）⇒ 如实报原因 + 重试
@@ -400,7 +379,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                   <EntryCard
                     key={`${entry.sourceId}:${entry.id}`}
                     entry={entry}
-                    sourceHomepage={homepageOf(entry.sourceId)}
                     coverBroken={brokenCovers.includes(`${entry.sourceId}:${entry.id}`)}
                     onBrokenCover={(k) => setBrokenCovers((prev) => (prev.includes(k) ? prev : [...prev, k]))}
                     onSelect={() => onSelect(entry.prompt)}
