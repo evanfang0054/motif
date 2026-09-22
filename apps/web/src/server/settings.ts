@@ -17,7 +17,7 @@ import { createPaymentGateway } from './payment'
  * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
-export type SettingGroup = 'generation' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
+export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -46,6 +46,16 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'IMAGE_API_BASE_URL', group: 'generation', label: '网关地址', kind: 'url', required: true, affectsRuntime: true, hint: 'OpenAI 兼容网关的根地址，例如 https://api.example.com/v1' },
   { key: 'IMAGE_API_KEY', group: 'generation', label: 'API 密钥', kind: 'secret', required: true, affectsRuntime: true, hint: '只写不读：保存后页面只显示掩码' },
   { key: 'IMAGE_MODEL', group: 'generation', label: '模型', kind: 'string', defaultHint: 'gpt-image-2', affectsRuntime: true },
+
+  // ---- 额度与奖励 ----
+  // 分组名取 credits 而非 invite：注册赠送不属于邀请活动，放 invite 组语义不对。
+  // 四项一律非 danger：它们只决定发放多少，不削弱安全基线。
+  // ⚠️ 邀请活动**默认关闭**：改动前奖励是默认生效的，故未配置新键的现有部署升级后会失去邀请奖励
+  //    （入口隐藏、不再发奖）。这是需求明确接受的口径，升级须知写在对应 PR 描述里。
+  { key: 'INVITE_REWARD_ENABLED', group: 'credits', label: '邀请好友送额度', kind: 'boolean', defaultHint: 'false', hint: '关闭后工作台不再显示邀请入口，且注册时不再建立邀请关系、不发奖励。' },
+  { key: 'INVITE_REWARD_CREDITS', group: 'credits', label: '每邀请 1 人赠送额度', kind: 'number', defaultHint: '3', hint: '单位：张。仅在活动开启时生效。' },
+  { key: 'INVITE_REWARD_MAX_INVITEES', group: 'credits', label: '最多奖励人数', kind: 'number', defaultHint: '3', hint: '超过此人数后继续邀请不再发放奖励，但邀请关系仍建立。' },
+  { key: 'SIGNUP_BONUS_CREDITS', group: 'credits', label: '注册赠送额度', kind: 'number', defaultHint: '3', hint: '单位：张。与邀请活动开关无关：关闭邀请活动不影响注册赠送。' },
 
   // ---- 邮件发信 ----
   { key: 'MOTIF_MAILER', group: 'mailer', label: '发信渠道', kind: 'enum', options: ['console', 'smtp', 'resend', 'sendgrid'], defaultHint: 'console', affectsRuntime: true, hint: 'console 只把验证码打进服务端日志，用于本地联调' },

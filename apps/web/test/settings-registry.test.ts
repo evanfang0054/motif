@@ -149,6 +149,57 @@ describe('读取视图（密钥只回掩码）', () => {
   })
 })
 
+describe('额度与奖励分组（credits）', () => {
+  it('四个键存在、kind 与默认值正确、且既非只读也非危险区', () => {
+    const defs = SETTING_DEFS.filter((d) => d.group === 'credits')
+    expect(defs.map((d) => d.key).sort()).toEqual([
+      'INVITE_REWARD_CREDITS',
+      'INVITE_REWARD_ENABLED',
+      'INVITE_REWARD_MAX_INVITEES',
+      'SIGNUP_BONUS_CREDITS',
+    ])
+    const byKey = Object.fromEntries(defs.map((d) => [d.key, d]))
+    expect(byKey.INVITE_REWARD_ENABLED.kind).toBe('boolean')
+    expect(byKey.INVITE_REWARD_ENABLED.defaultHint).toBe('false')
+    for (const k of ['INVITE_REWARD_CREDITS', 'INVITE_REWARD_MAX_INVITEES', 'SIGNUP_BONUS_CREDITS']) {
+      expect(byKey[k].kind).toBe('number')
+      expect(byKey[k].defaultHint).toBe('3')
+    }
+    // 既有「只读精确集合」「危险区精确集合」两条断言是回归护栏：新键两者都不能进
+    for (const d of defs) {
+      expect(d.readOnly).toBeFalsy()
+      expect(d.danger).toBeFalsy()
+    }
+  })
+
+  it('三个 number 键按 1–65535 整数校验：0 / 负数 / 小数 / 超上限均被拒', () => {
+    for (const k of ['INVITE_REWARD_CREDITS', 'INVITE_REWARD_MAX_INVITEES', 'SIGNUP_BONUS_CREDITS']) {
+      expect(writeSettings(store, { [k]: '5' }, { danger: false }).ok, `${k}=5 应被接受`).toBe(true)
+      expect(writeSettings(store, { [k]: '0' }, { danger: false }).ok, `${k}=0 应被拒`).toBe(false)
+      expect(writeSettings(store, { [k]: '-1' }, { danger: false }).ok, `${k}=-1 应被拒`).toBe(false)
+      expect(writeSettings(store, { [k]: '2.5' }, { danger: false }).ok, `${k}=2.5 应被拒`).toBe(false)
+      expect(writeSettings(store, { [k]: '65536' }, { danger: false }).ok, `${k}=65536 应被拒`).toBe(false)
+    }
+  })
+
+  it('邀请开关接受 true/false/1/0，拒绝其他值', () => {
+    for (const v of ['true', 'false', '1', '0']) {
+      expect(writeSettings(store, { INVITE_REWARD_ENABLED: v }, { danger: false }).ok, `${v} 应被接受`).toBe(true)
+    }
+    expect(writeSettings(store, { INVITE_REWARD_ENABLED: 'yes' }, { danger: false }).ok).toBe(false)
+  })
+
+  it('四个键走普通入口即可保存（不需要危险区二次确认）', () => {
+    const r = writeSettings(
+      store,
+      { INVITE_REWARD_ENABLED: 'true', INVITE_REWARD_CREDITS: '7', INVITE_REWARD_MAX_INVITEES: '9', SIGNUP_BONUS_CREDITS: '5' },
+      { danger: false }
+    )
+    expect(r.ok).toBe(true)
+    expect(store.getSetting('INVITE_REWARD_CREDITS')).toBe('7')
+  })
+})
+
 describe('写入校验', () => {
   it('空 updates 被拒', () => {
     const r = writeSettings(store, {}, { danger: false })

@@ -13,6 +13,7 @@ import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
+  credits: '额度与奖励',
   payment: '支付与套餐',
   mailer: '邮件发信',
   // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
@@ -22,7 +23,7 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'payment', 'mailer', 'prompts', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'prompts', 'security', 'data']
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
