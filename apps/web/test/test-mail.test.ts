@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { MisconfiguredMailer } from '@/server/mailer'
+import { ConfigError } from '@/server/config-error'
+import { jsonError } from '@/server/http'
 import { sendTestMail, ServiceError } from '@/server/services'
 import type { Mailer, MailerConfig } from '@/server/mailer'
 
@@ -53,5 +55,25 @@ describe('sendTestMail', () => {
   it('MisconfiguredMailer 抛错 → ServiceError 400', async () => {
     const bad = new MisconfiguredMailer('发信渠道未配置')
     await expect(sendTestMail(fakeConfig(bad), 'misconfig@example.com')).rejects.toThrow('未配置')
+  })
+})
+
+describe('配置类错误在 HTTP 层的出口', () => {
+  it('MisconfiguredMailer 抛的是 ConfigError（而非普通 Error）', async () => {
+    await expect(new MisconfiguredMailer('缺 SMTP_HOST').sendVerificationCode()).rejects.toBeInstanceOf(ConfigError)
+  })
+
+  it('jsonError 把 ConfigError 转成 503 + 可行动指引，且不泄露内部键名', async () => {
+    const res = jsonError(new ConfigError('MOTIF_MAILER=smtp 缺少配置：SMTP_HOST, SMTP_PASS'))
+    expect(res.status).toBe(503)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toContain('系统设置')
+    expect(body.error).not.toContain('SMTP_PASS') // 键名只进服务端日志
+  })
+
+  it('普通 Error 仍回落通用 500 文案（不误报成配置问题）', async () => {
+    const res = jsonError(new Error('数据库锁住了'))
+    expect(res.status).toBe(500)
+    expect(((await res.json()) as { error: string }).error).toContain('服务器开小差了')
   })
 })

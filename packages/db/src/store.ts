@@ -319,7 +319,7 @@ export interface AdminOverview {
     bySource: Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
   }
   generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
-  orders: { pending: number; paid: number; amountTotal: number }
+  orders: { pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
   cdks: { unredeemed: number; redeemed: number; revoked: number }
   feedback: { pending: number }
 }
@@ -1497,7 +1497,13 @@ export class MotifStore {
       orders: {
         pending: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'"),
         paid: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'paid'"),
-        amountTotal: one<{ s: number | null }>("SELECT SUM(amount_total) AS s FROM orders WHERE status = 'paid'").s ?? 0,
+        // 按币种分组求和：币种是后台可配的（改过配置后历史订单会留下别的币种），
+        // 跨币种直接 SUM 会得到一个没有意义的数，展示层也无从推断该配哪个符号。
+        amountByCurrency: this.db
+          .prepare(
+            "SELECT currency, SUM(amount_total) AS amountTotal FROM orders WHERE status = 'paid' GROUP BY currency ORDER BY amountTotal DESC"
+          )
+          .all() as Array<{ currency: string; amountTotal: number }>,
       },
       cdks: {
         unredeemed: n('SELECT COUNT(*) AS c FROM cdks WHERE redeemed_by IS NULL AND revoked_at IS NULL'),

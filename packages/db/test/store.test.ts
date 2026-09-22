@@ -635,11 +635,34 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     // 订单 / CDK / 反馈
     expect(o.orders.paid).toBe(1)
     expect(o.orders.pending).toBe(0)
-    expect(o.orders.amountTotal).toBe(868)
+    // 金额按币种分组：跨币种求和会得出没有意义的数，所以结构是数组而不是单个数字
+    expect(o.orders.amountByCurrency).toEqual([{ currency: 'hkd', amountTotal: 868 }])
     expect(o.cdks.unredeemed).toBe(1)
     expect(o.cdks.redeemed).toBe(1)
     expect(o.cdks.revoked).toBe(1)
     expect(o.feedback.pending).toBe(1)
+    s.close()
+  })
+
+  it('概览订单金额按币种分组，不跨币种求和', () => {
+    const s = new MotifStore(join(dir, 'ov-cur.db'))
+    const u = s.createUser({ email: 'ovcur@b.co', passwordHash: 'h', name: 'x' })
+    const mkPaid = (id: string, amountTotal: number, currency: string) => {
+      const oid = s.createOrder(u.id, { id, label: id, credits: 10, amountTotal, currency })
+      s.payOrder(oid, u.id)
+    }
+    mkPaid('credits_50', 868, 'hkd')
+    mkPaid('credits_100', 6800, 'cny')
+    mkPaid('credits_200', 200, 'hkd')
+
+    const o = s.overviewStats()
+    // 两条 hkd 合并成一组，cny 单独一组；按金额降序（cny 6800 > hkd 1068）
+    expect(o.orders.amountByCurrency).toEqual([
+      { currency: 'cny', amountTotal: 6800 },
+      { currency: 'hkd', amountTotal: 1068 },
+    ])
+    // 关键断言：跨币种求和会得到 7868 这个没有意义的数 —— 它不该出现在任何字段里
+    expect(JSON.stringify(o.orders)).not.toContain('7868')
     s.close()
   })
 

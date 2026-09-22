@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter, type TransportOptions } from 'nodemailer'
+import { ConfigError } from './config-error'
 
 /**
  * 邮件发送抽象：验证码等系统邮件的统一出口。
@@ -181,6 +182,13 @@ export class SendGridMailer implements Mailer {
  * 为什么必须容忍：发信配置写坏（例如选了 smtp 却没填密码）不该让整个进程起不来 ——
  * 否则运维连设置页都打不开，也就无法把配置改回来。
  * 调用方需保证 isConsole 为 false：配置坏了更不能把验证码直出回传给调用方。
+ *
+ * 抛 `ConfigError` 而非普通 Error：注册链路里没人包 try/catch，普通 Error 会被
+ * `jsonError` 归一成「服务器开小差了」，运营只能翻日志才查得出是配置问题。
+ *
+ * 注：`sendTest` 的 ConfigError 在 HTTP 层是**无效**的 —— `sendTestMail` 会先把它包成
+ * `ServiceError(502)` 并原样透传底层原因（管理后台调试需要看到 SMTP 535 之类的原文）。
+ * 这里仍抛同一类型，只为「配置失败就是配置失败」这一语义一致。
  */
 export class MisconfiguredMailer implements Mailer {
   readonly name = 'misconfigured'
@@ -188,11 +196,11 @@ export class MisconfiguredMailer implements Mailer {
   constructor(private readonly reason: string) {}
 
   async sendVerificationCode(): Promise<never> {
-    throw new Error(this.reason)
+    throw new ConfigError(this.reason)
   }
 
   async sendTest(): Promise<never> {
-    throw new Error(this.reason)
+    throw new ConfigError(this.reason)
   }
 }
 

@@ -2,6 +2,7 @@ import path from 'node:path'
 import { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv, type ImageProvider } from '@motif/image-provider'
 import { MisconfiguredMailer, createMailerFromConfig, type MailerConfig } from './mailer'
+import { ConfigError } from './config-error'
 import { resolveConfigValues } from './settings'
 
 /**
@@ -25,6 +26,7 @@ const g = globalThis as unknown as { __motifRuntime?: MotifRuntime }
  * 为什么必须这样：全新部署的 .env 是空的，而「在设置页填生图密钥」正是要支持的路径 ——
  * 若构造就抛错，getRuntime() 会失败，所有接口 500，设置页永远打不开，用户就永远无法完成配置。
  * 抛错落在 generate() 上时，失败会走既有的「消息置 failed + 按已生成数退额」路径，额度不会凭空消失。
+ * 抛 `ConfigError` 是为了让**不经生成链路**的调用点（若将来有）也能被 `jsonError` 识别成配置问题。
  */
 class UnconfiguredProvider implements ImageProvider {
   readonly name = 'unconfigured'
@@ -32,7 +34,7 @@ class UnconfiguredProvider implements ImageProvider {
   constructor(private readonly reason: string) {}
 
   async generate(): Promise<never> {
-    throw new Error(this.reason)
+    throw new ConfigError(this.reason)
   }
 }
 
