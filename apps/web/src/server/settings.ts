@@ -1,6 +1,7 @@
 import type { MotifStore } from '@motif/db'
 import { createImageProviderFromEnv } from '@motif/image-provider'
 import { createMailerFromConfig } from './mailer'
+import { createLlmFromConfig } from './llm'
 import { createPaymentGateway } from './payment'
 
 /**
@@ -17,7 +18,7 @@ import { createPaymentGateway } from './payment'
  * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
-export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'prompts' | 'danger' | 'security' | 'data'
+export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -70,6 +71,15 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'SMTP_PASS', group: 'mailer', label: 'SMTP 密码 / 授权码', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
   { key: 'RESEND_API_KEY', group: 'mailer', label: 'Resend 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
   { key: 'SENDGRID_API_KEY', group: 'mailer', label: 'SendGrid 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
+
+  // ---- 提示词增强（独立 LLM） ----
+  // 独立于生图网关：增强走 chat/completions、生图走 images，两者域名与密钥通常不同（D12）。
+  // 端点与密钥**必填**：开关开着但没配齐时 configHealth 判未就绪，生成链路按「不增强」走。
+  { key: 'LLM_ENHANCE_ENABLED', group: 'llm', label: '启用提示词增强', kind: 'boolean', defaultHint: 'false', hint: '开启后生成前会先调 LLM 改写提示词；需同时配好端点与密钥才真正生效。' },
+  { key: 'LLM_API_BASE_URL', group: 'llm', label: 'LLM 接口地址', kind: 'url', required: true, hint: 'OpenAI 兼容的 chat/completions 根地址，例如 https://api.example.com/v1' },
+  { key: 'LLM_API_KEY', group: 'llm', label: 'LLM 密钥', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
+  { key: 'LLM_MODEL', group: 'llm', label: '增强模型', kind: 'string', defaultHint: 'gpt-4o-mini' },
+  { key: 'LLM_TIMEOUT_MS', group: 'llm', label: '增强超时（毫秒）', kind: 'number', defaultHint: '20000', hint: '增强失败不阻断生成，超时只是让降级更快发生。' },
 
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
@@ -363,5 +373,28 @@ export function configHealth(store: MotifStore, env: Record<string, string | und
       }
       return null
     }),
+    // 判据复用 createLlmFromConfig（必需字段清单不手写第二份）。
+    // ⚠️ 开关关闭时**不算未就绪**：未启用是运营的选择，不是配置缺失 —— 否则页面会一直挂一个假告警。
+    probe('llm', () => {
+      if (!resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false)) return null
+      createLlmFromConfig(values)
+      return null
+    }),
   ]
+}
+
+/**
+ * 提示词增强是否真的可用：开关开 **且** 配置齐备。
+ *
+ * 服务端权威判定 —— 前端传 `enhance: true` 只是意愿，生成链路在这里再 AND 一次（双保险）：
+ * 前端被绕过或版本不一致时，服务端仍不会去调未配置的 LLM。
+ */
+export function resolveLlmReady(store: MotifStore, env: Record<string, string | undefined>): boolean {
+  if (!resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false)) return false
+  try {
+    createLlmFromConfig(resolveConfigValues(store, env))
+    return true
+  } catch {
+    return false
+  }
 }

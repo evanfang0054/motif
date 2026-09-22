@@ -16,6 +16,7 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   credits: '额度与奖励',
   payment: '支付与套餐',
   mailer: '邮件发信',
+  llm: '提示词增强',
   // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
   prompts: '提示词库',
   security: '会话与安全',
@@ -23,12 +24,13 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'prompts', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'llm', 'prompts', 'security', 'data']
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
   payment: '支付渠道',
   mailer: '邮件发信',
+  llm: '提示词增强',
 }
 
 export default function AdminSettingsPage() {
