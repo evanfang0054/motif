@@ -25,7 +25,7 @@ Copyright (c) 2026 Evan Fang (evanfang0054)
    - Awesome GPT-4o — MIT
    - YouMind GPT Image 2 — CC BY 4.0（署名要求）
    其中 YouMind 一源为 CC BY 4.0，属强制署名；Motif 以本文件承载该署名义务，
-   故上列仓库地址须保留。DavidWu 一源未声明许可证的情况另见仓库 issue 记录。
+   故上文所列各仓库地址须保留。DavidWu 一源未声明许可证的情况另见仓库 issue 记录。
 
 3. 第三方依赖
    Next.js、React、HeroUI、better-sqlite3、sharp 等依赖的许可证随其包分发，
