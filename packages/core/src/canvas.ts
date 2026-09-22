@@ -87,7 +87,13 @@ export const DEFAULT_CANVAS_META: CanvasMeta = {
 
 const BACKGROUND_MODES: CanvasBackgroundMode[] = ['dots', 'lines', 'blank']
 
-function finiteNumber(v: unknown, fallback: number): number {
+/**
+ * 数值兜底：非 number 或非有限值一律回退默认。
+ *
+ * 导出给调用方共用 —— HeroUI / RAC 的 `NumberField` 在输入框被清空并失焦时给的是 `NaN`
+ * （不是 `null`），`v ?? 默认值` 接不住，各处都要用这个判据；各写一份必然改一处漏一处。
+ */
+export function finiteNumber(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback
 }
 

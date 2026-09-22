@@ -571,22 +571,20 @@ function Workspace({ initialUser }: { initialUser: User }) {
     setRightOpen(next)
   }, [wide])
 
-  /** 窄屏下两侧面板都是「铺满画布」的浮层，同时开会叠住 → 开一侧就关另一侧 */
+  /** 窄屏下两侧面板都是「铺满画布」的浮层，同时开会叠住 → 开一侧就关另一侧。
+   * ⚠️ 联动必须写在更新器**外面**：setState 的更新器必须是纯函数（StrictMode 会双调用，
+   * 队列 rebase 时还会在渲染期重算），在里面派发另一个 setState 无法保证「每个动作恰好执行一次」。 */
   const toggleLeft = useCallback(() => {
-    setLeftOpen((v) => {
-      const open = !v
-      if (open && wide === false) setRightOpen(false)
-      return open
-    })
-  }, [wide])
+    const open = !leftOpen
+    setLeftOpen(open)
+    if (open && wide === false) setRightOpen(false)
+  }, [leftOpen, wide])
 
   const toggleRight = useCallback(() => {
-    setRightOpen((v) => {
-      const open = !v
-      if (open && wide === false) setLeftOpen(false)
-      return open
-    })
-  }, [wide])
+    const open = !rightOpen
+    setRightOpen(open)
+    if (open && wide === false) setLeftOpen(false)
+  }, [rightOpen, wide])
 
   /**
    * 双击画布收起面板。

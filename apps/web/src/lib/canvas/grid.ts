@@ -12,7 +12,7 @@
  *    由主题切换驱动，不做 JS 判主题 —— 避免浅深主题不一致。
  */
 import type { CanvasBackgroundMode } from '@motif/core'
-import type { Viewport } from './viewport'
+import { baseScale, type Viewport } from './viewport'
 
 /** 基准网格边长：照抄上游的 48 */
 export const GRID_BASE = 48
@@ -28,7 +28,7 @@ export function gridStyle(mode: CanvasBackgroundMode, viewport: Viewport): GridS
   if (mode === 'blank') return null
   // k 归一：非正/非有限按 1 —— 否则 gridSize 为 0 或 NaN，backgroundPosition 会算出
   // "NaNpx"，浏览器丢弃非法声明，图案直接变空白（与 viewportOrigin 同一约定）
-  const k = Number.isFinite(viewport.k) && viewport.k > 0 ? viewport.k : 1
+  const k = baseScale(viewport.k)
   const gridSize = GRID_BASE * k
   const x = viewport.x % gridSize
   const y = viewport.y % gridSize

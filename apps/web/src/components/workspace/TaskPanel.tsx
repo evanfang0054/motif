@@ -5,7 +5,7 @@ import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, Tex
 import { ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
-import { MAX_REFERENCE_IMAGES, TOPIC_STATUS_LABEL } from '@motif/core'
+import { MAX_REFERENCE_IMAGES, TOPIC_STATUS_LABEL, finiteNumber } from '@motif/core'
 import type { CanvasImage, StagedReference } from '@motif/core'
 
 interface Props {
@@ -52,10 +52,8 @@ const PROMPT_MAX_H = 320
  * 而且加减号看起来「点了没反应」（`NaN ± step` 仍是 NaN，只有 RAC 自己回落到 minValue 才恢复）。
  * 服务端有 `validateCount` 兜底（`!Number.isInteger(NaN)` → 拒绝），所以不会真的按 NaN 计费，
  * 但界面这一层必须自己挡住 —— 实测复现路径：选中张数输入框 → 退格清空 → 点别处失焦。
+ * 判据用 `@motif/core` 的 `finiteNumber`（同一份实现，别再抄一份）。
  */
-function finiteOr(v: number | null, fallback: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-}
 
 /** 供面板复用的状态徽标 */
 function StatusBadge({ status }: { status: string }) {
@@ -263,7 +261,7 @@ function TaskPanel(p: Props) {
                 minValue={1}
                 maxValue={12}
                 value={p.count}
-                onChange={(v) => p.onCountChange(finiteOr(v, 1))}
+                onChange={(v) => p.onCountChange(finiteNumber(v, 1))}
                 className="w-[144px]"
               >
                 <NumberField.Group>
@@ -318,7 +316,7 @@ function TaskPanel(p: Props) {
               `flex-wrap` 是配套的：两个 144px 字段 + × + 说明文字在窄屏放不下一行，允许换行而不是溢出。 */}
           {p.size === 'custom' && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-              <NumberField aria-label="自定义宽度" minValue={256} maxValue={2048} value={p.customW} onChange={(v) => p.onCustomSizeChange(finiteOr(v, 256), p.customH)} className="w-[144px]">
+              <NumberField aria-label="自定义宽度" minValue={256} maxValue={2048} value={p.customW} onChange={(v) => p.onCustomSizeChange(finiteNumber(v, 256), p.customH)} className="w-[144px]">
                 <NumberField.Group>
                   <NumberField.DecrementButton />
                   <NumberField.Input />
@@ -326,7 +324,7 @@ function TaskPanel(p: Props) {
                 </NumberField.Group>
               </NumberField>
               ×
-              <NumberField aria-label="自定义高度" minValue={256} maxValue={2048} value={p.customH} onChange={(v) => p.onCustomSizeChange(p.customW, finiteOr(v, 256))} className="w-[144px]">
+              <NumberField aria-label="自定义高度" minValue={256} maxValue={2048} value={p.customH} onChange={(v) => p.onCustomSizeChange(p.customW, finiteNumber(v, 256))} className="w-[144px]">
                 <NumberField.Group>
                   <NumberField.DecrementButton />
                   <NumberField.Input />

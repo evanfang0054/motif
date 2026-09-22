@@ -27,8 +27,10 @@ export function clampScale(k: number): number {
 
 /** 源缩放归一：k 非正/非有限时按 1 处理。
  * ⚠️ 必须是全函数：任何公式都不得拿 0/NaN 当分母，否则会产出 NaN 坐标 ——
- * 与 `@motif/core` 的 `viewportOrigin` 同一约定（那边 NaN 落库会撞 NOT NULL 直接抛错）。 */
-function baseScale(k: number): number {
+ * 与 `@motif/core` 的 `viewportOrigin` 同一约定（那边 NaN 落库会撞 NOT NULL 直接抛错）。
+ * 导出给调用方共用（`gridStyle`、`CanvasStage.arrangeAll` 都要这条归一），
+ * 内联写 `k > 0 ? k : 1` 会漏掉 Infinity。 */
+export function baseScale(k: number): number {
   const v = Number.isFinite(k) ? k : 1
   return v > 0 ? v : 1
 }

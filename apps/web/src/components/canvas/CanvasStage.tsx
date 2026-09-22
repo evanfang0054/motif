@@ -58,7 +58,7 @@ import { createCloudDriver, createLocalDriver, createCanvasPersistence, type Can
 import { MiniMap } from './MiniMap'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
+import { ZOOM_STEP, baseScale, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import { showToast } from '@/components/ui/toast'
 
@@ -96,6 +96,9 @@ const TOOLBAR_LEVELS: readonly (readonly string[])[] = [
   ['background', 'minimap', 'archive'],
   ['background', 'minimap', 'archive', 'arrange'],
 ]
+
+/** 工具栏可用宽度「定档」前的静默期（ms）。见 `rawToolbarAvail` 处的注释。 */
+const TOOLBAR_SETTLE_MS = 120
 
 interface Props {
   topicId: string
@@ -529,7 +532,8 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
     const all = images.map((i) => i.id)
     useCanvasStore.getState().beginGesture('arrange')
     const origin = viewportOrigin(viewport)
-    const k = viewport.k > 0 ? viewport.k : 1
+    // k 归一交给 baseScale：内联写 `viewport.k > 0 ? viewport.k : 1` 会漏掉 Infinity
+    const k = baseScale(viewport.k)
     const slots = centerRectsInViewport(
       allocateSlots(
         [],
@@ -546,10 +550,24 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
 
   /**
    * 工具栏溢出收敛：可用宽度 = 画布宽 − 24（工具栏的 max-width 就是这么算的）。
-   * 每次可用宽度变化都**从 L0 重新开始**，再由下面那个 layout effect 逐档加收 ——
-   * 单向递增保证不会来回震荡，最多 5 次渲染就稳定。
+   * 每次可用宽度变化都**从 L0 重新开始**，再由下面那个 effect 逐档加收 ——
+   * 单向递增保证不会来回震荡，最多 5 次渲染就稳定（不能改成双向：降一档是否装得下
+   * 必须渲染完才量得到，会「降→溢出→升→装得下→降」无限循环）。
+   *
+   * ⚠️ 可用宽度先**防抖**再驱动收敛：收敛每档都要一次渲染，若直接拿每帧都在变的画布宽度驱动，
+   * 拖窗口时 ResizeObserver 每帧触发，档位非 0 就会每帧多出最多 5 次全量重渲染（画布会抖）。
+   * 抖动期间画布尺寸本来就在变，晚 120ms 定档肉眼无感。
    */
-  const toolbarAvail = stageSize.w > 0 ? stageSize.w - 24 : Number.POSITIVE_INFINITY
+  const rawToolbarAvail = stageSize.w > 0 ? stageSize.w - 24 : Number.POSITIVE_INFINITY
+  const [toolbarAvail, setToolbarAvail] = useState(Number.POSITIVE_INFINITY)
+  useEffect(() => {
+    if (!Number.isFinite(rawToolbarAvail)) {
+      setToolbarAvail(rawToolbarAvail)
+      return
+    }
+    const timer = setTimeout(() => setToolbarAvail(rawToolbarAvail), TOOLBAR_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [rawToolbarAvail])
   useEffect(() => {
     setToolbarLevel(0)
   }, [toolbarAvail])
@@ -1217,9 +1235,12 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown>
-            <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
           </>
         )}
+        {/* 隐藏的 file input **必须始终挂载**：溢出菜单在 showArchiveUnit 为 false（窄屏档位 ≥3）时
+            仍提供「导入画布（zip）」项，而它的动作是 `importRef.current?.click()` ——
+            input 若随归档单元一起卸载，窄屏点这一项就是静默无反应（无 toast 无日志）。 */}
+        <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
         {/* ⑤ 画布背景：纯外观，放最后 */}
         {showBackgroundUnit && (
           <>
@@ -1261,7 +1282,6 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
                 <Dropdown.Menu
                   onAction={(key) => {
                     const k = String(key)
-                    if (k === 'minimap') return setMiniMapOpen((v) => !v)
                     if (k === 'arrange') return arrangeAll()
                     if (k === 'arrange-lineage') return arrangeByLineage()
                     if (k === 'export' || k === 'import') return void onArchiveAction(k)
@@ -1271,11 +1291,11 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
                     }
                   }}
                 >
-                  {!showMinimapUnit && (
-                    <Dropdown.Item id="minimap" textValue={miniMapOpen ? '隐藏小地图' : '显示小地图'}>
-                      <Label>{miniMapOpen ? '隐藏小地图' : '显示小地图'}</Label>
-                    </Dropdown.Item>
-                  )}
+                  {/* ⚠️ 这里**故意没有**小地图的兜底项：菜单只在工具栏溢出时打开，而溢出意味着
+                      画布宽 < ~533px（工具栏自身只要 509px，而 ≥1024 时画布宽 = 窗口宽），
+                      那时 `wide` 必然是 false —— 小地图组件（`hidden lg:block`）根本不渲染，
+                      加一项只会是「点得动却什么都不会发生」。工具栏上那个开关按钮同理带着
+                      `hidden lg:inline-flex`，两者成对，见 MiniMap.tsx 的注释。 */}
                   {!showArrangeUnit && (
                     <Dropdown.Item id="arrange" textValue="整理布局">
                       <Label>整理布局</Label>
