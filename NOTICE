@@ -17,7 +17,17 @@ Copyright (c) 2026 Evan Fang (evanfang0054)
    - Awesome GPT Image — https://github.com/ZeroLu/awesome-gpt-image
    - Awesome GPT-4o — https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts
    - YouMind GPT Image 2 — https://github.com/YouMind-OpenLab/awesome-gpt-image-2
-   提示词的著作权归各原作者所有；Motif 仅提供检索与缓存，并保留其来源链接。
+   提示词的著作权归各原作者所有；Motif 仅提供检索与缓存，并在本文件与本产品
+   仓库中完整保留各来源仓库地址与许可证信息。各源许可证如下：
+   - DavidWu GPT Image 2 — 仓库内未声明许可证（未找到 LICENSE 文件）
+   - Freestylefly GPT Image 2 — MIT
+   - Awesome GPT Image — MIT
+   - Awesome GPT-4o — MIT
+   - YouMind GPT Image 2 — CC BY 4.0（署名要求），许可证全文见
+     https://creativecommons.org/licenses/by/4.0/
+   其中 YouMind 一源为 CC BY 4.0，属强制署名；依该许可证要求，Motif 提供上述
+   许可证链接、以仓库地址作署名，并声明**未修改**其内容（与本节开头所述一致）。
+   故上文所列各仓库地址须保留。DavidWu 一源未声明许可证的情况另见仓库 issue 记录。
 
 3. 第三方依赖
    Next.js、React、HeroUI、better-sqlite3、sharp 等依赖的许可证随其包分发，
