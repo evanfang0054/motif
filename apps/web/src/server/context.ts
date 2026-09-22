@@ -115,3 +115,23 @@ export function resolveRemoteStorage(dataDir?: string): Storage | null {
   if ((values.STORAGE_DRIVER || 'local').toLowerCase() !== 's3') return null
   return createStorageFromConfig(values, dataDir ?? rt.dataDir)
 }
+
+/**
+ * 双读里的「本地」：**永远指向本地目录**，与当前驱动无关。
+ *
+ * ⚠️ 不能拿 `resolveStorage()` 当本地用 —— s3 驱动下它返回的是**远端**，于是双读的两个入参
+ * 变成同一个远端，「本地优先」直接失效：切到 s3 且还没搬迁时，本地老图会 404（实测复现过）。
+ * 「本地」的语义是「这个进程所在机器上的 dataDir」，不是「当前驱动的目标」。
+ */
+export function resolveLocalStorage(dataDir?: string): Storage {
+  const rt = getRuntime()
+  return createStorageFromConfig({ STORAGE_DRIVER: 'local' }, dataDir ?? rt.dataDir)
+}
+
+/**
+ * 一次拿到双读的两侧，**避免调用方各自拼错**（这正是「s3 驱动下把远端当本地」的成因）。
+ * 读图片一律走这个，不要自己拿 `resolveStorage()` 凑。
+ */
+export function resolveReadStorages(dataDir?: string): { local: Storage; remote: Storage | null } {
+  return { local: resolveLocalStorage(dataDir), remote: resolveRemoteStorage(dataDir) }
+}

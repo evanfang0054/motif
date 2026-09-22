@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRuntime, resolveRemoteStorage, resolveStorage } from '@/server/context'
+import { getRuntime, resolveReadStorages, resolveStorage } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
 import { readImageWithFallback } from '@/server/storage'
@@ -14,8 +14,11 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     const { store } = getRuntime()
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id) throw new ServiceError(404, '图片不存在。')
-    // 双读：本地优先，本地没有读远端（切到 s3 后老图仍可读）
-    const buf = await readImageWithFallback(resolveStorage(), resolveRemoteStorage(), img.imageKey)
+    // 双读：本地优先，本地没有读远端（切到 s3 后老图仍可读）。
+    // ⚠️ 必须用 resolveReadStorages —— 「本地」永远指本地目录，不能拿 resolveStorage()
+    // （s3 驱动下它返回远端，会把双读两侧变成同一个远端，本地老图直接 404）。
+    const { local, remote } = resolveReadStorages()
+    const buf = await readImageWithFallback(local, remote, img.imageKey)
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         'Content-Type': img.mimeType,

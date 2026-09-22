@@ -100,4 +100,20 @@ describe('MOTIF_INPROC_WORKER 开关', () => {
     await runWorkerTick(state)
     expect(store.getMessage(res.messageId)!.status).toBe('completed')
   })
+
+  it('⚠️ 回归：独立进程（standalone）必须无视开关 —— 否则「关掉进程内 worker 改用 pnpm worker 接管」直接失效', () => {
+    const g = globalThis as unknown as { __motifWorker?: { timer: unknown } }
+    store.setSetting('MOTIF_INPROC_WORKER', 'false')
+    // 开关语义是「web 进程不跑」，不是「谁都不许跑」。独立进程存在的唯一理由就是接管队列，
+    // 若它也读这个开关，运维照日志提示跑 `pnpm worker` 会立刻退出、队列彻底没人消费。
+    expect(startWorker({ standalone: true })).toBe(true)
+    expect(g.__motifWorker).toBeTruthy()
+    expect(g.__motifWorker!.timer).toBeTruthy()
+  })
+
+  it('standalone 与 web 进程语义不同：同一开关下前者起、后者不起', () => {
+    store.setSetting('MOTIF_INPROC_WORKER', 'false')
+    expect(startWorker()).toBe(false)
+    expect(startWorker({ standalone: true })).toBe(true)
+  })
 })

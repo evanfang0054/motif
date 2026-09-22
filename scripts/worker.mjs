@@ -20,8 +20,11 @@ const { startWorker, stopWorker } = await import('../apps/web/src/server/worker.
 const seeded = await bootstrapConfig()
 if (seeded.length > 0) console.log(`[motif] 已从环境变量播种 ${seeded.length} 项配置：${seeded.join(', ')}`)
 
-const started = startWorker()
-// 开关关着时**立刻退出**：留着不干活会变成僵尸进程，运维会误以为队列有人在消费。
+// ⚠️ standalone: true —— 独立进程**必须无视** MOTIF_INPROC_WORKER 开关。
+// 开关的语义是「web 进程不跑 worker」，而本进程存在的唯一理由就是接管队列；
+// 若这里也读开关，运维照提示关掉开关再跑 `pnpm worker` 会立刻退出，队列彻底没人消费。
+const started = startWorker({ standalone: true })
+// 兜底：真没起来时立刻退出，别留一个不干活的僵尸进程（运维会误以为队列有人在消费）。
 if (!started) process.exit(0)
 
 // startWorker 的轮询定时器是 unref 的（web 进程不该被它拖住事件循环），所以独立进程

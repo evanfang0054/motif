@@ -66,19 +66,24 @@ export async function runWorkerTick(state: WorkerState): Promise<void> {
 }
 
 /**
- * 启动进程内 worker。
+ * 启动进程内生成队列 worker。
+ *
+ * @param opts.standalone 独立进程入口（`pnpm worker`）传 `true`，**无视 `MOTIF_INPROC_WORKER` 开关**。
+ *   开关的语义是「**本进程**（web）不跑 worker」，而独立进程存在的唯一理由就是来接管队列 ——
+ *   若它也读这个开关，运维按提示关掉开关后跑 `pnpm worker` 会立刻退出，队列**彻底没人消费**
+ *   （实测复现过：日志打完「请另跑 pnpm worker 接管」就 exit 0）。
  *
  * @returns 真的启动了返回 `true`；因开关关闭而没启动返回 `false`。
  *   调用方**必须**区分这两种情况：独立进程入口要靠它决定「是保活还是直接退出」——
  *   开关关着却继续保活，会留下一个什么都不干的僵尸进程（运维会以为它在消费队列）。
  */
-export function startWorker(): boolean {
+export function startWorker(opts: { standalone?: boolean } = {}): boolean {
   if (g.__motifWorker) return true
   const { store, dataDir } = getRuntime()
   // 开关读库优先、回退 env（与全站配置口径一致）。
-  // 关掉只是「本进程不跑」：runWorkerTick 的能力**刻意保留** —— 独立进程 `pnpm worker`
-  // 与单测都靠直接调用它驱动队列，把能力也一起关掉会让两者都无从下手。
-  if (!resolveBool(store, process.env, 'MOTIF_INPROC_WORKER', true)) {
+  // 关掉只是「web 进程不跑」：runWorkerTick 的能力**刻意保留** —— 独立进程与单测都靠直接
+  // 调用它驱动队列，把能力也一起关掉会让两者都无从下手。
+  if (!opts.standalone && !resolveBool(store, process.env, 'MOTIF_INPROC_WORKER', true)) {
     console.log('[motif] MOTIF_INPROC_WORKER=false：本进程不启动生成队列 worker（请另跑 `pnpm worker` 接管）')
     return false
   }

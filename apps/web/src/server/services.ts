@@ -28,7 +28,7 @@ import { buildImageKey, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
-import { resolveRemoteStorage, resolveStorage } from './context'
+import { resolveReadStorages, resolveStorage } from './context'
 import { createLlmFromConfig } from './llm'
 import { readImageWithFallback } from './storage'
 import { createPaymentGateway } from './payment'
@@ -321,8 +321,9 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
   try {
     // 图生图：读取参考图文件传给 Provider（网关 images/edits 端点）
     // 双读：本地优先、本地没有才问远端 —— 切到 s3 后老参考图仍能参与生成
-    const storage = resolveStorage(dataDir)
-    const remote = resolveRemoteStorage(dataDir)
+    // ⚠️ 用 resolveReadStorages：「本地」永远是本地目录（拿 resolveStorage() 会在 s3 驱动下
+    // 退化成「远端 vs 远端」，本地老图读不到 → 参考图被静默降级掉）
+    const { local: storage, remote } = resolveReadStorages(dataDir)
     const referenceImages = (
       await Promise.all(
         (msg.referenceIds ?? []).map(async (id) => {
@@ -477,8 +478,8 @@ export async function resolveStagedReferences(
     return ref
   })
   // 读真实像素尺寸再分配槽位：写死 0 会让渲染按原图比例、模型按 240 方形，两边对不上
-  const storage = resolveStorage(dataDir)
-  const remote = resolveRemoteStorage(dataDir)
+  // 双读：本地优先（用 resolveReadStorages，理由同上 —— 本地老图不该因切了驱动就读不到）
+  const { local: storage, remote } = resolveReadStorages(dataDir)
   const sizes = await Promise.all(refs.map(async (r) => readImageSize(await readImageWithFallback(storage, remote, r.imageKey))))
 
   // 第二遍：落库。走到这里校验已全过，不会再抛

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRuntime, resolveRemoteStorage, resolveStorage } from '@/server/context'
+import { getRuntime, resolveReadStorages } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
 import { readImageWithFallback } from '@/server/storage'
@@ -24,12 +24,13 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     const ref = store.getReferenceUpload(id)
     const topic = ref ? store.getTopic(ref.topicId) : null
     if (!ref || !topic || topic.userId !== user.id) throw new ServiceError(404, '参考图不存在。')
-    // 双读：切到 s3 后老参考图仍可读；**两边都没有仍是 404**（不降级成 500 兜底文案）
-    const storage = resolveStorage()
-    const remote = resolveRemoteStorage()
-    const found = (await storage.exists(ref.imageKey)) || (remote ? await remote.exists(ref.imageKey) : false)
+    // 双读：切到 s3 后老参考图仍可读；**两边都没有仍是 404**（不降级成 500 兜底文案）。
+    // ⚠️ 用 resolveReadStorages：「本地」永远是本地目录（拿 resolveStorage() 会在 s3 驱动下
+    // 退化成「远端 vs 远端」，本地老图直接 404）。
+    const { local, remote } = resolveReadStorages()
+    const found = (await local.exists(ref.imageKey)) || (remote ? await remote.exists(ref.imageKey) : false)
     if (!found) throw new ServiceError(404, '参考图文件不存在。')
-    return new NextResponse(new Uint8Array(await readImageWithFallback(storage, remote, ref.imageKey)), {
+    return new NextResponse(new Uint8Array(await readImageWithFallback(local, remote, ref.imageKey)), {
       headers: {
         'Content-Type': ref.mimeType,
         'Cache-Control': 'private, max-age=31536000',

@@ -32,6 +32,7 @@ const HEALTH_LABEL: Record<string, string> = {
   payment: '支付渠道',
   mailer: '邮件发信',
   llm: '提示词增强',
+  storage: '图片存储',
 }
 
 export default function AdminSettingsPage() {
@@ -168,6 +169,34 @@ export default function AdminSettingsPage() {
     )
   }
 
+  /**
+   * 分区的「配置就绪」提示行。
+   *
+   * 为什么需要它：`llm` 与 `storage` 都是**开了开关但配置不全就静默降级**的能力 ——
+   * 增强失败会降级为原文、存储写不进去只在服务端报错。若页面上不给就绪判据，运维只会看到
+   * 「功能没生效」而找不到原因（判据其实早就在接口里，只是没人渲染）。
+   */
+  function healthLine(group: string) {
+    const h = health.find((x) => x.group === group)
+    if (!h) return null
+    return (
+      <p className="admin-field-hint" data-slot="config-health">
+        {HEALTH_LABEL[group] ?? group}配置：
+        {h.ready ? (
+          <>
+            <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+            已就绪
+          </>
+        ) : (
+          <>
+            <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
+            未就绪：{h.reason ?? '配置不完整'}
+          </>
+        )}
+      </p>
+    )
+  }
+
   /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */
   function renderGroupBody(group: AdminSettingItem['group']) {
     const groupItems = items.filter((i) => i.group === group)
@@ -204,6 +233,8 @@ export default function AdminSettingsPage() {
           </p>
         )}
         {guideCards.length > 0 && <GuideCardSection cards={guideCards} />}
+        {/* 只有「开关型 + 静默降级」的两个分区需要就绪行（payment 的就绪提示在危险区 PAYMENT_CHANNEL 旁） */}
+        {(group === 'llm' || group === 'storage') && healthLine(group)}
         {channelDirty && (
           <p className="admin-field-hint">
             渠道已改为「{dirtyKey}」尚未保存：下方字段与引导卡已按新渠道显示，填好后点「保存」生效。
