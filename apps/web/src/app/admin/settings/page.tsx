@@ -344,14 +344,17 @@ export default function AdminSettingsPage() {
                   实测对面板底仅 1.14:1（亮）/ 1.35:1（暗）与 1.57:1 / 1.75:1，均不达标；
                   --muted 实测 5.13:1（亮）/ 6.16:1（暗），是当前调色板里唯一过线且不过重的选择。
                   走 Checkbox.Control 的 className 是官方定制面（见 demos/cn/checkbox/custom-styles.tsx），
-                  不是覆盖组件内部样式。 */}
+                  不是覆盖组件内部样式。
+                  ⚠️ 必须只在**未选中**态生效：HeroUI 组件样式在 layer(components)、Tailwind 工具类
+                  在 layer(utilities)，后者层序在后 —— 无条件加边框会盖掉组件自己的状态边框，
+                  导致选中态在珊瑚方块外多出一圈灰环。故用 group + data-[selected=true] 把它让回去。 */}
               <Checkbox
-                className="my-3"
+                className="group my-3"
                 isSelected={confirmed}
                 onChange={(sel) => setConfirmed(sel)}
               >
                 <Checkbox.Content>
-                  <Checkbox.Control className="border border-solid border-[var(--muted)]">
+                  <Checkbox.Control className="border border-solid border-[var(--muted)] group-data-[selected=true]:border-transparent">
                     <Checkbox.Indicator />
                   </Checkbox.Control>
                   <Label>我已了解上述后果</Label>
