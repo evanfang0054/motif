@@ -9,6 +9,7 @@ import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible } from '@/lib/setting-visibility'
+import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
@@ -65,22 +66,8 @@ export default function AdminSettingsPage() {
 
   const setField = (key: string, value: string) => setDirty((d) => ({ ...d, [key]: value }))
 
-  /** 只提交本组里改动过且**当前可见**的键 —— 密钥框初值恒为空，未输入就不会进 dirty；
-   *  可见性过滤防止「切走渠道后，隐藏字段残留的 dirty 被一并提交」。 */
-  function pickedFrom(group: AdminSettingItem['group']): Record<string, string> {
-    const keys = new Set(items.filter((i) => i.group === group).map((i) => i.key))
-    const draftChannel = (selectorKey: string): string | null =>
-      dirty[selectorKey] ?? items.find((i) => i.key === selectorKey)?.value ?? null
-    const visible = (key: string): boolean => {
-      if (group === 'mailer') return mailerFieldVisible({ key }, draftChannel('MOTIF_MAILER'))
-      if (group === 'payment') return paymentFieldVisible({ key }, draftChannel('PAYMENT_CHANNEL'))
-      return true
-    }
-    return Object.fromEntries(Object.entries(dirty).filter(([k]) => keys.has(k) && visible(k)))
-  }
-
   async function save(group: AdminSettingItem['group']) {
-    const updates = pickedFrom(group)
+    const updates = pickUpdates({ items, dirty, group })
     if (Object.keys(updates).length === 0) {
       setMsg('没有改动需要保存。')
       setErr(null)
@@ -130,9 +117,9 @@ export default function AdminSettingsPage() {
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              {(item.options ?? []).map((o) => (
-                <ListBox.Item key={`opt-${item.key}-${o}`} id={`opt-${item.key}-${o}`}>
-                  {o}
+              {enumOptionItems(item.options).map((o) => (
+                <ListBox.Item key={`${item.key}-${o.id}`} id={o.id} textValue={o.label}>
+                  {o.label}
                 </ListBox.Item>
               ))}
             </ListBox>
