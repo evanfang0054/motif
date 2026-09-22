@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SESSION_COOKIE, SESSION_TTL_MS } from '@/server/auth'
 import { getRuntime } from '@/server/context'
+import { ConfigError } from '@/server/config-error'
 import { ServiceError } from '@/server/services'
 import type { User } from '@motif/core'
 
@@ -18,9 +19,20 @@ export function requireUser(req: NextRequest): User {
   return user
 }
 
+/**
+ * 统一错误出口。三类分别对待：
+ * - `ServiceError`：业务错误，原文回给调用方（文案本就是面向用户的）
+ * - `ConfigError`：配置缺失/写坏 —— 换成固定指引回给调用方，内部细节（缺哪些键）只进日志。
+ *   若不单独分流，运营看到的会是「服务器开小差了」，只能翻服务器日志才知道是自己没配好。
+ * - 其余：真实故障，保留通用兜底文案（避免把内部堆栈/键名泄给调用方）
+ */
 export function jsonError(e: unknown): NextResponse {
   if (e instanceof ServiceError) {
     return NextResponse.json({ error: e.message }, { status: e.status })
+  }
+  if (e instanceof ConfigError) {
+    console.error('[motif] config error:', e.detail)
+    return NextResponse.json({ error: ConfigError.USER_MESSAGE }, { status: 503 })
   }
   console.error('[motif] api error:', e)
   return NextResponse.json({ error: '服务器开小差了，请稍后重试。' }, { status: 500 })

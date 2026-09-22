@@ -7,6 +7,7 @@ import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import type { CreditPackage, User } from '@motif/core'
 import { api } from '@/lib/client'
+import { formatMoney } from '@/lib/format'
 import { usePublicConfig } from '@/lib/use-public-config'
 
 /** 通用弹窗外壳：受控开合在 Backdrop 上；关闭后把焦点还原到打开前的元素 */
@@ -52,10 +53,8 @@ function WorkspaceModal({
 /** 弹窗外壳的旧名（各业务弹窗沿用，避免一次性改一大片调用点） */
 const Modal = WorkspaceModal
 
-/** 币种符号映射（不含零小数货币）；未知币种退化为 ISO 代码 */
-const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: 'US$', hkd: 'HK$', eur: '€', gbp: '£' }
-const fmtPrice = (p: CreditPackage) =>
-  `${CURRENCY_SYMBOL[p.currency] ?? `${p.currency.toUpperCase()} `}${(p.amountTotal / 100).toFixed(2)}`
+/** 币种符号与金额格式统一走 `lib/format`（概览页、订单页、本弹窗共用一份映射） */
+const fmtPrice = (p: CreditPackage) => formatMoney(p.amountTotal, p.currency)
 
 /** 充值弹窗：套餐列表 + 收银台分流（mock 站内确认；epay/stripe 整页跳网关/Stripe）+ CDK 入口 */
 function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onPaid: (u: User) => void; onRedeem: () => void }) {

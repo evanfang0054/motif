@@ -1,5 +1,5 @@
 /**
- * 时间展示统一入口。
+ * 展示层格式化统一入口：时间与金额。
  *
  * 数据库一律存 UTC ISO 串（`new Date().toISOString()`，可排序、无歧义）；
  * 展示层必须转成查看者的本地时区——此前 admin 各列表直接 `iso.slice(0, 19)` 截取，
@@ -24,4 +24,19 @@ export function formatDateTime(
   }).formatToParts(d)
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`
+}
+
+/**
+ * 币种符号映射（不含零小数货币）；未知币种退化为 ISO 代码。
+ *
+ * 为什么收敛到这一处：币种是后台可配的（`BILLING_CURRENCY`），而概览页、订单页、充值弹窗
+ * 曾各写一份映射，于是出现「概览写死 HK$、订单页只认 HKD、弹窗认五种」的自相矛盾。
+ * 三处共用本表后，符号只可能随配置一起变。
+ */
+const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: 'US$', hkd: 'HK$', eur: '€', gbp: '£' }
+
+/** 金额一律以「分」存储，展示时换算为两位小数：`formatMoney(868, 'hkd')` → `HK$8.68` */
+export function formatMoney(amountMinor: number, currency: string): string {
+  const symbol = CURRENCY_SYMBOL[currency.toLowerCase()] ?? `${currency.toUpperCase()} `
+  return `${symbol}${(amountMinor / 100).toFixed(2)}`
 }

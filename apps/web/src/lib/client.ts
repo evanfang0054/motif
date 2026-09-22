@@ -62,7 +62,7 @@ export interface AdminOverview {
     bySource: Array<{ source: string; net: number; inflow: number; outflow: number }>
   }
   generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
-  orders: { pending: number; paid: number; amountTotal: number }
+  orders: { pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
   cdks: { unredeemed: number; redeemed: number; revoked: number }
   feedback: { pending: number }
 }

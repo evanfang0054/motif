@@ -255,9 +255,11 @@ function validateValue(def: SettingDef, value: string): string | null {
         ? null
         : `${def.label}（${def.key}）需为 1–65535 的整数。`
     case 'boolean':
+      // 文案必须列全实际接受的取值：这里接受四个（`resolveBool` 也认 1/0），
+      // 只写「true 或 false」会让运营以为 `1` 是非法输入
       return ['true', 'false', '1', '0'].includes(value.toLowerCase())
         ? null
-        : `${def.label}（${def.key}）只能是 true 或 false。`
+        : `${def.label}（${def.key}）只能是 true / false / 1 / 0。`
     case 'enum':
       return def.options?.includes(value) ? null : `${def.label}（${def.key}）只能是 ${def.options?.join(' / ')}。`
     case 'money':

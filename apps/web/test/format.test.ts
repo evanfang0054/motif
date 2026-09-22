@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatMoney } from '@/lib/format'
 
 const ISO = '2026-09-19T01:30:06.462Z' // UTC
 
@@ -20,5 +20,23 @@ describe('formatDateTime（UTC ISO → 本地时区展示）', () => {
     expect(formatDateTime(null)).toBe('—')
     expect(formatDateTime('')).toBe('—')
     expect(formatDateTime('not-a-date')).toBe('not-a-date')
+  })
+})
+
+describe('formatMoney（分 → 带币种符号的两位小数）', () => {
+  it('已知币种用符号，且大小写不敏感', () => {
+    expect(formatMoney(868, 'hkd')).toBe('HK$8.68')
+    expect(formatMoney(868, 'HKD')).toBe('HK$8.68')
+    expect(formatMoney(100, 'cny')).toBe('¥1.00')
+    expect(formatMoney(100, 'usd')).toBe('US$1.00')
+  })
+
+  it('未知币种退化为 ISO 代码（带空格，避免与数字粘连）', () => {
+    expect(formatMoney(100, 'sek')).toBe('SEK 1.00')
+  })
+
+  it('零与不足一元都补齐两位小数', () => {
+    expect(formatMoney(0, 'hkd')).toBe('HK$0.00')
+    expect(formatMoney(5, 'hkd')).toBe('HK$0.05')
   })
 })

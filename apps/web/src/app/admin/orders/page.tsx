@@ -1,5 +1,5 @@
 'use client'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatMoney } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
 import { SearchField, Select, ListBox, Table } from '@heroui/react'
@@ -11,17 +11,6 @@ const PAGE_SIZE = 20
 const STATUS_LABEL: Record<string, string> = {
   pending: '待支付',
   paid: '已支付',
-}
-
-/**
- * amountTotal 以「分」存储（868 = HK$8.68），展示时换算并保留两位小数。
- * 注意：购买页 `dialogs.tsx` 用 `.toFixed(0)`（显示「HK$ 9」），与本页的两位小数
- * 不完全一致 —— 这是本 PR 已知的呈现差异，未顺手改动购买页（属另一处改动范围）。
- */
-function money(amount: number, currency: string): string {
-  const code = currency.toUpperCase()
-  const symbol = code === 'HKD' ? 'HK$' : `${code} `
-  return `${symbol} ${(amount / 100).toFixed(2)}`
 }
 
 export default function AdminOrdersPage() {
@@ -109,7 +98,8 @@ export default function AdminOrdersPage() {
                     <Table.Cell className="admin-mono" data-label="订单号">{o.id}</Table.Cell>
                     <Table.Cell data-label="套餐">{o.packageId}</Table.Cell>
                     <Table.Cell data-label="额度">{o.credits}</Table.Cell>
-                    <Table.Cell data-label="金额">{money(o.amountTotal, o.currency)}</Table.Cell>
+                    {/* amountTotal 以「分」存储（868 = HK$8.68），符号与小数位由 lib/format 统一决定 */}
+                    <Table.Cell data-label="金额">{formatMoney(o.amountTotal, o.currency)}</Table.Cell>
                     <Table.Cell data-label="状态"><span className="admin-chip">{STATUS_LABEL[o.status] ?? o.status}</span></Table.Cell>
                     <Table.Cell data-label="创建时间">{formatDateTime(o.createdAt)}</Table.Cell>
                     <Table.Cell data-label="支付时间">{formatDateTime(o.paidAt)}</Table.Cell>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ProgressBar, ProgressCircle } from '@heroui/react'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
+import { formatMoney } from '@/lib/format'
 
 /** 百分比展示：接口已保证 0/0 → 0，这里只负责保留一位小数 */
 function pct(rate: number): string {
@@ -117,7 +118,14 @@ export default function AdminHomePage() {
           <div className="admin-card-label">订单</div>
           <div className="admin-card-value">{data.orders.paid}</div>
           <div className="admin-card-sub">待支付 {data.orders.pending}</div>
-          <div className="admin-card-sub">已支付金额 HK$ {(data.orders.amountTotal / 100).toFixed(2)}</div>
+          {/* 币种随订单实际值推符号（此前写死 HK$，与订单页、购买弹窗矛盾）；
+              历史上改过币种时会同时存在多种，故按币种分行而不是跨币种求和 */}
+          <div className="admin-card-sub">
+            已支付金额{' '}
+            {data.orders.amountByCurrency.length === 0
+              ? '0.00'
+              : data.orders.amountByCurrency.map((x) => formatMoney(x.amountTotal, x.currency)).join(' + ')}
+          </div>
         </div>
 
         <div className="admin-card" id="ov-cdks">
@@ -173,7 +181,7 @@ export default function AdminHomePage() {
           {ledgerDiff === 0 ? (
             <>
               <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
-              对账一致：发放+期初+调整+退回−回收−扣费 = {closed}，与存量 {c.balance} 一致
+              对账一致：发放+期初+管理调整(增)+退回−管理调整(减)−扣费 = {closed}，与存量 {c.balance} 一致
             </>
           ) : (
             <>

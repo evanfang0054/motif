@@ -635,7 +635,8 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     // 订单 / CDK / 反馈
     expect(o.orders.paid).toBe(1)
     expect(o.orders.pending).toBe(0)
-    expect(o.orders.amountTotal).toBe(868)
+    // 金额按币种分组：跨币种求和会得出没有意义的数，所以结构是数组而不是单个数字
+    expect(o.orders.amountByCurrency).toEqual([{ currency: 'hkd', amountTotal: 868 }])
     expect(o.cdks.unredeemed).toBe(1)
     expect(o.cdks.redeemed).toBe(1)
     expect(o.cdks.revoked).toBe(1)
