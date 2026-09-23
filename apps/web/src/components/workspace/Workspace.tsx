@@ -67,6 +67,30 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const publicCfg = usePublicConfig()
   const router = useRouter()
   const [user, setUser] = useState<User>(initialUser)
+  /**
+   * 余额写回的「后发优先」护栏。
+   *
+   * `/api/me` 是异步读：若它在一次扣费**之前**读到库、却在扣费响应之后才 resolve，就会把顶部
+   * 余额写回旧值，且下一次纠正要等到「又有任务结束」。`topics` 早有 `listSeqRef` 防这件事，
+   * `user` 一直缺 —— 故所有写入口都走 `applyUser`，由它保证只有最新一次写入生效。
+   */
+  const userSeqRef = useRef(0)
+  const applyUser = useCallback((u: User | null) => {
+    if (!u) return
+    userSeqRef.current += 1
+    setUser(u)
+  }, [])
+  /** 从 `/api/me` 拉一次余额（best-effort：失败只丢弃本次，不冒泡成调用方的失败） */
+  const refreshUser = useCallback(async () => {
+    const seq = ++userSeqRef.current
+    try {
+      const { user: u } = await api.me()
+      // 期间若有更新的写入（扣费 / 充值 / 改资料响应），丢弃这次读到的旧余额
+      if (seq === userSeqRef.current) applyUser(u)
+    } catch {
+      // 静默：余额刷新失败不该让「取消生成」这类操作被报成失败
+    }
+  }, [applyUser])
   const [topics, setTopics] = useState<Topic[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<TopicDetail | null>(null)
@@ -137,6 +161,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
     topicStatusRef.current = next
     setTopics(topics)
     if (finished.length > 0) {
+      // 后台任务结束 = 可能发生了退额（取消 / 失败 / 部分完成），余额必须当场回正，
+      // 否则顶部读数会一直停在扣费后的值，直到用户手动刷新。
+      void refreshUser()
       // 不 await：submitGenerate / createTopic 都 await 本函数，把详情拉取塞进同步路径
       // 会拖慢「任务已加入队列」这类回执
       void (async () => {
@@ -245,9 +272,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
             // 循环会带着「已不是当前任务」的旧 id 继续刷新 —— 那条结束会被当成后台任务再报一遍
             if (stopped) return
             if (fresh.topic.status === 'idle') {
-              const { user: u } = await api.me()
+              await refreshUser()
               if (stopped) return
-              if (u) setUser(u)
               void refreshTopics()
             }
           }
@@ -322,7 +348,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
     [refreshTopics]
   )
 
-  const busy = detail?.topic.status === 'pending' || detail?.topic.status === 'running' || detail?.topic.status === 'canceling'
+  const busy = isBusyStatus(detail?.topic.status)
 
   // 最近一次生成失败的信息（含退额说明）：持久展示在面板上，直到下次提交
   const lastError = useMemo(() => {
@@ -345,7 +371,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         topicId: tid,
         referenceCanvasImageIds: sentRefIds,
       } satisfies GenerateImagesInput)
-      setUser(res.user)
+      applyUser(res.user)
       setActiveId(res.topic.id)
       // 已提交的暂存参考被服务端转正为画布图：从面板暂存区移除（画布 @ 引用的 cimg_ 保留）
       setPanel((p) => ({
@@ -373,6 +399,11 @@ function Workspace({ initialUser }: { initialUser: User }) {
     try {
       await api.cancelMessage(msg.id)
       await refreshDetail(detail.topic.id)
+      // 排队中的消息是**当场整单退额**，运行中的也会在 worker 收尾时退 ——
+      // 不在这里刷一次，顶部余额会一直停在扣费后的读数（原先只靠 watch 的 idle 分支间接刷新，
+      // 而任务一旦卡在 canceling 就永远等不到那次刷新）。
+      // best-effort：取消本身已成功，余额刷新失败不该被报成「取消失败」。
+      await refreshUser()
       showToast({ tone: 'info', message: '已请求取消任务，正在停止后台生成。' })
     } catch (e) {
       showToast({ tone: 'danger', message: e instanceof Error ? e.message : '取消失败' })
@@ -643,7 +674,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   const onPaid = useCallback(
     async (user: User) => {
-      setUser(user)
+      applyUser(user)
       setDialog(null)
       showToast({ tone: 'success', message: `支付成功，已充值 ${user.credits} 张总额度中的新额度` })
     },
@@ -880,7 +911,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         <RedeemDialog
           onClose={() => setDialog(null)}
           onRedeemed={(u) => {
-            setUser(u)
+            applyUser(u)
             setDialog(null)
             showToast({ tone: 'success', message: '兑换成功，额度已到账' })
           }}
@@ -891,7 +922,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           user={user}
           onClose={() => setDialog(null)}
           onSaved={(u) => {
-            setUser(u)
+            applyUser(u)
             setDialog(null)
             showToast({ tone: 'success', message: '资料已更新' })
           }}

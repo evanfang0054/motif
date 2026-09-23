@@ -52,7 +52,8 @@ _Avoid_: 把两者都叫「提示词」
 任务上的**活跃态**，回答「这个任务现在有没有在跑」：空闲 `idle` / 排队中 `pending` / 生成中 `running` / 正在停止生成 `canceling`。
 任务在生成结束后**回到空闲**，不回落到「已完成 / 失败 / 已取消」。
 
-**当前生效约定**：任务状态实际只取值 `idle` / `pending` / `canceling`；`running` 与终态三态 `completed` / `failed` / `canceled` 虽在类型与展示映射中声明，但无写入路径，属「已声明、暂不可达」（裁决留痕于本地知识库的 ADR 0001，未随仓入库）。
+**当前生效约定**：任务状态由活跃生成轮次派生（见「派生状态」），故 `running` 是**可达**的 —— worker 认领消息时同步写入。
+终态三态 `completed` / `failed` / `canceled` 仍只在类型与展示映射中声明、**无写入路径**：任务在生成结束后回到 `idle`，成败由 message 携带。
 
 _Avoid_: 用任务状态表达某一次生成的成败；把「已声明」当「会到达」
 
@@ -70,8 +71,11 @@ _Avoid_: 把 `canceling` 当终态（它之后必然走向 `canceled`）
 
 _代码标识 `topicStatusFromMessage`。_
 
-**当前生效约定（批 2 生效前）**：`topicStatusFromMessage` 目前**只有测试引用**，生产写入仍是各写入点直写
-（`setTopicActive`）——这正是「任务说在停止、轮次早已失败」那类矛盾的成因。本词条描述的是批 2 的目标形态。
+**已生效**：所有 `topics.status` 写入都收口在 `store.syncTopicStatus(...)` 一处，状态由消息状态派生
+（连「派生为 idle 时清空活跃消息与提示词」也在同一处强制）。
+守卫是 `packages/db/test/store.test.ts` 里一条**扫全仓源码**的机械断言：除 `store.ts` 外任何文件不得出现
+`setTopicActive(`，且全仓不得出现裸写 `UPDATE topics SET ... status = '...'`；另有 `setTopicActive` 的
+参数类型收窄为 `TopicStatus` 作编译期兜底。
 
 _Avoid_: 把任务状态当成第二个真相源；在写入点各写各的
 
@@ -80,10 +84,8 @@ _Avoid_: 把任务状态当成第二个真相源；在写入点各写各的
 对已落终态的生成轮次，取消类操作必须**幂等**：返回当前状态、不改变任务状态。
 理由是取消是可重复调用的接口，若对终态轮次仍把任务置为「正在停止生成」，就再也没有任何路径把它落定。
 
-**当前生效约定（批 2 生效前）**：取消对终态轮次**不幂等**。`POST /api/messages/[id]/cancel` 在
-`cancelQueuedMessage` 未能取消（消息已非 `queued`）时**无条件**调用 `setTopicActive(..., 'canceling')`，
-而紧接的 messages UPDATE 只匹配 `status = 'running'` —— 于是一个已落终态的轮次仍会把任务置成
-「正在停止生成」。本词条描述的是批 2 的目标形态。
+**已生效**：`POST /api/messages/[id]/cancel` 在动任务状态之前先判 `isCancelableMessageStatus`；
+非可取消（终态或已在 `canceling`）直接回当前状态、**不碰任务状态**，且不产生任何额度流水。
 
 _Avoid_: 把「守卫」理解为权限校验（它守的是状态机的可达性，不是身份）
 
@@ -92,9 +94,12 @@ _Avoid_: 把「守卫」理解为权限校验（它守的是状态机的可达�
 在**读取**任务状态时发现「任务声称在途、但活跃生成轮次已落终态」，即就地落定为空闲。
 它不批量改写历史数据，只让被读取到的那条脏状态自行归位——历史卡死任务因此有了用户可触达的出口。
 
-**当前生效约定（批 2 生效前）**：读取路径**不做**自愈。`GET /api/topics/[id]/watch` 只回读当前状态
-（长轮询比对 `updatedAt`），没有任何就地归位逻辑；把任务落回 `idle` 的写入都发生在 worker 与取消收尾路径。
-本词条描述的是批 2 的目标形态。
+**已生效**：`getTopic` / `listTopics` / `findReusableTopic` 三条读取路径都会先做一次**条件**自愈
+（只在任务自称在跑时才尝试写，且 `UPDATE` 自带状态条件兜底，不会误伤真正在跑的任务）。
+落定会 bump `updated_at`，长轮询据此立刻发现。**副作用（已知）**：`listTopics` 按 `updated_at DESC` 排序、
+`findReusableTopic` 也取最新的那条，故落定会让该任务跳到列表最前 —— 影响很小（都是空闲空会话），但确实存在。
+**未覆盖**：消息卡在 `canceling`（worker 认领后被重启）时 `canceling` 仍算「在跑」，不自愈 ——
+要修它必须同时退额，属计费路径改动，已另开 issue 跟踪。
 
 _Avoid_: 数据修复、状态修复脚本（自愈发生在读取路径，不是离线批处理）
 

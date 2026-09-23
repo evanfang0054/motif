@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, globSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { MotifStore, buildImageKey, storagePathFor } from '../src/index'
+import type { TopicStatus } from '@motif/core'
 
 let dir: string
 let store: MotifStore
@@ -305,7 +307,12 @@ describe('findReusableTopic（新任务复用）', () => {
       name: '参考图', imageKey: 'k', mimeType: 'image/png', bytes: 1, width: 0, height: 0,
     })
     const busy = store.createTopic(u.id, '生成中会话')
-    store.setTopicActive(busy.id, null, null, 'pending')
+    // ⚠️ 夹具必须是**可达**的进行态：`pending` 在生产里总与一条 queued 消息同时写入。
+    // 早先这里写的是 `setTopicActive(busy.id, null, null, 'pending')`（无活跃消息却自称在跑），
+    // 而那恰好是本批新增的「读取自愈」要落定的脏状态 —— 用它当夹具，测的是一个不存在的情形。
+    const busyMsg = store.createMessage({ topicId: busy.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    store.syncTopicStatus(busy.id, busyMsg.id, 'p', 'queued')
+    expect(store.getTopic(busy.id)?.status).toBe('pending')
     expect(store.findReusableTopic(u.id)).toBeNull()
   })
 
@@ -942,5 +949,238 @@ describe('生成日志（跨用户）与清理', () => {
     // 幂等：再清一次没有可删的
     expect(s.cleanupMessagesBefore('2026-06-01T00:00:00.000Z')).toBe(0)
     s.close()
+  })
+})
+
+// ---------- 批 2：状态派生收口 + 终态守卫 + 读取自愈（#81 / #86）----------
+
+describe('话题状态派生与读取自愈', () => {
+  /** 建一条「已入队」的消息并把话题同步为 pending —— 生产里这两个写入是同一步 */
+  function enqueue(u: { id: string }, t: { id: string }, count = 2) {
+    store.deductCredits(u.id, count, { source: 'generation_charge' })
+    const m = store.createMessage({
+      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p',
+      size: 'auto', requestedCount: count, enhancePrompt: false,
+    })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    return m
+  }
+
+  it('worker 认领消息后话题变「生成中」（#86）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t)
+    expect(store.getTopic(t.id)?.status).toBe('pending')
+
+    expect(store.leaseNextMessage('w1', 60000)?.id).toBe(m.id)
+    // 认领后话题必须是 running —— 否则 UI 的「生成中」文案永远不出现
+    expect(store.getTopic(t.id)?.status).toBe('running')
+    expect(store.getTopic(t.id)?.activeMessageId).toBe(m.id)
+  })
+
+  it('syncTopicStatus 一律由消息状态派生（含终态回 idle）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t)
+
+    store.syncTopicStatus(t.id, m.id, 'p', 'running')
+    expect(store.getTopic(t.id)?.status).toBe('running')
+    store.syncTopicStatus(t.id, m.id, 'p', 'canceling')
+    expect(store.getTopic(t.id)?.status).toBe('canceling')
+    // 终态三态都回 idle，且清空活跃消息
+    for (const s of ['completed', 'failed', 'canceled'] as const) {
+      store.syncTopicStatus(t.id, m.id, 'p', s)
+      const got = store.getTopic(t.id)!
+      expect(got.status).toBe('idle')
+      expect(got.activeMessageId).toBeNull()
+    }
+  })
+
+  it('读取自愈：卡在 canceling、活跃消息已失败的脏状态（#81 的卡死形态）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t)
+    store.leaseNextMessage('w1', 60000)
+    // 造出 #81 的现场：消息落 failed，话题仍停在 canceling 且还挂着那条消息
+    store.setMessageStatus(m.id, 'failed', '网关 503')
+    store.setTopicActive(t.id, m.id, 'p', 'canceling')
+    expect(store.db.prepare('SELECT status FROM topics WHERE id = ?').get(t.id)).toEqual({ status: 'canceling' })
+
+    const got = store.getTopic(t.id)!
+    expect(got.status).toBe('idle')
+    expect(got.activeMessageId).toBeNull()
+    expect(got.activePrompt).toBeNull()
+  })
+
+  it('读取自愈：pending 但活跃消息已完成', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t)
+    store.leaseNextMessage('w1', 60000)
+    store.setMessageStatus(m.id, 'completed')
+    store.setTopicActive(t.id, m.id, 'p', 'pending')
+
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+  })
+
+  it('读取自愈会 bump updatedAt（长轮询据此立刻发现自愈）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t)
+    store.setMessageStatus(m.id, 'failed')
+    store.setTopicActive(t.id, m.id, 'p', 'canceling')
+    const before = store.getTopic(t.id)!.updatedAt
+
+    // 第一次读触发自愈并 bump
+    store.getTopic(t.id)
+    const afterFirst = store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as { updated_at: string }
+    expect(afterFirst.updated_at >= before).toBe(true)
+    // 已落定后再读不再改（不会把长轮询变成无限变更流）
+    const beforeSecond = afterFirst.updated_at
+    store.getTopic(t.id)
+    expect((store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as { updated_at: string }).updated_at).toBe(beforeSecond)
+  })
+
+  it('读取自愈**不得**误伤真正在跑的任务', () => {
+    const u = seedUser()
+    const cases: Array<{ name: string; msgStatus: 'queued' | 'running' | 'canceling'; topicStatus: TopicStatus }> = [
+      { name: 'pending + 活跃 queued', msgStatus: 'queued', topicStatus: 'pending' },
+      { name: 'running + 活跃 running', msgStatus: 'running', topicStatus: 'running' },
+      { name: 'canceling + 活跃 canceling', msgStatus: 'canceling', topicStatus: 'canceling' },
+    ]
+    for (const c of cases) {
+      const t = store.createTopic(u.id, c.name)
+      const m = enqueue(u, t)
+      store.setMessageStatus(m.id, c.msgStatus)
+      store.setTopicActive(t.id, m.id, 'p', c.topicStatus)
+      const got = store.getTopic(t.id)!
+      expect(got.status, c.name).toBe(c.topicStatus)
+      expect(got.activeMessageId, c.name).toBe(m.id)
+    }
+  })
+
+  it('listTopics 也会批量自愈，且不误伤在跑的任务', () => {
+    const u = seedUser()
+    const stale = store.createTopic(u.id, '脏的')
+    const sm = enqueue(u, stale)
+    store.setMessageStatus(sm.id, 'failed')
+    store.setTopicActive(stale.id, sm.id, 'p', 'canceling')
+
+    const live = store.createTopic(u.id, '在跑的')
+    const lm = enqueue(u, live)
+
+    const listed = store.listTopics(u.id)
+    expect(listed.find((x) => x.id === stale.id)?.status).toBe('idle')
+    expect(listed.find((x) => x.id === live.id)?.status).toBe('pending')
+    expect(store.getTopic(live.id)?.activeMessageId).toBe(lm.id)
+  })
+
+  it('排队中取消：话题回 idle、全额退额，且不产生多余流水', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t, 3)
+    expect(store.getUserById(u.id)?.credits).toBe(7) // seed 10 → 扣 3
+
+    const res = store.cancelQueuedMessage(m.id, u.id)
+    expect(res).toEqual({ found: true, canceled: true, refund: 3 })
+    expect(store.getUserById(u.id)?.credits).toBe(10)
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+    expect(store.getTopic(t.id)?.activeMessageId).toBeNull()
+    // 额度守恒：流水求和 === 余额
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('额度守恒：终态守卫路径不产生任何流水（对终态消息取消）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    const m = enqueue(u, t, 2)
+    store.leaseNextMessage('w1', 60000)
+    store.setMessageStatus(m.id, 'failed', '网关 503')
+    store.syncTopicStatus(t.id, null, null, 'failed')
+
+    const before = {
+      credits: store.getUserById(u.id)!.credits,
+      rows: (store.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c,
+    }
+    // 对已失败的轮次再取消：消息非 queued，故 cancelQueuedMessage 不改任何东西
+    const res = store.cancelQueuedMessage(m.id, u.id)
+    expect(res).toEqual({ found: true, canceled: false, refund: 0 })
+    expect(store.getUserById(u.id)!.credits).toBe(before.credits)
+    expect((store.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(before.rows)
+    expect(store.getTopic(t.id)?.status).toBe('idle') // 未被取消动作改坏
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('findReusableTopic 也走自愈（否则会出现「列表说空闲、却复用不到」）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, '脏的空会话')
+    const m = enqueue(u, t)
+    store.setMessageStatus(m.id, 'failed')
+    store.setTopicActive(t.id, m.id, 'p', 'canceling')
+
+    expect(store.findReusableTopic(u.id)?.id).toBe(t.id)
+  })
+
+  it('全仓源码里没有绕过 syncTopicStatus 的 topic 状态直写', () => {
+    // 这条是「收口」的机械断言。⚠️ 必须扫**全仓** src 而不是只扫 store.ts：
+    // `setTopicActive` 是 public 的，而 #81/#86 的原缺陷恰恰发生在 apps/web 侧的调用点。
+    const root = fileURLToPath(new URL('../../..', import.meta.url))
+    const srcFiles = [
+      ...globSync('packages/*/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.tsx', { cwd: root }),
+    ]
+    expect(srcFiles.length).toBeGreaterThan(50) // 防止 glob 写错导致「零文件通过」
+
+    const offenders: string[] = []
+    for (const rel of srcFiles) {
+      const text = readFileSync(join(root, rel), 'utf8')
+      // 1) 除 store.ts 外，任何地方都不许调 setTopicActive
+      if (rel !== 'packages/db/src/store.ts' && text.includes('setTopicActive(')) offenders.push(`${rel}: setTopicActive`)
+      // 2) 任何地方都不许裸写 topics 的 status（settleStaleTopic 也只用 SET status = ?，不带字面量）
+      if (/UPDATE\s+topics\s+SET[^`]*status\s*=\s*'/i.test(text)) offenders.push(`${rel}: 裸写 topics.status`)
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
+describe('租约回收后的状态一致性（P1）', () => {
+  it('过期租约被重排时，任务同步回「排队中」（不留「消息已排队、任务还在生成中」）', () => {
+    const u = store.createUser({ email: 'rq@b.co', passwordHash: 'h', name: 'rq', credits: 10 })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, 1, { source: 'generation_charge' })
+    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+
+    // 认领 → 两侧都应为「在跑」
+    store.leaseNextMessage('w1', 60_000)
+    expect(store.getMessage(m.id)?.status).toBe('running')
+    expect(store.getTopic(t.id)?.status).toBe('running')
+
+    // 把租约改成已过期（模拟 worker 崩溃），再回收
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', m.id)
+    store.requeueExpiredLeases([])
+
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+    // 关键：任务侧也必须回到 pending，否则 UI 会一直显示「生成中」而实际在排队
+    expect(store.getTopic(t.id)?.status).toBe('pending')
+    expect(store.getTopic(t.id)?.activeMessageId).toBe(m.id)
+  })
+
+  it('skipIds 里的消息不被回收，其任务状态也不受影响', () => {
+    const u = store.createUser({ email: 'rq2@b.co', passwordHash: 'h', name: 'rq2', credits: 10 })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, 1, { source: 'generation_charge' })
+    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    store.leaseNextMessage('w1', 60_000)
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', m.id)
+
+    store.requeueExpiredLeases([m.id]) // 本进程正在执行 → 不回收
+
+    expect(store.getMessage(m.id)?.status).toBe('running')
+    expect(store.getTopic(t.id)?.status).toBe('running')
   })
 })
