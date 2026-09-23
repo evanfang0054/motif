@@ -4,79 +4,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField, Typography } from '@heroui/react'
 import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
-import { PASSWORD_RULE_TEXT, validateEmail, validatePassword, validatePasswordConfirm, validateVerificationCode } from '@motif/core'
+import { PASSWORD_RULE_TEXT } from '@motif/core'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
+import { clientAuthError, isFormFilled, switchAuthFields, type AuthMode } from '@/lib/auth-form'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { ResetPrefill } from '@/lib/reset-link'
 
-type Mode = 'login' | 'register' | 'reset'
+/** 当前视图（三种视图共用同一个弹窗，值由 Landing 持有） */
+type Mode = AuthMode
 
 const RESEND_COOLDOWN = 60
 
+/** 发送验证码前的邮箱形状预检：只判「像不像邮箱」，用于把反馈落在手指附近（提交路径走 core 的 validateEmail） */
 function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
-}
-
-/** 表单字段快照（三种视图共用同一批 state） */
-interface AuthFields {
-  name: string
-  email: string
-  code: string
-  password: string
-  passwordConfirm: string
-}
-
-/**
- * 客户端**先行**校验：返回第一条错误文案，全部通过返回 null（#74-2.2 必填 / #74-2.1 密码规则 / #80-1.1 内联报错）。
- *
- * 为什么必须在发请求之前做：
- * 1) 这些错误原本要等一个来回才由服务端返回；注册表单较长、报错落在对话框底部，用户很容易误判成「点了没反应」；
- * 2) 服务端文案是**兜底**，不是唯一的反馈渠道 —— 客户端与服务端共用 core 里的同一条规则，不会出现两侧口径分叉。
- * 顺序刻意与用户填写顺序一致（必填 → 格式 → 规则 → 两次一致），一次只报一条，改一个填一个。
- */
-function clientAuthError(mode: Mode, f: AuthFields): string | null {
-  if (mode === 'register') {
-    if (!f.name.trim()) return '请输入昵称。'
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入密码。'
-    if (!f.passwordConfirm) return '请再次输入密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
-    const codeErr = validateVerificationCode(f.code)
-    if (codeErr) return codeErr
-    const pwdErr = validatePassword(f.password)
-    if (pwdErr) return pwdErr
-    return validatePasswordConfirm(f.password, f.passwordConfirm)
-  }
-  if (mode === 'reset') {
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入新密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
-    const codeErr = validateVerificationCode(f.code)
-    if (codeErr) return codeErr
-    return validatePassword(f.password)
-  }
-  // 登录：只拦空值 —— 邮箱格式错误与凭据错误都归服务端统一口径（「邮箱或密码不正确。」），
-  // 免得客户端把「账号不存在」与「邮箱写错」说成两句不同的话，反而泄露账号是否存在。
-  if (!f.email.trim()) return '请输入邮箱。'
-  if (!f.password) return '请输入密码。'
-  return null
-}
-
-/**
- * 必填是否齐全（只判「非空」，不判格式与规则）—— 用于提交按钮置灰。
- * 与 clientAuthError 分工：空表单直接不让点（#74-2.2），格式/规则类错误点下去就地报（能说清为什么）。
- */
-function isFormFilled(mode: Mode, f: AuthFields): boolean {
-  if (mode === 'register') {
-    return Boolean(f.name.trim() && f.email.trim() && f.code.trim() && f.password && f.passwordConfirm)
-  }
-  if (mode === 'reset') return Boolean(f.email.trim() && f.code.trim() && f.password)
-  return Boolean(f.email.trim() && f.password)
 }
 
 interface AuthModalProps {
@@ -180,6 +122,25 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
     }, 1000)
   }, [])
 
+  const switchMode = useCallback(
+    (m: Mode) => {
+      onModeChange(m)
+      setError(null)
+      setNotice(null)
+      setCodeMsg(null)
+      setCooldown(0)
+      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）
+      const next = switchAuthFields({ name, email, code, password, passwordConfirm, inviteCode }, m)
+      setName(next.name)
+      setEmail(next.email)
+      setCode(next.code)
+      setPassword(next.password)
+      setPasswordConfirm(next.passwordConfirm)
+      setInviteCode(next.inviteCode)
+    },
+    [onModeChange, name, email, code, password, passwordConfirm, inviteCode]
+  )
+
   const submit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
@@ -212,8 +173,10 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
             const d = (await r.json()) as { error?: string }
             if (!r.ok) throw new Error(d.error || '重置失败')
           })
+          // #80-1.2 同类泄漏：重置成功切回登录视图也必须清掉密码类字段（否则登录框会带着刚设置的新密码）。
+          // 但 switchMode 内部会先 setNotice(null)，所以成功提示必须落在它**之后** —— 顺序反了就看不到提示。
+          switchMode('login')
           setNotice('密码已重置，请用新密码登录。')
-          onModeChange('login')
           // 深链 query 的清理不在这里：Landing 在**解析出预填值的那一刻**就抹掉了
           //（见 Landing 的 URL 入口 effect）—— 放在这里会漏掉「深链 → 切注册 → 注册成功」这条路径
           //（注册成功后整页换成 Workspace，本弹窗直接卸载，永远走不到这行）。
@@ -224,7 +187,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, router]
+    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode]
   )
 
   const sendCode = useCallback(async () => {
@@ -255,28 +218,6 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
     }
   }, [mode, email, cooldown, startCooldown])
 
-  const switchMode = useCallback(
-    (m: Mode) => {
-      onModeChange(m)
-      setError(null)
-      setNotice(null)
-      setCodeMsg(null)
-      setCooldown(0)
-      // #80-1.2：切换视图只保留邮箱。
-      // 密码类字段（登录密码 / 新密码 / 注册密码与确认密码）必须清空 —— 否则登录密码会被带进
-      // 「找回密码」的新密码框（掩码可见），用户不留意就会把密码重置回同一个旧值；注册侧更直接：
-      // 密码被带入旧值、用户只补「确认密码」时极易触发「两次输入的密码不一致」。
-      // 昵称与验证码是视图私有字段，一并清掉。
-      // 邀请码**例外**：它来自邀请链接（?invite=），属于入口上下文而不是视图字段 ——
-      // 清掉会让被邀请人切一次视图就静默丢掉奖励，故保留。
-      setPassword('')
-      setPasswordConfirm('')
-      setName('')
-      setCode('')
-    },
-    [onModeChange]
-  )
-
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
   const cfg = usePublicConfig()
   const subtitle =
@@ -292,6 +233,15 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   return (
     <HeroModal.Backdrop
       isOpen
+      /*
+       * 认证弹窗**不允许**点背景关闭（HeroUI 的 Backdrop 默认 isDismissable=true）。
+       * 为什么：矮视口（如 1280×633）下弹窗内容会内部滚动、提交按钮紧贴外框留白，用户「点按钮」极易点空
+       * 而落在遮罩上 —— 默认行为会把整个弹窗静默关掉，已填的邮箱 / 密码 / 验证码全丢且没有任何提示
+       *（#80-1.1 的真因）。宁可让这次点击变成空操作，也不能静默丢掉用户已填的表单。
+       * Esc 仍然可以关闭（**不**设 isKeyboardDismissDisabled）：键盘用户需要一个确定的逃生口，
+       * 且 Esc 是有意为之的操作，不会被误当成「点了提交却没反应」。
+       */
+      isDismissable={false}
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
@@ -305,7 +255,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           <HeroModal.Body>
             <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
 
-            <form onSubmit={submit} className="mt-2">
+            <form id="auth-form" onSubmit={submit} className="mt-2">
               {mode === 'register' && (
                 <TextField className="mt-3.5" value={name} onChange={setName}>
                   <Label>昵称</Label>
@@ -394,12 +344,24 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                   </Alert.Content>
                 </Alert>
               )}
+            </form>
+          </HeroModal.Body>
 
+          {/*
+           * 主操作按钮与「注册 / 登录 / 忘记密码」切换链接放在 Footer 而不是可滚动的 Body 里（#80-1.1）。
+           * 为什么：矮视口下 Body 会内部滚动，按钮留在 Body 里会被裁到折叠线以下 —— 用户点不到或点空，
+           * 表现为「点了没反应」。Footer 常驻在滚动区之外，三种视图（login / register / reset）都受益。
+           * 按钮与表单分离后靠 `form` 属性关联：`form="auth-form"` 让原生按钮仍是该表单的
+           * default button，所以**回车提交**与 `type="submit"` 的隐式提交行为都不受影响。
+           */}
+          <HeroModal.Footer>
+            <div className="w-full">
               {/* #74-2.2：必填没填齐就置灰，不再把空表单丢给服务端兜底（登录空提交曾误报「邮箱或密码不正确。」） */}
               <Button
                 type="submit"
+                form="auth-form"
                 variant="primary"
-                className="mt-4 w-full"
+                className="w-full"
                 isDisabled={busy || !isFormFilled(mode, { name, email, code, password, passwordConfirm })}
               >
                 {busy
@@ -413,19 +375,19 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                         : '注册并领取额度'
                       : '重置密码'}
               </Button>
-            </form>
 
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-              {mode === 'login' ? (
-                <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
-              ) : (
-                <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
-              )}
-              {mode !== 'reset' && (
-                <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
-              )}
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                {mode === 'login' ? (
+                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
+                ) : (
+                  <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
+                )}
+                {mode !== 'reset' && (
+                  <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
+                )}
+              </div>
             </div>
-          </HeroModal.Body>
+          </HeroModal.Footer>
         </HeroModal.Dialog>
       </HeroModal.Container>
     </HeroModal.Backdrop>

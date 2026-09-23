@@ -13,18 +13,16 @@ export function validateEmail(email: string): string | null {
  *
  * ⚠️ 只用于**新设**密码（注册 / 改密 / 重置），不在登录时校验 ——
  * 否则规则一收紧，存量账号会被自己的密码锁在门外。
- */
-export const PASSWORD_MIN_LENGTH = 8
-
-/**
+ *
  * 规则文案的**唯一来源**：既当报错文案，又给界面明示规则用（注册页与改密弹窗共用一份），
  * 避免「界面写的规则」与「校验实际拦的规则」两处各写一遍后悄悄分叉。
  */
 export const PASSWORD_RULE_TEXT = '密码至少 8 位，且需同时包含大写字母、小写字母、数字和符号。'
 
 export function validatePassword(password: string): string | null {
-  // 长度与复杂度合并成一条文案：用户看到的就是完整规则，不必「改一处报一处」试出来
-  if (!password || password.length < PASSWORD_MIN_LENGTH) return PASSWORD_RULE_TEXT
+  // 长度与复杂度合并成一条文案：用户看到的就是完整规则，不必「改一处报一处」试出来。
+  // 长度阈值（8）直接内联：它只在本函数用一次，对外暴露的规则入口是上面的 PASSWORD_RULE_TEXT。
+  if (!password || password.length < 8) return PASSWORD_RULE_TEXT
   const complexEnough =
     /[a-z]/.test(password) && /[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password)
   if (!complexEnough) return PASSWORD_RULE_TEXT

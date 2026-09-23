@@ -123,15 +123,16 @@ const fillScript = String.raw`(() => {
   setVal(inputs[1], email)                 // 邮箱
   setVal(inputs[2], 'MOTIF-E2E-CDK')     // 邀请码（不存在的邀请码应被忽略）
   setVal(inputs[3], code)                  // 验证码
-  setVal(inputs[4], 'e2e-secret-66')       // 密码
-  setVal(inputs[5], 'e2e-secret-66')       // 确认密码
+  setVal(inputs[4], 'E2e-Secret-66')       // 密码（须满足 D14 复杂度：大写+小写+数字+符号，≥8 位）
+  setVal(inputs[5], 'E2e-Secret-66')       // 确认密码
   return inputs.length
 })()`
 const filled = await js(fillScript)
 if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
 
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('[role="dialog"] form button[type="submit"]')][0]
+  // 主操作按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故选择器不能带 `form`
+  const b = [...document.querySelectorAll('[role="dialog"] button[type="submit"]')][0]
   b.click()
   return true
 })()`)
@@ -410,11 +411,11 @@ await js(String.raw`(() => {
   }
   const inputs = [...document.querySelectorAll('[role="dialog"] form input')]
   setVal(inputs[0], email)
-  setVal(inputs[1], 'e2e-secret-66')
+  setVal(inputs[1], 'E2e-Secret-66')
   return true
 })()`)
 await js(String.raw`(() => {
-  [...document.querySelectorAll('[role="dialog"] form button[type="submit"]')][0].click()
+  [...document.querySelectorAll('[role="dialog"] button[type="submit"]')][0].click()
   return true
 })()`)
 await wait(4)
