@@ -126,6 +126,19 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const topicStatusRef = useRef<Map<string, string>>(new Map())
   /** 列表请求序号：迟到的旧响应不许落地（否则状态快照回退 ⇒ 同一次结束被报两遍） */
   const listSeqRef = useRef(0)
+  /**
+   * 详情请求序号：**迟到的响应不许落地**（两种后果都由它兜住）。
+   *
+   * ① 迟到的**失败**：A（已加载）→ 点 B → 立刻点回 A，B 的 reject 随后才到，那句 catch 会按
+   *    「换了任务」把 A 的画布清空 —— 正是 #85-1.2 要消掉的「画布突然变空」，触发者是**已经离开的任务**。
+   * ② 迟到的**成功**：同场景下 B 的响应后到会把 `detail` 写成 B —— 画布显示 B 的图而 `activeId` 是 A；
+   *    更糟的是 `detailRef` 变成 B 后，长轮询算出的 `since` 是空串，而 watch 路由对空 `since`
+   *    **立即返回** `changed:false` ⇒ 无间隔请求风暴，且不会自愈。
+   *
+   * 序号由**发起方**自增（切任务 effect 与 `retryDetail`），不放进 `refreshDetail` 内部 ——
+   * 它同时被 `submitGenerate` / `renameTopic` 这类用户动作调用，那些必须无条件落地。
+   */
+  const detailSeqRef = useRef(0)
 
   useEffect(() => {
     activeIdRef.current = activeId
@@ -181,9 +194,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
     return topics
   }, [])
 
+  /**
+   * 拉详情并落地。
+   *
+   * `seq` 是**发起方**的请求序号（见 `detailSeqRef`）：不等于当前序号即视为已被更新的请求取代，
+   * 既不落地也不回给调用方（返回 `null`）。
+   * 不传 `seq` 表示「无条件落地」—— `submitGenerate` / `renameTopic` / `cancelRunning` /
+   * `removeImages` 由用户动作直接触发，长轮询自带 `stopped` 守卫，都不该被序号误伤。
+   */
   const refreshDetail = useCallback(
-    async (id: string): Promise<TopicDetail> => {
+    async (id: string, seq?: number): Promise<TopicDetail | null> => {
       const d = await api.topicDetail(id)
+      if (seq !== undefined && seq !== detailSeqRef.current) return null
       applyDetail(d)
       // 成功即复位失败态：长轮询恢复后不必等用户点「重试」
       setDetailFailed(false)
@@ -191,6 +213,33 @@ function Workspace({ initialUser }: { initialUser: User }) {
     },
     [applyDetail]
   )
+
+  /**
+   * 把一次成功拉取的详情同步进面板（暂存参考以服务端为准；本地预览 URL 不跨会话，只保留名称）。
+   * ⚠️ 会**整体替换** `referenceIds`，只在「换了任务」或「画布已被清空」时才成立 ——
+   * 同一任务的重试里调用它会把用户用「@ 引用」加的画布参考图摘掉，下一次生成静默少图。
+   */
+  const applyFreshDetail = useCallback((fresh: TopicDetail) => {
+    const staged = fresh.staged ?? []
+    setPanel((p) => ({ ...p, staged, referenceIds: staged.map((s) => s.id), stagedPreviews: {} }))
+  }, [])
+
+  /**
+   * 失败态与顶部提示条共用的「重试」。
+   * 失败位由 `refreshDetail` 在成功时复位，这里只需在再次失败时**保持**失败位（`detail` 原样保留）。
+   */
+  const retryDetail = useCallback(() => {
+    if (!activeId) return
+    const seq = ++detailSeqRef.current
+    void refreshDetail(activeId, seq)
+      .then((fresh) => {
+        // 只有「画布已被清空」的失败态才重置面板（见 `applyFreshDetail` 的告警）
+        if (fresh && detail === null) applyFreshDetail(fresh)
+      })
+      .catch(() => {
+        if (seq === detailSeqRef.current) setDetailFailed(true)
+      })
+  }, [activeId, detail, refreshDetail, applyFreshDetail])
 
   // 初始化：加载任务列表并选中最近一个
   useEffect(() => {
@@ -221,23 +270,25 @@ function Workspace({ initialUser }: { initialUser: User }) {
       setDetailFailed(false)
       return
     }
-    void refreshDetail(activeId)
+    const seq = ++detailSeqRef.current
+    // 换任务即视为「失败态未知」，由这次请求的结果决定 —— 否则上一个任务的失败提示会闪在新任务上
+    setDetailFailed(false)
+    void refreshDetail(activeId, seq)
       .then((fresh) => {
-        setDetailFailed(false)
-        // 暂存参考以服务端为准同步进面板（本地预览 URL 不跨会话，只保留名称）
-        const staged = fresh.staged ?? []
-        setPanel((p) => ({
-          ...p,
-          staged,
-          referenceIds: staged.map((s) => s.id),
-          stagedPreviews: {},
-        }))
+        // 被更新的请求取代时 `refreshDetail` 返回 null（迟到的成功不许落地，见 `detailSeqRef`）
+        if (fresh) applyFreshDetail(fresh)
       })
       .catch(() => {
+        // ⚠️ 迟到的失败不许落地：A→B→A 时 B 的 reject 若按「换了任务」处理，会把 A 的画布清空 ——
+        // 那正是 #85-1.2 要消掉的「画布突然变空」，只不过触发者是**已经离开的任务**。
+        if (seq !== detailSeqRef.current) return
         setDetailFailed(true)
-        setDetail(null)
+        // **刻意不清空 detail**（#85-1.2）：清空会让画布与面板瞬间变空。
+        // 保留**同一任务**的旧数据，失败由 `detailFailed` 表达（顶部提示条 + 重试）。
+        // 换了任务则必须清 —— 否则会把上一个任务的画布当成新任务的显示出来。
+        setDetail((d) => (d && d.topic.id === activeId ? d : null))
       })
-  }, [activeId, refreshDetail])
+  }, [activeId, refreshDetail, applyFreshDetail])
 
   /**
    * 画布图被别处删掉时，面板里的参考关系要跟着摘掉。
@@ -263,15 +314,31 @@ function Workspace({ initialUser }: { initialUser: User }) {
     void (async () => {
       while (!stopped) {
         const since = detailRef.current?.topic.id === activeId ? detailRef.current.topic.updatedAt : ''
+        // ⚠️ `since` 为空串时 watch 路由是**立即返回** `changed:false`（那是「给我基线」的语义）——
+        // 不 sleep 就会变成对 /watch 的无间隔请求风暴。正常切任务时这个窗口只有几十毫秒，
+        // 但一旦 `detailRef` 被写成别的任务（见 `detailSeqRef` 的说明）就会一直空转，故这里兜一道。
+        if (!since) await new Promise((r) => setTimeout(r, 1000))
+        if (stopped) return
         try {
           const r = await api.watchTopic(activeId, since, ac.signal)
           if (stopped) return
           if (r.changed) {
-            const fresh = await refreshDetail(activeId)
+            let fresh: TopicDetail | null
+            try {
+              fresh = await refreshDetail(activeId)
+            } catch {
+              // 详情拉取失败：**画布保留旧内容**，用顶部提示条如实告知（#85-1.2）。
+              // 只有「详情拉取」失败才置位 —— watch 本身失败是普通轮询抖动，不该报「画布同步失败」。
+              // 恢复路径是下一次成功（`refreshDetail` 里复位），故这里只 sleep 后重来。
+              if (stopped) return
+              setDetailFailed(true)
+              await new Promise((r) => setTimeout(r, 1500))
+              continue
+            }
             // ⚠️ 这里到 refreshTopics 之间还有一次 /api/me 往返：用户中途切走时若不复检 stopped，
             // 循环会带着「已不是当前任务」的旧 id 继续刷新 —— 那条结束会被当成后台任务再报一遍
             if (stopped) return
-            if (fresh.topic.status === 'idle') {
+            if (fresh && fresh.topic.status === 'idle') {
               await refreshUser()
               if (stopped) return
               void refreshTopics()
@@ -707,10 +774,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
       <section className="ws-canvas" onDoubleClick={onCanvasDoubleClick}>
         {/* 四态：等列表/等详情 → Spinner；详情拉取失败 → 失败态 + 重试；有图 → 画布；
             无图（含新手一个任务都没有）→ 新手引导。
-            ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
-            说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
-            注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
-            要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
+            ⚠️ 失败态必须与空态分开：拉取失败时若复用空态引导就会**对有图的任务说「画布现在是空的」**
+            （假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
+            重取失败时**同一任务**的旧 `detail` 会被保留（见上面 effect 里的说明），此时画布照常渲染、
+            由下面的状态条栈给非阻断提示；只有「换了任务」才清空、落到本失败态。
             模板入口已收敛到右侧表单。 */}
         {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
           <div className="flex h-full items-center justify-center">
@@ -721,9 +788,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             <Typography type="body-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</Typography>
             <Button
               variant="secondary"
-              onPress={() => {
-                if (activeId) void refreshDetail(activeId).then(() => setDetailFailed(false)).catch(() => {})
-              }}
+              onPress={retryDetail}
             >
               重试
             </Button>
@@ -741,36 +806,36 @@ function Workspace({ initialUser }: { initialUser: User }) {
         ) : (
           <CanvasEmptyGuide onOpenPromptLibrary={() => setDialog('promptLibrary')} />
         )}
-        {/* 生成进行中的全局浮层：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」。
-            ⚠️ `top: 68` 而不是 12：顶部那一条现在是两条浮动条的地盘（12..56），
-            状态条居中放同一行时，窄屏上会与左右两条撞在一起 */}
-        {busy && (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{
-              position: 'absolute',
-              top: 68,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 20,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 16px',
-              borderRadius: 999,
-              border: '1px solid var(--border)',
-              background: 'color-mix(in srgb, var(--surface-primary) 92%, transparent)',
-              boxShadow: 'var(--shadow-soft)',
-              fontSize: 13,
-              color: 'var(--foreground)',
-              pointerEvents: 'none',
-            }}
-          >
-            <Spinner size="sm" />
-            云端生成中，完成后图片会自动出现在画布
+        {/* 画布顶部的状态条**栈**：顶部居中，落在收起态浮动条（12..56）之下、两侧面板之间的中缝里。
+            为什么是栈而不是两条各自绝对定位：它们会同时出现（生成中 + 详情同步失败），
+            各自硬编码 `top` 就会互相盖住。顺序 = 「正在发生什么 → 出了什么问题」。
+            z-index 26：高于两侧面板（25），真重叠时也点得到 —— 与 `.canvas-toolbar` 同一取舍；
+            仍低于顶栏（30）。`pointer-events` 交给各条自己开（只有带按钮的那条需要）。 */}
+        {busy || (detail && detailFailed) ? (
+          <div className="ws-canvas-notices">
+            {/* 生成进行中的全局提示：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
+            {busy ? (
+              <div role="status" aria-live="polite" className="ws-canvas-notice" style={{ color: 'var(--foreground)' }}>
+                <Spinner size="sm" />
+                云端生成中，完成后图片会自动出现在画布
+              </div>
+            ) : null}
+            {/* 后台重取失败但**保住了旧画布**（#85-1.2 的另一半）。
+                ⚠️ 只在 `detail !== null` 时渲染：detail 被清空时走上面的失败态（也有「重试」），
+                两处都渲染就会出现两个重试入口。
+                `data-canvas-no-zoom` 让双击它不触发「收起生成面板」（该选择器已在豁免名单里）。 */}
+            {detail && detailFailed ? (
+              <div role="status" className="ws-canvas-notice ws-canvas-notice-action" data-canvas-no-zoom>
+                <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }}>
+                  画布同步失败，显示的是上次加载的内容。
+                </InlineText>
+                <Button size="sm" variant="secondary" onPress={retryDetail}>
+                  重试
+                </Button>
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
         {/* 两侧浮动面板 / 收起后的浮动条：都在**画布区内**绝对定位（顶栏仍是占位的，面板从它下面开始）。
             2026-09-21 用户裁决：面板展开时占据该侧位置；**收起后原位换成一条小浮动条**，
             里面放该侧的关键动作 —— 左：展开按钮 + 任务名 + 新建任务；右：展开按钮 + 生成/取消 + 张数尺寸摘要。

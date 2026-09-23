@@ -16,21 +16,37 @@ function placement(id: string, x = 0, y = 0): CanvasImagePlacement {
 }
 
 describe('归档条目命名', () => {
-  it('三位序号 + 原名 + 扩展名', () => {
-    expect(archiveEntryName({ serial: 3, name: '参考图.png', src: '/s/3' })).toBe('files/003-参考图.png')
+  it('含非 ASCII 的原名整段去掉，只留序号与扩展名（macOS unzip 的硬要求，见 #85）', () => {
+    expect(archiveEntryName({ serial: 3, name: '参考图.png', src: '/s/3' })).toBe('files/003.png')
+    expect(archiveEntryName({ serial: 5, name: '图片 1', src: '/s/5', mimeType: 'image/png' })).toBe('files/005.png')
+    // 半截残渣（「-1」之类）比整段去掉更难认，故不做部分保留
+    expect(archiveEntryName({ serial: 8, name: '图 1.png', src: '/s/8' })).toBe('files/008.png')
   })
 
-  it('非法字符替换、无扩展名回退 bin、空名回退 image', () => {
-    expect(archiveEntryName({ serial: 1, name: 'a/b:c?.jpg', src: '/s/1' })).toBe('files/001-a_b_c_.jpg')
-    expect(archiveEntryName({ serial: 2, name: 'noext', src: '/s/2' })).toBe('files/002-noext.bin')
+  it('原名本身是 ASCII 时原样保留可读性', () => {
+    expect(archiveEntryName({ serial: 1, name: 'hero-shot.jpg', src: '/s/1' })).toBe('files/001-hero-shot.jpg')
+    // 非法字符仍替换（文件系统层面不能用）
+    expect(archiveEntryName({ serial: 2, name: 'a/b:c?.jpg', src: '/s/2' })).toBe('files/002-a_b_c_.jpg')
+  })
+
+  it('无扩展名回退 bin / mime 推；空名回退到 src 末段', () => {
+    // 空名时沿用既有回退链（`name` → src 末段 → 'image'），src 末段是 ASCII 故仍被保留
     expect(archiveEntryName({ serial: 4, name: '', src: '/s/4' })).toBe('files/004-4.bin')
-  })
-
-  it('原名无扩展名时用 mime 推（画布图名形如「图片 1」，没有后缀）', () => {
-    expect(archiveEntryName({ serial: 5, name: '图片 1', src: '/s/5', mimeType: 'image/png' })).toBe('files/005-图片 1.png')
-    expect(archiveEntryName({ serial: 6, name: '图片 2', src: '/s/6', mimeType: 'image/jpeg' })).toBe('files/006-图片 2.jpg')
+    expect(archiveEntryName({ serial: 6, name: '图片 2', src: '/s/6', mimeType: 'image/jpeg' })).toBe('files/006.jpg')
     // 原名自带扩展名时优先用原名
     expect(archiveEntryName({ serial: 7, name: 'x.webp', src: '/s/7', mimeType: 'image/png' })).toBe('files/007-x.webp')
+  })
+
+  it('产出的条目名一律是纯 ASCII（这条是 #85 的实质判据）', () => {
+    const names = [
+      archiveEntryName({ serial: 1, name: '参考图.png', src: '/s/1' }),
+      archiveEntryName({ serial: 2, name: '商品主图 2.jpeg', src: '/s/2' }),
+      archiveEntryName({ serial: 3, name: '图片 3', src: '/s/3', mimeType: 'image/webp' }),
+      archiveEntryName({ serial: 4, name: 'hero.png', src: '/s/4' }),
+    ]
+    for (const n of names) {
+      expect(n, n).toMatch(/^[\x20-\x7e]+$/)
+    }
   })
 })
 
@@ -115,5 +131,51 @@ describe('导入合并（LWW 关键点）', () => {
     )
     expect(applied).toEqual([])
     expect(skipped).toEqual(['cimg_x', 'cimg_y'])
+  })
+})
+
+describe('原名映射（条目名改 ASCII 后的信息保全，#85）', () => {
+  it('canvas.json 里带着 id → 原名，导入端能读回', () => {
+    const entries = canvasArchiveEntries({
+      topicId: 'top_1',
+      meta: META,
+      images: [placement('cimg_a'), placement('cimg_b')],
+      archiveImages: [
+        { id: 'cimg_a', serial: 1, name: '参考图.png', src: '/s/a' },
+        { id: 'cimg_b', serial: 2, name: '商品主图 2', src: '/s/b', mimeType: 'image/jpeg' },
+      ],
+      exportedAt: '2026-09-20T10:00:00.000Z',
+    })
+    // 条目名一律 ASCII
+    for (const e of entries) expect(e.name).toMatch(/^[\x20-\x7e]+$/)
+    // 原名没丢，落在 canvas.json 里
+    const parsed = parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(entries[0].text!)]]))
+    expect(parsed.names).toEqual({ cimg_a: '参考图.png', cimg_b: '商品主图 2' })
+  })
+
+  it('老归档（没有 names 字段）仍能解析，names 为空', () => {
+    const legacy = JSON.stringify({
+      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
+      images: [placement('cimg_a')],
+    })
+    const parsed = parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(legacy)]]))
+    expect(parsed.names).toBeUndefined()
+    expect(parsed.images).toHaveLength(1)
+  })
+
+  it('names 形状不对时当没有（它是附加信息，不该让导入失败）', () => {
+    const bad = JSON.stringify({
+      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
+      images: [placement('cimg_a')], names: { cimg_a: 123 },
+    })
+    expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(bad)]]))).toMatchObject({ topicId: 'top_1' })
+  })
+
+  it('空映射读出来也是「没有」——与写端对称（否则读成 {}、写回去又消失）', () => {
+    const empty = JSON.stringify({
+      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
+      images: [placement('cimg_a')], names: {},
+    })
+    expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(empty)]])).names).toBeUndefined()
   })
 })

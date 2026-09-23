@@ -802,6 +802,46 @@ html[data-theme="dark"] .lp-hero {
   right: 12px;
 }
 
+/* 画布顶部的状态条**栈**（「云端生成中」与「画布同步失败」都在这里）。
+   位置：顶部居中，`top: 64px` 落在收起态浮动条（top:12 + 44）之下、两侧面板之间的中缝里。
+   z-index 26：高于两侧面板（25），真重叠时也点得到（与 `.canvas-toolbar` 同一取舍），仍低于顶栏（30）。
+   `pointer-events: none` 是默认值 —— 整条不该吃掉画布手势；只有带按钮的那条自己开回来。 */
+.ws-canvas-notices {
+  position: absolute;
+  z-index: 26;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.ws-canvas-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-primary) 92%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
+  font-size: 13px;
+}
+
+/* 带按钮的那条：内边距收一点，并把命中测试开回来（父层是 none） */
+.ws-canvas-notice-action {
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 10px;
+  pointer-events: auto;
+}
+
 /* 面板本体：外层不滚、内层滚、页脚固定（生成按钮吸底常驻）。
    为什么不用 `position: sticky` 做吸底：实测（1190×560 视口）滚动到底时 sticky 元素会停在
    内容的自然位置、比吸底位高 45px，底栏下方露出一条空隙 —— 那是 flex 容器 + 负外边距 +
@@ -953,10 +993,14 @@ html[data-theme="dark"] .lp-hero {
   pointer-events: none;
 }
 
-/* 选中图片上方的浮动工具栏 */
+/* 选中图片上方的浮动工具栏。
+   ⚠️ z-index 必须**高于两侧浮动面板（25）**：工具栏锚在被选图顶部居中，图靠右缘时它的右半会伸进
+   生成面板的矩形里，层级低于面板时「删除所选图片」被盖住、点了毫无反应（#82）。
+   光靠钳位置不够（窄视口下面板与画布本就会重叠），层级是最后一道保险；
+   但仍低于 `.ws-nav`（30）—— 顶栏是全局导航，不该被画布上的浮动控件盖住。 */
 .canvas-toolbar {
   position: absolute;
-  z-index: 20;
+  z-index: 26;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
