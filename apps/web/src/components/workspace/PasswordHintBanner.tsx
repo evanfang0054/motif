@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button, Modal } from '@heroui/react'
+import { Button, Modal, Typography } from '@heroui/react'
 
 /**
  * 强制改密软提示：仅在账号由引导创建或被管理员重置后显示。
@@ -74,9 +74,9 @@ export function PasswordHintBanner({
             <Modal.Heading>建议修改密码</Modal.Heading>
           </Modal.Header>
           <Modal.Body>
-            <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+            <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
               当前密码由系统生成，建议立即修改为自己的密码。
-            </p>
+            </Typography>
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onPress={dismiss}>

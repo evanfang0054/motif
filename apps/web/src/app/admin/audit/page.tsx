@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Drawer, SearchField, Table } from '@heroui/react'
+import { Button, Drawer, SearchField, Table, Typography } from '@heroui/react'
 import { Eye } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminAuditRow } from '@/lib/client'
@@ -50,8 +50,8 @@ export default function AdminAuditPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">审计日志</h1>
-      <p className="admin-muted">所有会改变他人或系统状态的管理动作都在这里留痕，用于回答「谁对谁做了什么」。</p>
+      <Typography type="h1" className="admin-title">审计日志</Typography>
+      <Typography type="body" className="admin-muted">所有会改变他人或系统状态的管理动作都在这里留痕，用于回答「谁对谁做了什么」。</Typography>
 
       <div className="admin-toolbar">
         <SearchField aria-label="按操作者 ID 筛选" value={actorId} onChange={(v) => { setActorId(v); setPage(1) }}>

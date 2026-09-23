@@ -21,7 +21,8 @@ import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialo
 import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
-import { AlertDialog, Button, Spinner } from '@heroui/react'
+import { AlertDialog, Button, Spinner, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { showToast } from '@/components/ui/toast'
 import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
 
@@ -686,7 +687,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           </div>
         ) : detail === null && detailFailed ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
-            <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
+            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</Typography>
             <Button
               variant="secondary"
               onPress={() => {
@@ -788,13 +789,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
               <LayoutSideContentLeft />
             </IconButton>
             {/* 任务名只在 ≥lg 显示：窄屏两条浮动条会挤在一起（见 globals.css 的说明） */}
-            <span
-              className="hidden min-w-0 truncate text-sm lg:inline"
-              style={{ color: 'var(--muted-strong)' }}
+            <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm"
+              className="hidden min-w-0 truncate lg:inline"
               title={detail?.topic.title ?? '新任务'}
             >
               {detail?.topic.title ?? '新任务'}
-            </span>
+            </InlineText>
             <IconButton variant="secondary" label="新建任务" onPress={() => void createTopic()}>
               <Plus />
             </IconButton>
@@ -843,9 +843,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
               </Button>
             )}
             {/* 摘要只在 ≥md 显示：窄屏放不下（同左条的任务名） */}
-            <span className="hidden whitespace-nowrap text-xs md:inline" style={{ color: 'var(--muted)' }}>
+            <InlineText style={{ color: 'var(--muted)' }} type="body-xs" className="hidden whitespace-nowrap md:inline">
               {panel.count} 张 · {sizeLabelOf(panel.size)}
-            </span>
+            </InlineText>
           </div>
         )}
       </section>
@@ -928,15 +928,15 @@ function Workspace({ initialUser }: { initialUser: User }) {
               </AlertDialog.Header>
               <AlertDialog.Body>
                 {confirmDelete.kind === 'image' ? (
-                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                  <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                     {deleteImageConfirmText(confirmDelete.ids.length)}
                     <br />
                     其余图片的编号保持不变，提示词里已写好的编号仍会指向原来的图片。
-                  </p>
+                  </Typography>
                 ) : (
-                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                  <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                     将删除任务「{confirmDelete.title}」及其全部生成记录与图片，删除后无法恢复。
-                  </p>
+                  </Typography>
                 )}
               </AlertDialog.Body>
               <AlertDialog.Footer>

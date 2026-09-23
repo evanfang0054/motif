@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField } from '@heroui/react'
+import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField, Typography } from '@heroui/react'
 import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
@@ -217,7 +217,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
             <HeroModal.CloseTrigger aria-label="关闭" />
           </HeroModal.Header>
           <HeroModal.Body>
-            <p className="text-sm" style={{ color: 'var(--muted)' }}>{subtitle}</p>
+            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
 
             <form onSubmit={submit} className="mt-2">
               {mode === 'register' && (
@@ -263,9 +263,9 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                     </Button>
                   </div>
                   {codeMsg && (
-                    <p className="mt-1.5 text-xs" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
+                    <Typography type="body-xs" className="mt-1.5" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
                       {codeMsg.text}
-                    </p>
+                    </Typography>
                   )}
                 </>
               )}

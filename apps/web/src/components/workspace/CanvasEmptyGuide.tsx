@@ -7,8 +7,9 @@
  */
 'use client'
 
-import { Button, Surface } from '@heroui/react'
+import { Button, Surface, Typography } from '@heroui/react'
 import { BookOpen } from '@gravity-ui/icons'
+import { InlineText } from '@/components/ui/typography'
 
 interface Props {
   onOpenPromptLibrary: () => void
@@ -24,8 +25,8 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
   return (
     <div className="flex h-full items-center justify-center p-6" data-testid="canvas-empty-guide">
       <Surface className="w-full max-w-[520px] rounded-2xl p-6">
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>从零开始做一套图</h2>
-        <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>画布现在是空的，三步就能出第一套图：</p>
+        <Typography type="h2" style={{ color: 'var(--foreground)' }}>从零开始做一套图</Typography>
+        <Typography type="body-sm" className="mt-1" style={{ color: 'var(--muted)' }}>画布现在是空的，三步就能出第一套图：</Typography>
 
         <ol className="mt-4 flex flex-col gap-3">
           {STEPS.map((step, i) => (
@@ -61,9 +62,9 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
             <BookOpen />
             打开提示词库
           </Button>
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>
+          <InlineText type="body-xs" style={{ color: 'var(--muted)' }}>
             系统自带的 8 套模板提示词都在里面，挑一条填进右侧表单
-          </span>
+          </InlineText>
         </div>
       </Surface>
     </div>
