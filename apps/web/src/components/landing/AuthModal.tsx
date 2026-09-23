@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField, Typography } from '@heroui/react'
 import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
+import { PASSWORD_RULE_TEXT, validateEmail, validatePassword, validatePasswordConfirm, validateVerificationCode } from '@motif/core'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
 import { usePublicConfig } from '@/lib/use-public-config'
@@ -15,6 +16,67 @@ const RESEND_COOLDOWN = 60
 
 function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
+}
+
+/** 表单字段快照（三种视图共用同一批 state） */
+interface AuthFields {
+  name: string
+  email: string
+  code: string
+  password: string
+  passwordConfirm: string
+}
+
+/**
+ * 客户端**先行**校验：返回第一条错误文案，全部通过返回 null（#74-2.2 必填 / #74-2.1 密码规则 / #80-1.1 内联报错）。
+ *
+ * 为什么必须在发请求之前做：
+ * 1) 这些错误原本要等一个来回才由服务端返回；注册表单较长、报错落在对话框底部，用户很容易误判成「点了没反应」；
+ * 2) 服务端文案是**兜底**，不是唯一的反馈渠道 —— 客户端与服务端共用 core 里的同一条规则，不会出现两侧口径分叉。
+ * 顺序刻意与用户填写顺序一致（必填 → 格式 → 规则 → 两次一致），一次只报一条，改一个填一个。
+ */
+function clientAuthError(mode: Mode, f: AuthFields): string | null {
+  if (mode === 'register') {
+    if (!f.name.trim()) return '请输入昵称。'
+    if (!f.email.trim()) return '请输入邮箱。'
+    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
+    if (!f.password) return '请输入密码。'
+    if (!f.passwordConfirm) return '请再次输入密码。'
+    const emailErr = validateEmail(f.email)
+    if (emailErr) return emailErr
+    const codeErr = validateVerificationCode(f.code)
+    if (codeErr) return codeErr
+    const pwdErr = validatePassword(f.password)
+    if (pwdErr) return pwdErr
+    return validatePasswordConfirm(f.password, f.passwordConfirm)
+  }
+  if (mode === 'reset') {
+    if (!f.email.trim()) return '请输入邮箱。'
+    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
+    if (!f.password) return '请输入新密码。'
+    const emailErr = validateEmail(f.email)
+    if (emailErr) return emailErr
+    const codeErr = validateVerificationCode(f.code)
+    if (codeErr) return codeErr
+    return validatePassword(f.password)
+  }
+  // 登录：只拦空值 —— 邮箱格式错误与凭据错误都归服务端统一口径（「邮箱或密码不正确。」），
+  // 免得客户端把「账号不存在」与「邮箱写错」说成两句不同的话，反而泄露账号是否存在。
+  if (!f.email.trim()) return '请输入邮箱。'
+  if (!f.password) return '请输入密码。'
+  return null
+}
+
+/**
+ * 必填是否齐全（只判「非空」，不判格式与规则）—— 用于提交按钮置灰。
+ * 与 clientAuthError 分工：空表单直接不让点（#74-2.2），格式/规则类错误点下去就地报（能说清为什么）。
+ */
+function isFormFilled(mode: Mode, f: AuthFields): boolean {
+  if (mode === 'register') {
+    return Boolean(f.name.trim() && f.email.trim() && f.code.trim() && f.password && f.passwordConfirm)
+  }
+  if (mode === 'reset') return Boolean(f.email.trim() && f.code.trim() && f.password)
+  return Boolean(f.email.trim() && f.password)
 }
 
 interface AuthModalProps {
@@ -121,6 +183,14 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   const submit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
+      // 客户端先行校验：空表单 / 格式 / 密码规则 / 两次不一致都在这里就地报错，不发请求。
+      // 命中时只 setError 后 return —— 对话框保持打开，用户能立刻看到原因（#80-1.1）。
+      const localErr = clientAuthError(mode, { name, email, code, password, passwordConfirm })
+      if (localErr) {
+        setNotice(null)
+        setError(localErr)
+        return
+      }
       setError(null)
       setNotice(null)
       setBusy(true)
@@ -129,6 +199,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           await api.login(email, password)
           router.refresh()
         } else if (mode === 'register') {
+          // 服务端错误（验证码无效 / 邮箱已注册…）一律由下面的 catch 落进对话框内的 Alert；
+          // 只有成功才 refresh —— 失败路径既不关窗也不吞错（#80-1.1）。
           await api.register({ name, email, code, password, passwordConfirm, inviteCode: inviteCode || undefined })
           router.refresh()
         } else {
@@ -183,13 +255,27 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
     }
   }, [mode, email, cooldown, startCooldown])
 
-  const switchMode = useCallback((m: Mode) => {
-    onModeChange(m)
-    setError(null)
-    setNotice(null)
-    setCodeMsg(null)
-    setCooldown(0)
-  }, [])
+  const switchMode = useCallback(
+    (m: Mode) => {
+      onModeChange(m)
+      setError(null)
+      setNotice(null)
+      setCodeMsg(null)
+      setCooldown(0)
+      // #80-1.2：切换视图只保留邮箱。
+      // 密码类字段（登录密码 / 新密码 / 注册密码与确认密码）必须清空 —— 否则登录密码会被带进
+      // 「找回密码」的新密码框（掩码可见），用户不留意就会把密码重置回同一个旧值；注册侧更直接：
+      // 密码被带入旧值、用户只补「确认密码」时极易触发「两次输入的密码不一致」。
+      // 昵称与验证码是视图私有字段，一并清掉。
+      // 邀请码**例外**：它来自邀请链接（?invite=），属于入口上下文而不是视图字段 ——
+      // 清掉会让被邀请人切一次视图就静默丢掉奖励，故保留。
+      setPassword('')
+      setPasswordConfirm('')
+      setName('')
+      setCode('')
+    },
+    [onModeChange]
+  )
 
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
   const cfg = usePublicConfig()
@@ -278,6 +364,12 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                   onChange={setPassword}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 />
+                {/* #74-2.1：规则必须在界面上明示，且与注册/改密用的是同一句文案（PASSWORD_RULE_TEXT） */}
+                {mode !== 'login' && (
+                  <Typography type="body-xs" className="mt-1.5" style={{ color: 'var(--muted)' }}>
+                    {PASSWORD_RULE_TEXT}
+                  </Typography>
+                )}
               </div>
 
               {mode === 'register' && (
@@ -303,7 +395,13 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                 </Alert>
               )}
 
-              <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
+              {/* #74-2.2：必填没填齐就置灰，不再把空表单丢给服务端兜底（登录空提交曾误报「邮箱或密码不正确。」） */}
+              <Button
+                type="submit"
+                variant="primary"
+                className="mt-4 w-full"
+                isDisabled={busy || !isFormFilled(mode, { name, email, code, password, passwordConfirm })}
+              >
                 {busy
                   ? '处理中…'
                   : mode === 'login'

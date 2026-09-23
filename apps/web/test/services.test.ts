@@ -49,8 +49,8 @@ describe('auth 流程', () => {
       name: '新用户',
       email: 'new@b.co',
       code: devCode!,
-      password: 'secret66',
-      passwordConfirm: 'secret66',
+      password: 'Secret66!',
+      passwordConfirm: 'Secret66!',
       inviteCode: inviter.inviteCode,
     })
     expect(user.credits).toBe(SIGNUP_BONUS_CREDITS)
@@ -59,7 +59,7 @@ describe('auth 流程', () => {
     expect(inviterAfter.credits).toBe(3)
     // 验证码已消费，重放失败
     expect(() =>
-      register(store, { name: 'x', email: 'new@b.co', code: devCode!, password: 'secret66', passwordConfirm: 'secret66' })
+      register(store, { name: 'x', email: 'new@b.co', code: devCode!, password: 'Secret66!', passwordConfirm: 'Secret66!' })
     ).toThrow(ServiceError)
   })
 
@@ -70,8 +70,8 @@ describe('auth 流程', () => {
       name: '被邀请人',
       email,
       code: devCode!,
-      password: 'secret66',
-      passwordConfirm: 'secret66',
+      password: 'Secret66!',
+      passwordConfirm: 'Secret66!',
       ...(inviteCode ? { inviteCode } : {}),
     })
   }
@@ -150,20 +150,27 @@ describe('auth 流程', () => {
     expect(store.db.prepare("SELECT delta FROM credit_ledger WHERE source = 'invite_reward'").all()).toEqual(before)
   })
 
-  it('注册：两次密码不一致 / 邮箱重复 / 错误验证码', async () => {
+  it('注册：两次密码不一致 / 邮箱重复 / 错误验证码 / 弱密码', async () => {
     await sendCode(store, mailer, 'register', 'a@b.co')
+    // 两个都合规但不相同 —— 否则会被更早的复杂度校验拦下，测不到「不一致」这条分支
     expect(() =>
-      register(store, { name: 'a', email: 'a@b.co', code: '000000', password: 'secret66', passwordConfirm: 'other66' })
+      register(store, { name: 'a', email: 'a@b.co', code: '000000', password: 'Secret66!', passwordConfirm: 'Other66!' })
     ).toThrow(/不一致/)
+    // 弱密码（仅长度够）必须在注册处被拒，且给出规则文案（#74-2.1 注册与改密两处一致）
+    expect(() =>
+      register(store, { name: 'a', email: 'a@b.co', code: '000000', password: '12345678', passwordConfirm: '12345678' })
+    ).toThrow(/至少 8 位.*大写字母.*小写字母.*数字.*符号/)
     const u = store.createUser({ email: 'dup@b.co', passwordHash: 'h', name: 'd' })
     expect(u).toBeTruthy()
     const { devCode } = await sendCode(store, mailer, 'register', 'dup@b.co')
     expect(() =>
-      register(store, { name: 'a', email: 'dup@b.co', code: devCode!, password: 'secret66', passwordConfirm: 'secret66' })
+      register(store, { name: 'a', email: 'dup@b.co', code: devCode!, password: 'Secret66!', passwordConfirm: 'Secret66!' })
     ).toThrow(/已注册/)
   })
 
   it('登录：正确与错误密码；散列可验证', () => {
+    // ⚠️ 这里**故意**用不合规的旧密码 `secret66`：登录只验散列，不做复杂度校验 ——
+    // 规则收紧后存量账号仍必须能登进来（否则等于把老用户锁在门外）。
     const hash = hashPassword('secret66')
     expect(verifyPassword('secret66', hash)).toBe(true)
     expect(verifyPassword('wrong!!', hash)).toBe(false)

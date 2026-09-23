@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NextRequest } from 'next/server'
 import { MotifStore } from '@motif/db'
-import { hashPassword, SESSION_COOKIE } from '@/server/auth'
+import { hashPassword, verifyPassword, SESSION_COOKIE } from '@/server/auth'
 import { POST } from '@/app/api/auth/change-password/route'
 
 let dir: string
@@ -44,8 +44,25 @@ describe('改密后清除强制改密标记', () => {
     expect(store.getUserById(u.id)!.mustChangePassword).toBe(true)
 
     // 字段名与真实路由一致：{ oldPassword, newPassword }
-    const res = await POST(jsonReq({ oldPassword: 'old12345', newPassword: 'new12345' }, token))
+    const res = await POST(jsonReq({ oldPassword: 'old12345', newPassword: 'New12345!' }, token))
     expect(res.status).toBe(200)
     expect(store.getUserById(u.id)!.mustChangePassword).toBe(false)
+  })
+
+  it('弱新密码被拒（与注册同一套复杂度规则），且不改动原密码', async () => {
+    const u = store.createUser({
+      email: 'weak@b.co',
+      passwordHash: hashPassword('old12345'),
+      name: 'weak',
+    })
+    const token = store.createSession(u.id, 60_000)
+
+    // `12345678` 长度够但没有大小写与符号 —— D14 之前它能过
+    const res = await POST(jsonReq({ oldPassword: 'old12345', newPassword: '12345678' }, token))
+    expect(res.status).toBe(400)
+    // 原密码仍然可用：校验失败发生在写库之前
+    const stored = store.getPasswordHash(u.id)!
+    expect(verifyPassword('old12345', stored)).toBe(true)
+    expect(verifyPassword('12345678', stored)).toBe(false)
   })
 })
