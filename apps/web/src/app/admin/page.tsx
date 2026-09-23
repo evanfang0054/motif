@@ -203,7 +203,7 @@ export default function AdminHomePage() {
               <InlineText type="body-sm" className="admin-source-track">
                 <span className={`admin-source-fill ${s.net < 0 ? 'is-neg' : 'is-pos'}`} style={{ width: `${w}%` }} />
               </InlineText>
-              <span className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</span>
+              <InlineText type="body-xs" className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</InlineText>
             </div>
           )
         })}

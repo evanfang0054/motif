@@ -343,7 +343,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               </div>
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
-                <InlineText type="body-sm">{error}</InlineText>
+                <InlineText color="muted" type="body-sm">{error}</InlineText>
                 <Button variant="secondary" size="sm" onPress={() => void load(1, 'replace')}>
                   <ArrowRotateRight />
                   重试
@@ -354,11 +354,11 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 {emptyKind === 'fetching' ? (
                   <>
                     <Spinner size="md" />
-                    <InlineText type="body-sm">正在抓取提示词库…</InlineText>
+                    <InlineText color="muted" type="body-sm">正在抓取提示词库…</InlineText>
                   </>
                 ) : emptyKind === 'failed' ? (
                   <>
-                    <InlineText type="body-sm">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
+                    <InlineText color="muted" type="body-sm">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
                     {failures.map((f) => (
                       <InlineText type="body-xs" key={f.sourceId} className="">
                         {f.sourceName}：{f.error}
@@ -369,9 +369,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                     </Button>
                   </>
                 ) : emptyKind === 'filtered' ? (
-                  <InlineText type="body-sm">没有匹配的提示词，换个关键词或标签试试</InlineText>
+                  <InlineText color="muted" type="body-sm">没有匹配的提示词，换个关键词或标签试试</InlineText>
                 ) : (
-                  <InlineText type="body-sm">提示词库还没有内容</InlineText>
+                  <InlineText color="muted" type="body-sm">提示词库还没有内容</InlineText>
                 )}
               </div>
             ) : (
@@ -391,9 +391,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           </div>
 
           <div className="mt-2 flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
-            <InlineText type="body-sm">
+            <InlineText color="muted" type="body-xs">
               {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
-              {pending && <InlineText type="body-sm" className="ms-2">（正在抓取提示词库…）</InlineText>}
+              {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在抓取提示词库…）</InlineText>}
             </InlineText>
             {loadingMore && <Spinner size="sm" />}
           </div>

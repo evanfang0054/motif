@@ -789,7 +789,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               <LayoutSideContentLeft />
             </IconButton>
             {/* 任务名只在 ≥lg 显示：窄屏两条浮动条会挤在一起（见 globals.css 的说明） */}
-            <InlineText style={{ color: 'var(--canvas-foreground)' }} type="body-sm"
+            <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm"
               className="hidden min-w-0 truncate lg:inline"
               title={detail?.topic.title ?? '新任务'}
             >
@@ -843,7 +843,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               </Button>
             )}
             {/* 摘要只在 ≥md 显示：窄屏放不下（同左条的任务名） */}
-            <InlineText style={{ color: 'var(--canvas-foreground)' }} type="body-xs" className="hidden whitespace-nowrap md:inline">
+            <InlineText style={{ color: 'var(--muted)' }} type="body-xs" className="hidden whitespace-nowrap md:inline">
               {panel.count} 张 · {sizeLabelOf(panel.size)}
             </InlineText>
           </div>

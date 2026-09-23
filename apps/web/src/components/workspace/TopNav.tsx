@@ -146,7 +146,7 @@ function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
                     点任意一段即收起（点击冒泡捕获）。 */}
                 <div className="flex h-8 items-center gap-1.5 px-2.5" onClick={closeMenu}>
                   <Palette />
-                  <span className="flex-1 text-sm">外观</span>
+                  <InlineText type="body-sm" className="flex-1">外观</InlineText>
                   <ThemeToggle />
                 </div>
 

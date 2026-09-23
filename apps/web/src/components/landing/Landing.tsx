@@ -132,9 +132,9 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
-                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
-                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
               </div>
             </div>
           </div>

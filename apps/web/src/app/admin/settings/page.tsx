@@ -360,7 +360,7 @@ export default function AdminSettingsPage() {
                 <div className="admin-field" key={item.key}>
                   <label htmlFor={`setting-${item.key}`}>
                     {item.label}
-                    <span className="admin-field-key">{item.key}</span>
+                    <InlineText type="body-xs" className="admin-field-key">{item.key}</InlineText>
                   </label>
                   {field(item)}
                   {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}
