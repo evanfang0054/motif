@@ -78,6 +78,8 @@ describe('文字对比度守卫（#55）', () => {
   it('⚠️ 亮色 --danger-quiet 不再是 --danger 的别名（改回别名就会丢掉 4.5 达标）', () => {
     // 修前它就是 `var(--danger)` → 4.20:1。这条断言**随 CSS 变化**，改回去立刻红。
     expect(resolve(LIGHT, '--danger-quiet')).not.toBe(resolve(LIGHT, '--danger'))
+    // 阈值标定：4.5 这条线确实判得死历史失败值（否则整套断言可能在放水）。
+    expect(contrast('#c64545', '#f9ecec')).toBeLessThan(AA)
   })
 
   it('亮色：--danger-quiet 对 --danger-soft ≥4.5（#55 本体）', () => {
@@ -106,15 +108,24 @@ describe('文字对比度守卫（#55）', () => {
     // 上面那张清单是「最坏情况」推断 —— 把它变成可证伪的断言：
     // 将来新增更暗的表面时这里会红，提示把它补进清单并复核对比度。
     const worst = luminance(resolve(LIGHT, '--surface-active'))
-    const darker = Object.keys(LIGHT)
-      .filter((k) => k.startsWith('--surface-') && /^#[0-9a-f]{6}$/i.test(resolve(LIGHT, k)))
-      .filter((k) => luminance(resolve(LIGHT, k)) < worst)
+    const surfaces = Object.keys(LIGHT).filter((k) => k.startsWith('--surface-'))
+    // ⚠️ 先挡住「算不了亮度就被静默跳过」这条假绿路径：`filter` 只留 6 位 hex，
+    // 而 3 位简写 / color-mix / 带 alpha 的值都会解析成非 6 位 hex。
+    // 它们必须显式列出来人工复核，不能悄悄从比对里消失。
+    const opaque = surfaces.filter((k) => /^#[0-9a-f]{6}$/i.test(resolve(LIGHT, k)))
+    const unmeasurable = surfaces.filter((k) => !opaque.includes(k))
+    expect(
+      unmeasurable,
+      `这些 --surface-* 不是 6 位 hex，无法自动比对亮度，请人工复核后再决定去留：${unmeasurable.join(', ')}`
+    ).toEqual([])
+    const darker = opaque.filter((k) => luminance(resolve(LIGHT, k)) < worst)
     expect(darker, `这些表面比 --surface-active 更暗，需复核 --danger-quiet 的对比度：${darker.join(', ')}`).toEqual([])
   })
 
   it('暗色：--danger-quiet / --success-quiet 对各自落点 ≥4.5（暗色一直达标，别改坏）', () => {
     // ⚠️ 暗色只钉**实际消费到**的表面。globals.css 里已写明约束：暗色 --danger-quiet
     // 不允许落在 --surface-tertiary / --surface-active 上（实测 4.22 / 4.26，未达 AA）。
+    // 新增消费点若落在更暗的面上，必须先把本值提亮，再把那个面加进下面的清单。
     for (const [fgName, bgName] of [
       ['--danger-quiet', '--danger-soft'],
       ['--danger-quiet', '--surface-primary'],
@@ -125,6 +136,17 @@ describe('文字对比度守卫（#55）', () => {
       const fg = resolve(DARK, fgName)
       const bg = resolve(DARK, bgName)
       expect(contrast(fg, bg), `${fgName} ${fg} vs ${bgName} ${bg}`).toBeGreaterThanOrEqual(AA)
+    }
+  })
+
+  it('暗色：被禁用的两个更暗表面确实不达标 —— 与 globals.css 的约束注释同源', () => {
+    // 这条不是在守护「达标」，而是把**注释里的约束**钉成可执行事实：
+    // 哪天有人提亮了暗色 --danger-quiet（好事），这里会红，提醒他同步删掉
+    // globals.css 里那句「不要放在 --surface-tertiary / --surface-active 上」。
+    for (const bgName of ['--surface-tertiary', '--surface-active']) {
+      const fg = resolve(DARK, '--danger-quiet')
+      const bg = resolve(DARK, bgName)
+      expect(contrast(fg, bg), `${fg} vs ${bg}`).toBeLessThan(AA)
     }
   })
 
