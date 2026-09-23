@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MotifStore, storagePathFor } from '@motif/db'
-import { removeFromAllStorages } from '@/server/context'
+import { removeFromAllStorages, removeManyFromAllStorages, runBounded } from '@/server/context'
 import { assertPruneSafe, planMigration, PruneRefusedError, pruneOrphans, runMigration } from '@/server/storage-migrate'
 import { writeSettings } from '@/server/settings'
 import type { Storage } from '@/server/storage'
@@ -17,20 +17,33 @@ import type { Storage } from '@/server/storage'
 
 // ---------- #58：搬迁只搬在册对象 ----------
 
-/** 只记调用的假远端：exists 按传入的白名单回答，write 记录被上传的 key */
-function fakeRemote(existing: string[] = []): { storage: Storage; writes: string[] } {
+/**
+ * 会记账的假远端：`write` / `remove` **真的**改内部集合，`exists` 据此回答。
+ *
+ * ⚠️ 早先这版 `exists` 只读构造时传入的白名单、不随 write/remove 变化 —— 于是
+ * 「prune 之后远端也没有了」那条断言**恒为 true**，恰好让最危险的远端删除侧零覆盖。
+ * 现在 `removes` 也记下来，可以直接断言「远端确实收到了删除」。
+ */
+function fakeRemote(existing: string[] = []): { storage: Storage; writes: string[]; removes: string[] } {
+  const present = new Set(existing)
   const writes: string[] = []
+  const removes: string[] = []
   return {
     writes,
+    removes,
     storage: {
       read: async () => {
         throw new Error('测试用假远端不支持 read')
       },
       write: async (key: string) => {
+        present.add(key)
         writes.push(key)
       },
-      remove: async () => {},
-      exists: async (key: string) => existing.includes(key),
+      remove: async (key: string) => {
+        present.delete(key)
+        removes.push(key)
+      },
+      exists: async (key: string) => present.has(key),
     },
   }
 }
@@ -121,6 +134,7 @@ describe('#61 pruneOrphans：只删孤儿、两侧都删、空库拒绝', () => 
     await expect(pruneOrphans(dir, fakeRemote().storage, new Set())).resolves.toEqual({
       candidates: [],
       remainingLocal: [],
+      remainingRemote: [],
     })
   })
 
@@ -130,64 +144,156 @@ describe('#61 pruneOrphans：只删孤儿、两侧都删、空库拒绝', () => 
     expect(assertPruneSafe(dir, new Set(['u1/live.png']))).toBe(2)
   })
 
-  it('【A1 反证】liveKeys 非空时不拒绝 —— 证明这道闸是「空库」而非「有孤儿」在触发', async () => {
-    seedTwo()
-    const r = await pruneOrphans(dir, fakeRemote().storage, new Set(['u1/live.png']))
-    expect(r.candidates).toEqual(['u1/deleted.png'])
-  })
-
-  it('【B1】只删孤儿：在册对象两侧都不动，孤儿两侧都删', async () => {
-    seedTwo()
-    const remote = fakeRemote()
-    await remote.storage.write('u1/deleted.png', Buffer.from('x')) // 桶里也有一份
-    const r = await pruneOrphans(dir, remote.storage, new Set(['u1/live.png']))
-
-    expect(r.candidates).toEqual(['u1/deleted.png'])
-    expect(r.remainingLocal).toEqual([])
-    expect(localExists('u1/deleted.png')).toBe(false)
-    expect(await remote.storage.exists('u1/deleted.png')).toBe(false)
-    // 在册对象一个不动
-    expect(localExists('u1/live.png')).toBe(true)
-  })
-
-  it('【B2】远端不可达不中断整批，本地那份照样删掉', async () => {
-    seedTwo()
-    const remote = {
-      read: async () => {
-        throw new Error('unreachable')
-      },
-      write: async () => {},
-      remove: async () => {
-        throw new Error('unreachable')
-      },
-      exists: async () => false,
-    } as Storage
-    await expect(pruneOrphans(dir, remote, new Set(['u1/live.png']))).resolves.toEqual({
-      candidates: ['u1/deleted.png'],
-      remainingLocal: [],
-    })
-    expect(localExists('u1/deleted.png')).toBe(false)
-  })
-
-  it('【B3】本地删不掉时如实报进 remainingLocal（不谎报「已清理」）', async () => {
-    seedTwo()
-    // 把孤儿的父目录设为只读 → unlinkSync 失败；localStorage.remove 吞掉异常，文件仍在
-    const parent = dirname(storagePathFor(dir, 'u1/deleted.png'))
-    chmodSync(parent, 0o555)
-    try {
-      const r = await pruneOrphans(dir, fakeRemote().storage, new Set(['u1/live.png']))
-      expect(r.candidates).toEqual(['u1/deleted.png'])
-      expect(r.remainingLocal).toEqual(['u1/deleted.png'])
-      expect(localExists('u1/deleted.png')).toBe(true)
-    } finally {
-      chmodSync(parent, 0o755) // 让 afterEach 的 rmSync 能删掉
+  /**
+   * 第 2 道闸：孤儿占比过高。
+   * 空库闸拦不住「liveKeys 非空但来自另一个/陈旧的库」—— 那时整份存储都会被判成孤儿。
+   */
+  describe('【A2 安全门】孤儿占比过高 → 拒绝，需 --force-prune 越过', () => {
+    /** 造 12 个对象：`liveCount` 个在册、其余为孤儿 */
+    function seedMany(liveCount: number): Set<string> {
+      const live = new Set<string>()
+      for (let i = 0; i < 12; i++) {
+        const key = `u1/k${i}.png`
+        const abs = storagePathFor(dir, key)
+        mkdirSync(dirname(abs), { recursive: true })
+        writeFileSync(abs, 'bytes')
+        if (i < liveCount) live.add(key)
+      }
+      return live
     }
+
+    it('孤儿 12/12（100%）→ 拒绝，且一个文件都没动', async () => {
+      const live = seedMany(0)
+      live.add('u1/other-lib.png') // 非空但一个都不在这份存储里 —— 正是「错库」的形态
+      await expect(pruneOrphans(dir, fakeRemote().storage, live)).rejects.toThrow(PruneRefusedError)
+      await expect(pruneOrphans(dir, fakeRemote().storage, live)).rejects.toThrow(/比例过高/)
+      expect(localExists('u1/k0.png')).toBe(true)
+      expect(localExists('u1/k11.png')).toBe(true)
+    })
+
+    it('⚠️ 越过：force 时照删（确认过库没错的人要能推进）', async () => {
+      const live = new Set(['u1/other-lib.png'])
+      seedMany(0)
+      const r = await pruneOrphans(dir, fakeRemote().storage, live, { force: true })
+      expect(r.candidates).toHaveLength(12)
+      expect(r.remainingLocal).toEqual([])
+      expect(localExists('u1/k0.png')).toBe(false)
+    })
+
+    it('孤儿 12/24（50%）→ 不拦（阈值是「严格大于」）', async () => {
+      const live = seedMany(12)
+      for (let i = 0; i < 12; i++) {
+        const key = `u1/extra${i}.png`
+        const abs = storagePathFor(dir, key)
+        mkdirSync(dirname(abs), { recursive: true })
+        writeFileSync(abs, 'bytes')
+      }
+      const r = await pruneOrphans(dir, fakeRemote().storage, live)
+      expect(r.candidates).toHaveLength(12)
+    })
+
+    it('孤儿只有 9 个（占比 100% 但未达最少个数）→ 不拦 —— 小规模清理不该被拦', async () => {
+      // liveKeys 必须非空（否则先被空库闸拦下）；指向别处即可，本用例只关心占比闸
+      const live = new Set(['u1/elsewhere.png'])
+      for (let i = 0; i < 9; i++) {
+        const key = `u1/s${i}.png`
+        const abs = storagePathFor(dir, key)
+        mkdirSync(dirname(abs), { recursive: true })
+        writeFileSync(abs, 'bytes')
+      }
+      const r = await pruneOrphans(dir, fakeRemote().storage, live)
+      expect(r.candidates).toHaveLength(9)
+    })
+
+    it('空库闸不可被 force 越过（错库必须拦住，不是「确认一下就能删」）', async () => {
+      seedTwo()
+      await expect(pruneOrphans(dir, fakeRemote().storage, new Set(), { force: true })).rejects.toThrow(/拒绝清理孤儿/)
+      expect(localExists('u1/deleted.png')).toBe(true)
+    })
   })
 
   it('【C2】搬迁路径不删任何对象 —— prune 是独立动作，不会顺带清东西', async () => {
     seedTwo()
     await runMigration(dir, fakeRemote().storage, undefined, new Set(['u1/live.png']))
     expect(localExists('u1/deleted.png')).toBe(true)
+  })
+})
+
+// ---------- #61：删任务时批量清对象（有界并发） ----------
+
+describe('#61 runBounded：并发度真的有界', () => {
+  it('并发度不超过上限，且全部跑完才 resolve', async () => {
+    let inFlight = 0
+    let peak = 0
+    let finished = 0
+    const items = Array.from({ length: 50 }, (_, i) => i)
+    await runBounded(items, 4, async () => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight -= 1
+      finished += 1
+    })
+    expect(peak).toBe(4) // 不是 50（全铺开）也不是 1（串行）
+    expect(finished).toBe(50)
+    expect(inFlight).toBe(0)
+  })
+
+  it('并发上限大于条目数时不会多开 worker，也不漏项', async () => {
+    const seen: number[] = []
+    await runBounded([1, 2, 3], 8, async (n) => {
+      seen.push(n)
+    })
+    expect(seen.sort()).toEqual([1, 2, 3])
+  })
+
+  it('空列表直接返回（不构造 worker）', async () => {
+    let called = false
+    await runBounded([], 4, async () => {
+      called = true
+    })
+    expect(called).toBe(false)
+  })
+})
+
+describe('#61 removeManyFromAllStorages：一批 key 都清掉', () => {
+  let dir: string
+  let store: MotifStore
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'motif-rmmany-'))
+    store = new MotifStore(join(dir, 'motif.db'))
+    ;(globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime = { store, dataDir: dir }
+  })
+  afterEach(() => {
+    delete (globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime
+    store.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  function seed(keys: string[]) {
+    for (const key of keys) {
+      const abs = storagePathFor(dir, key)
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, 'bytes')
+    }
+  }
+
+  it('超过并发上限的数量也全部删掉（50 个）', async () => {
+    const keys = Array.from({ length: 50 }, (_, i) => `u1/t/topics/t/messages/m/generated/${i}.png`)
+    seed(keys)
+    await removeManyFromAllStorages(keys, dir)
+    expect(keys.every((k) => !existsSync(storagePathFor(dir, k)))).toBe(true)
+  })
+
+  it('某个 key 的对象本来就不在也不报错（best-effort）', async () => {
+    seed(['u1/a.png'])
+    await expect(removeManyFromAllStorages(['u1/a.png', 'u1/missing.png'], dir)).resolves.toBeUndefined()
+    expect(existsSync(storagePathFor(dir, 'u1/a.png'))).toBe(false)
+  })
+
+  it('空数组是 no-op', async () => {
+    await expect(removeManyFromAllStorages([], dir)).resolves.toBeUndefined()
   })
 })
 
