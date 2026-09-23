@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRuntime } from '@/server/context'
+import { getRuntime, removeFromAllStorages } from '@/server/context'
 import { jsonError, readJson, requireUser } from '@/server/http'
 import { assertOwnedTopic, ServiceError } from '@/server/services'
 import { resolveSetting } from '@/server/settings'
@@ -49,8 +49,13 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
   try {
     const user = requireUser(req)
     const { id } = await params
-    assertOwnedTopic(getRuntime().store, user.id, id)
-    getRuntime().store.deleteTopic(id)
+    const { store, dataDir } = getRuntime()
+    assertOwnedTopic(store, user.id, id)
+    // ⚠️ 顺序：**先删行、再清对象**（#61）。行是真相 —— 行删掉了、对象没清干净只会留孤儿
+    // （搬迁会报出来）；反过来则会出现「行指向已不存在的对象」＝画布上的破图。
+    // deleteTopic 把画布图与暂存参考图的 key 一并给出；removeFromAllStorages 是 best-effort，不抛。
+    const keys = store.deleteTopic(id)
+    for (const key of keys) await removeFromAllStorages(key, dataDir)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)

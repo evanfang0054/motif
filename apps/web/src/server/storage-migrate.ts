@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { storagePathFor } from '@motif/db'
-import type { Storage } from './storage'
+import { createStorageFromConfig, type Storage } from './storage'
 
 /**
  * 本地 → 远端的一次性搬迁。CLI（`scripts/storage-migrate.mjs`）只是薄壳，
@@ -88,4 +88,87 @@ export async function runMigration(
     onProgress?.(done, plan.pending.length, key)
   }
   return { uploaded: done, skipped: plan.skipped.length, orphaned: plan.orphaned.length }
+}
+
+/** `pruneOrphans` 的结果。两侧语义不同，故意分开报，不合成一个「删了 N 个」。 */
+export interface PruneResult {
+  /** 本次判定为孤儿、并**尝试**删除的 key（本地与远端都尝试了一遍） */
+  candidates: string[]
+  /** 尝试之后**本地**仍存在的 key —— 远端不回查：不可达时会把全部误报成残留 */
+  remainingLocal: string[]
+}
+
+/**
+ * 清理孤儿被安全闸拦下时抛的错。
+ *
+ * 单独一个类型是为了让 CLI 能区分「拒绝执行」与「存储层故障」——
+ * 否则拒绝会走到通用兜底，打出一句「请检查端点、桶与凭据、网络可达性」的错提示，
+ * 把人往网络/凭据的方向带，而真正的原因是指错了库。
+ */
+export class PruneRefusedError extends Error {
+  readonly name = 'PruneRefusedError'
+}
+
+/**
+ * 清理孤儿前的**安全闸**（#61）：`liveKeys` 为空却扫到本地对象时抛错。
+ *
+ * 抽成独立函数是为了让 `--prune-orphans --dry-run` 也走同一道闸 —— 否则「连错库」时
+ * dry-run 会打出一份「全库对象都是孤儿」的清单，看着像正常输出，去掉 `--dry-run` 就清空了。
+ * 返回本地对象总数，省掉调用方再扫一次。
+ */
+export function assertPruneSafe(dataDir: string, liveKeys: ReadonlySet<string>): number {
+  const all = listLocalKeys(dataDir)
+  if (liveKeys.size === 0 && all.length > 0) {
+    throw new PruneRefusedError(
+      `拒绝清理孤儿：数据库里没有任何在册对象，本地却扫到 ${all.length} 个。` +
+        '这通常意味着 dataDir / 数据库文件指错了地方，而不是「所有对象都成了孤儿」。' +
+        '按孤儿删会把整个存储目录清空且不可恢复，故中止。请先确认配置指向正确的库。'
+    )
+  }
+  return all.length
+}
+
+/**
+ * 清掉孤儿对象（#61）：`planMigration` 只算不删，这里才是真正动手的地方。
+ *
+ * ⚠️ **这是删数据的运维动作**，故比搬迁多两道闸：
+ * 1. `assertPruneSafe` 的空库拒绝（见上）；
+ * 2. 只有显式传了 `--prune-orphans` 才会被调到（CLI 侧把关，见 `scripts/storage-migrate.mjs`）。
+ *
+ * 孤儿来源是**本地扫描**：`orphaned = listLocalKeys - liveKeys`。所以「只在桶里、本地没有副本」
+ * 的对象扫不出来 —— 搬迁是复制不是移动，正常流程下本地是超集，故这个限制只在有人手工删过本地
+ * 文件时才会碰到。
+ *
+ * 删除两侧都试，各自 best-effort（与 `removeFromAllStorages` 同语义）：单侧失败不中断整批，
+ * 真结果由 `remainingLocal` 如实回给调用方。
+ */
+export async function pruneOrphans(
+  dataDir: string,
+  remote: Storage,
+  liveKeys: ReadonlySet<string>,
+  onProgress?: (done: number, total: number, key: string) => void
+): Promise<PruneResult> {
+  assertPruneSafe(dataDir, liveKeys)
+
+  const { orphaned } = await planMigration(dataDir, remote, liveKeys)
+  const local = createStorageFromConfig({ STORAGE_DRIVER: 'local' }, dataDir)
+  let done = 0
+  for (const key of orphaned) {
+    try {
+      await local.remove(key)
+    } catch {
+      // 本地删失败：留着，由下面的 remainingLocal 如实报出来
+    }
+    try {
+      await remote.remove(key)
+    } catch {
+      // 远端可能不可达 —— 不该因此中断整批（与删除路径同语义）
+    }
+    done += 1
+    onProgress?.(done, orphaned.length, key)
+  }
+
+  const remainingLocal: string[] = []
+  for (const key of orphaned) if (await local.exists(key)) remainingLocal.push(key)
+  return { candidates: orphaned, remainingLocal }
 }

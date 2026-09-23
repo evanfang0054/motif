@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MotifStore } from '@motif/db'
+import { MotifStore, storagePathFor } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { enqueueGeneration, removeStagedReference, resolveStagedReferences, saveReferenceImage, ServiceError } from '@/server/services'
 
@@ -24,10 +24,14 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-staged-'))
   dataDir = join(dir, 'data')
   store = new MotifStore(join(dir, 't.db'))
+  // 存储层（resolveLocalStorage / resolveRemoteStorage）要经 getRuntime() 拿配置；
+  // 不注入的话它会懒建一个指向 cwd/.data 的 runtime —— 那会写到仓库目录里（#61 起删除路径也要走它）
+  ;(globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime = { store, dataDir }
   userId = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' }).id
   topicId = store.createTopic(userId, '任务A').id
 })
 afterEach(() => {
+  delete (globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime
   store.close()
   rmSync(dir, { recursive: true, force: true })
 })
@@ -64,10 +68,30 @@ describe('暂存参考图（上传不进画布）', () => {
   it('removeStagedReference：本人可删、幂等；删除后画布仍为空', async () => {
     const user = store.getUserById(userId)!
     const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
-    removeStagedReference(store, user, ref.id)
-    removeStagedReference(store, user, ref.id) // 幂等
+    await removeStagedReference(store, dataDir, user, ref.id)
+    await removeStagedReference(store, dataDir, user, ref.id) // 幂等
     expect(store.listReferenceUploads(topicId)).toEqual([])
     expect(store.listCanvasImages(topicId)).toEqual([])
+  })
+
+  it('⚠️ #61：删暂存参考要连**对象**一起清（旧实现只删行 → 文件永远留在盘上）', async () => {
+    const user = store.getUserById(userId)!
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png' })
+    const abs = storagePathFor(dataDir, ref.imageKey)
+    expect(existsSync(abs)).toBe(true)
+
+    await removeStagedReference(store, dataDir, user, ref.id)
+    expect(existsSync(abs)).toBe(false)
+  })
+
+  it('别人的暂存参考删不掉，且**对象仍在**（校验不过就不该动文件）', async () => {
+    const other = store.createUser({ name: 'x', email: 'x@e.com', passwordHash: 'x', role: 'user' })
+    const otherTopic = store.createTopic(other.id, '别人的任务').id
+    const ref = await saveReferenceImage(store, dataDir, other, otherTopic, { buffer: PNG, mimeType: 'image/png' })
+    const me = store.getUserById(userId)!
+    await expect(removeStagedReference(store, dataDir, me, ref.id)).rejects.toThrow(ServiceError)
+    expect(existsSync(storagePathFor(dataDir, ref.imageKey))).toBe(true)
+    expect(store.listReferenceUploads(otherTopic).length).toBe(1)
   })
 
   it('转正失败必须退额：扣了钱又没建消息时不能吞掉额度', async () => {

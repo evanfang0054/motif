@@ -28,7 +28,7 @@ import { buildImageKey, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
-import { resolveReadStorages, resolveStorage } from './context'
+import { removeFromAllStorages, resolveReadStorages, resolveStorage } from './context'
 import { createLlmFromConfig } from './llm'
 import { readImageWithFallback } from './storage'
 import { createPaymentGateway } from './payment'
@@ -535,13 +535,26 @@ export async function resolveStagedReferences(
   return out
 }
 
-/** 删除暂存参考（上传后反悔用）：校验归属 */
-export function removeStagedReference(store: MotifStore, user: User, id: string): void {
+/**
+ * 删除暂存参考（上传后反悔用）：校验归属。
+ *
+ * ⚠️ 必须**连对象一起清**（#61）：只删 `reference_uploads` 行会让那张图永远留在盘/桶里，
+ * 而且因为行已删、搬迁的 `liveKeys` 里也没有它，它会被当成孤儿一直挂着 —— 既不显示也不回收。
+ * 与 `saveReferenceImage` 对称（那边写对象，这边删对象）。
+ */
+export async function removeStagedReference(
+  store: MotifStore,
+  dataDir: string,
+  user: User,
+  id: string
+): Promise<void> {
   const ref = store.getReferenceUpload(id)
   if (!ref) return // 已不存在视为已删除（幂等）
   const topic = store.getTopic(ref.topicId)
   if (!topic || topic.userId !== user.id) throw new ServiceError(404, '参考图不存在。')
+  // 先删行再清对象：行是真相，清失败只留孤儿（搬迁会报出来）；反过来会留「行指向不存在的对象」
   store.deleteReferenceUpload(id)
+  await removeFromAllStorages(ref.imageKey, dataDir)
 }
 
 // ---------- billing / redeem ----------

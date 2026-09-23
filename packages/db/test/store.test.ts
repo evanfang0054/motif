@@ -81,6 +81,109 @@ describe('verification codes', () => {
   })
 })
 
+describe('#61 删除任务要交出**全部**待清理的对象 key', () => {
+  it('deleteTopic 同时返回画布图与暂存参考图的 key', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: null,
+      origin: 'generated',
+      name: 'g',
+      imageKey: 'users/u/topics/t/messages/m/generated/a.png',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 8,
+      height: 8,
+    })
+    store.insertReferenceUpload({
+      topicId: t.id,
+      userId: u.id,
+      name: 'r',
+      imageKey: 'users/u/topics/t/references/b.png',
+      mimeType: 'image/png',
+      bytes: 1,
+    })
+    // 另一任务的对象不该被算进来（否则删 A 会清掉 B 的图）
+    const other = store.createTopic(u.id, '别的')
+    store.insertReferenceUpload({
+      topicId: other.id,
+      userId: u.id,
+      name: 'x',
+      imageKey: 'users/u/topics/other/references/c.png',
+      mimeType: 'image/png',
+      bytes: 1,
+    })
+
+    expect(store.deleteTopic(t.id).sort()).toEqual([
+      'users/u/topics/t/messages/m/generated/a.png',
+      'users/u/topics/t/references/b.png',
+    ])
+    expect(store.getTopic(t.id)).toBeNull()
+    // 另一任务完好
+    expect(store.listReferenceUploads(other.id).length).toBe(1)
+  })
+
+  it('⚠️ 反证：只查 canvas_images 会漏掉暂存参考图（这正是 #61 的缺口）', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    store.insertReferenceUpload({
+      topicId: t.id,
+      userId: u.id,
+      name: 'r',
+      imageKey: 'users/u/topics/t/references/b.png',
+      mimeType: 'image/png',
+      bytes: 1,
+    })
+    const onlyCanvas = store.db.prepare('SELECT image_key FROM canvas_images WHERE topic_id = ?').all(t.id)
+    expect(onlyCanvas).toEqual([]) // 旧实现会返回空 → 对象永远留在盘上
+    expect(store.deleteTopic(t.id)).toEqual(['users/u/topics/t/references/b.png'])
+  })
+})
+
+describe('#61 listAllImageKeys 要并上暂存参考图', () => {
+  it('两张表都在册对象里；已删任务的对象不在', () => {
+    const u = seedUser()
+    const t = store.createTopic(u.id, 'T')
+    store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: null,
+      origin: 'generated',
+      name: 'g',
+      imageKey: 'k/canvas.png',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 8,
+      height: 8,
+    })
+    store.insertReferenceUpload({
+      topicId: t.id,
+      userId: u.id,
+      name: 'r',
+      imageKey: 'k/staged.png',
+      mimeType: 'image/png',
+      bytes: 1,
+    })
+    expect(store.listAllImageKeys().sort()).toEqual(['k/canvas.png', 'k/staged.png'])
+
+    // ⚠️ 关键：暂存参考图在册 → 不会被 storage:migrate --prune-orphans 当孤儿删掉
+    const doomed = store.createTopic(u.id, '要删的')
+    store.insertReferenceUpload({
+      topicId: doomed.id,
+      userId: u.id,
+      name: 'r2',
+      imageKey: 'k/doomed.png',
+      mimeType: 'image/png',
+      bytes: 1,
+    })
+    expect(store.listAllImageKeys()).toContain('k/doomed.png')
+    store.deleteTopic(doomed.id)
+    expect(store.listAllImageKeys()).not.toContain('k/doomed.png')
+  })
+})
+
 describe('topics & messages & canvas images', () => {
   it('任务创建 / 列表 / 重命名 / 删除', () => {
     const u = seedUser()

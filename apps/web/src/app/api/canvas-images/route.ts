@@ -34,7 +34,8 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   try {
     const user = requireUser(req)
     const refId = new URL(req.url).searchParams.get('refId') ?? ''
-    removeStagedReference(getRuntime().store, user, refId)
+    const { store, dataDir } = getRuntime()
+    await removeStagedReference(store, dataDir, user, refId)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)
