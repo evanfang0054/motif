@@ -21,6 +21,11 @@ interface AuthModalProps {
   mode: Mode
   onModeChange: (m: Mode) => void
   onClose: () => void
+  /**
+   * 找回密码**直达链接**带来的预填值（#21）：邮箱与验证码已由邮件链接给出，用户只需输新密码。
+   * 只当 useState 的**初值**用 —— 之后以弹窗内 state 为准，不受父组件重渲染影响。
+   */
+  prefill?: { email: string; code: string }
 }
 
 /** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
@@ -61,12 +66,13 @@ function PasswordInput({
 }
 
 /** 登录 / 注册 / 找回密码 三合一弹窗（原 AuthCard 表单逻辑零改动，外壳 Card → HeroUI Modal） */
-function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
+function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   const router = useRouter()
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  // 深链预填只写进初值：用户改过之后不该被父组件的重渲染覆盖回去
+  const [email, setEmail] = useState(prefill?.email ?? '')
   const [inviteCode, setInviteCode] = useState('')
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(prefill?.code ?? '')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -135,6 +141,9 @@ function AuthModal({ mode, onModeChange, onClose }: AuthModalProps) {
           })
           setNotice('密码已重置，请用新密码登录。')
           onModeChange('login')
+          // 深链落地后清掉 query：验证码不该继续留在地址栏与浏览器历史里
+          //（只在确实带过 reset 参数时才 replace，避免无谓地动历史记录）
+          if (new URLSearchParams(window.location.search).has('reset')) router.replace('/')
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '操作失败，请重试。')
