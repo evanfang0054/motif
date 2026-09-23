@@ -38,7 +38,13 @@ function WorkspaceModal({
       }}
     >
       <HeroModal.Container>
-        <HeroModal.Dialog aria-label={title} className={dialogClassName}>
+        {/* #78-1.4：补全对话框语义。
+            `role="dialog"` 其实由 HeroUI 的 Modal.Dialog → RAC Dialog → useDialog 默认给出（源码实证），
+            这里显式写出来是给后来人看「这是有意的」；**真正缺的是 `aria-modal`** ——
+            RAC 的 useDialog 注释说明它因 Safari 的一个焦点 bug 而刻意不写 aria-modal，
+            所以提示词库 / 充值弹层此前只有 role 没有 aria-modal（读屏无法感知「这是模态」）。
+            RAC 的 dialogProps 不含 aria-modal，mergeProps 会保留我们这一份。 */}
+        <HeroModal.Dialog role="dialog" aria-modal="true" aria-label={title} className={dialogClassName}>
           <HeroModal.Header>
             <HeroModal.Heading>{title}</HeroModal.Heading>
             <HeroModal.CloseTrigger aria-label="关闭" />

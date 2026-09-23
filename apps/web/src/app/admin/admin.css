@@ -275,9 +275,14 @@
   border-color: var(--danger);
 }
 
+/* 禁用态降透明度统一走 HeroUI 的语义令牌（#78-1.1）：不再各处硬编码 0.5。
+   ⚠️ `--disabled-opacity` 是**主题层**变量（@heroui/styles themes/default/variables.css 的
+   `:root { --disabled-opacity: 0.5 }`），换主题/升级后若缺失，整条 opacity 声明会**静默失效**，
+   故补 0.5 兜底。这里命中的都是原生 `<button class="admin-btn-*">`（非 HeroUI 控件），
+   与 HeroUI 自身的 `status-disabled` 不会落在同一个元素上。 */
 .admin-btn-primary:disabled,
 .admin-btn-danger:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 
@@ -475,9 +480,16 @@
   font-size: 13px;
 }
 
-.admin-actions button:disabled,
+/* 只对**原生**按钮 / 下拉生效（#78-1.1）。`.admin-actions` 里全是原生 `<button>` 与 `<select>`
+   —— 既有 `.admin-btn-*`，也有**不带类名的普通按钮**（如用户抽屉里的「取消」`<button disabled={busy}>`），
+   故不能按 `.admin-btn-*` 收窄（会漏掉普通按钮的禁用态）。排除按 HeroUI 的**真实类名**写：
+   `<Button>` 是 `.button`、`<Pagination>` 的翻页键是 `.pagination__link` —— 排除两者即「只留原生」。
+   （这两个类名今天在 `.admin-actions` 里不出现，排除目前不会触发；写出来是为了将来真塞进 HeroUI 控件时
+   不会与它的 `status-disabled` 重复声明。另：同一元素上的两条 `opacity` 由层叠决出唯一值、**不会相乘**，
+   0.5 × 0.5 = 0.25 只在父子各自设 opacity 时才成立。） */
+.admin-actions button:disabled:not(.button):not(.pagination__link),
 .admin-actions select:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 
@@ -545,8 +557,14 @@
   cursor: pointer;
 }
 
-.admin-pager button:disabled {
-  opacity: 0.5;
+/* `.admin-pager` 由 HeroUI `<Pagination>` 渲染，翻页键的类名是 `.pagination__link`（不是 `.button`），
+   HeroUI 自己已按 `status-disabled` 给禁用的翻页键降透明度（components/pagination.css，同一份
+   `--disabled-opacity`）—— 原先的 `:not(.button)` 排除不到它，是**空操作**（还让人误以为已排除）。
+   这里按**真实类名**排除：`.admin-pager` 今天只含 HeroUI 翻页键，本规则因而**当前匹配不到任何元素**，
+   保留它只是为了「将来真往分页里塞原生按钮时仍会被兜底」，并让选择器与语义一致。
+   （另：同一元素上的两条 `opacity` 由层叠决出唯一值、**不会相乘**，所以重复声明也不会变成 0.25。） */
+.admin-pager button:disabled:not(.pagination__link) {
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 

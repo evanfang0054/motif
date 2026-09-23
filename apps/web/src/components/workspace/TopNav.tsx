@@ -86,8 +86,11 @@ function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
         <div className="relative">
           <Popover isOpen={menuOpen} onOpenChange={setMenuOpen}>
             {/* Popover.Trigger 渲染的是真实 DOM 包装（Pressable > div[role=button]，popover.js 实证），
-                不像 Dropdown/Modal 那样 clone 子元素 → 复杂触发件（头像 + 文字 + 箭头）可以安全放进来 */}
-            <Popover.Trigger>
+                不像 Dropdown/Modal 那样 clone 子元素 → 复杂触发件（头像 + 文字 + 箭头）可以安全放进来。
+                ⚠️ `tabIndex={-1}`：RAC 的 Pressable 会给这个包装 div 补上 `tabindex="0"`（SSR 实证），
+                于是账号菜单占**两个** Tab 停靠点（外层无名的 div + 里层 button）。把它踢出 Tab 序，
+                只留里层带 `aria-label` 的 button 一个停靠点（#78-1.3）。 */}
+            <Popover.Trigger tabIndex={-1}>
               <Button variant="secondary" aria-label="账号菜单" className="max-w-[160px]">
                 <Avatar size="sm">
                   {user.avatarUrl ? <Avatar.Image src={user.avatarUrl} alt={user.name} /> : null}

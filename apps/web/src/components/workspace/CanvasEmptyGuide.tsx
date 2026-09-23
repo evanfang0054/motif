@@ -17,7 +17,9 @@ interface Props {
 }
 
 const STEPS: Array<{ title: string; desc: ReactNode }> = [
-  { title: '写提示词', desc: '在右侧表单里描述你要生成的图片；张数与尺寸也在那里选。' },
+  // 位置无关表述（#78-1.7）：窄屏下生成面板会折叠成顶部浮动条，
+  // 写死「右侧表单」会让移动端新用户找不到入口
+  { title: '写提示词', desc: '在生成表单里描述你要生成的图片；张数与尺寸也在那里选。' },
   { title: '可选：上传参考图', desc: '想让主体在整组图里保持一致就上传参考图。上传后只暂存，生成时才进画布。' },
   {
     title: '点「生成」',
@@ -78,7 +80,7 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
             打开提示词库
           </Button>
           <InlineText type="body-xs" style={{ color: 'var(--muted)' }}>
-            系统自带的 8 套模板提示词都在里面，挑一条填进右侧表单
+            系统自带的 8 套模板提示词都在里面，挑一条填进生成表单
           </InlineText>
         </div>
       </Surface>

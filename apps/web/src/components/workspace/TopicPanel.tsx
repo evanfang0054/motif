@@ -7,7 +7,7 @@ import { IconButton } from '@/components/ui/icon-button'
 import { InlineText } from '@/components/ui/typography'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { Topic } from '@motif/core'
-import { TOPIC_STATUS_LABEL } from '@motif/core'
+import { TOPIC_STATUS_LABEL, validateTopicTitle } from '@motif/core'
 
 interface Props {
   topics: Topic[]
@@ -39,6 +39,14 @@ interface Props {
 function TopicPanel(p: Props) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  /** 重命名的校验提示：空名/纯空格时给出提示并**保持表单打开**（#83-1.4） */
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  const startRename = (id: string, title: string) => {
+    setRenaming(id)
+    setRenameValue(title)
+    setRenameError(null)
+  }
 
   return (
     <div className="ws-panel">
@@ -67,13 +75,35 @@ function TopicPanel(p: Props) {
                 className="flex w-full flex-col gap-2"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  if (renameValue.trim()) p.onRename(t.id, renameValue.trim())
+                  // 空名/纯空格：给提示并**保持表单打开**，不静默关闭（#83-1.4）。
+                  // 服务端 PATCH 也是 trim 后非空这一条规则，校验口径与它对齐。
+                  const err = validateTopicTitle(renameValue)
+                  if (err) {
+                    setRenameError(err)
+                    return
+                  }
+                  p.onRename(t.id, renameValue.trim())
                   setRenaming(null)
+                  setRenameError(null)
                 }}
               >
-                <TextField aria-label="任务名称" className="w-full" value={renameValue} onChange={setRenameValue}>
+                <TextField
+                  aria-label="任务名称"
+                  className="w-full"
+                  value={renameValue}
+                  onChange={(v) => {
+                    setRenameValue(v)
+                    // 一旦开始改字就撤下提示：否则提示会停在屏幕上误导用户
+                    setRenameError(null)
+                  }}
+                >
                   <Input autoFocus onClick={(e) => e.stopPropagation()} />
                 </TextField>
+                {renameError && (
+                  <InlineText type="body-xs" role="alert" style={{ color: 'var(--danger-quiet)' }}>
+                    {renameError}
+                  </InlineText>
+                )}
                 <div className="flex gap-2">
                   <Button
                     type="submit"
@@ -92,6 +122,7 @@ function TopicPanel(p: Props) {
                     onClick={(e) => {
                       e.stopPropagation()
                       setRenaming(null)
+                      setRenameError(null)
                     }}
                   >
                     取消
@@ -109,8 +140,7 @@ function TopicPanel(p: Props) {
                     label="重命名任务"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setRenaming(t.id)
-                      setRenameValue(t.title)
+                      startRename(t.id, t.title)
                     }}
                   >
                     <Pencil />

@@ -936,8 +936,13 @@ html[data-theme="dark"] .lp-hero {
   color: var(--brand-warm);
 }
 
+/* 禁用态降透明度统一走 HeroUI 的语义令牌（#78-1.1）。上传格是原生 button（非 HeroUI 控件），
+   拿不到 `status-disabled` 工具类，故显式引用同一个变量而不是再写一个 0.5。
+   ⚠️ `--disabled-opacity` 是**主题层**变量（@heroui/styles 的 themes/default/variables.css
+   里 `:root { --disabled-opacity: 0.5 }`）；换主题或升级后若缺失，整条 opacity 声明会**静默失效**
+   （禁用态不再降透明度，且没有任何报错），故补 0.5 兜底。 */
 .ws-ref-add:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity, 0.5);
   cursor: not-allowed;
 }
 
