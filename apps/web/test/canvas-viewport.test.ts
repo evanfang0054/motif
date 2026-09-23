@@ -246,12 +246,21 @@ describe('toolbarBand（工具栏可用横向区间）', () => {
   })
 
   it('窄屏通栏抽屉整块跳过（#82 复审 S1：只开右抽屉时不能被压成 {0,12}）', () => {
-    // 窄屏 .ws-float-right 是 left:12 / right:12 / width:auto → 宽 ≈ 画布宽 - 24
+    // 窄屏 .ws-float-right 是 left:12 / right:12 / width:auto → 左右都贴边
     const drawer = { side: 'right' as const, left: 12, top: 400, width: HOST - 24, height: 300 }
     expect(toolbarBand(HOST, [drawer], TOOLBAR)).toEqual({ left: 0, right: HOST })
-    // 阈值是 60%：略窄于阈值仍按侧边面板算
-    const narrow = { side: 'right' as const, left: 800, top: 12, width: HOST * 0.5, height: 800 }
-    expect(toolbarBand(HOST, [narrow], TOOLBAR)).toEqual({ left: 0, right: 800 })
+    // 左抽屉同理
+    const leftDrawer = { side: 'left' as const, left: 12, top: 400, width: HOST - 24, height: 300 }
+    expect(toolbarBand(HOST, [leftDrawer], TOOLBAR)).toEqual({ left: 0, right: HOST })
+  })
+
+  it('判据是「左右都贴画布边」而不是宽度比例：够宽但不贴边的面板仍按侧边占位算', () => {
+    // 半屏宽的面板（左缘 800 远大于容差）—— 不是抽屉，必须扣掉
+    const half = { side: 'right' as const, left: 800, top: 12, width: HOST * 0.5, height: 800 }
+    expect(toolbarBand(HOST, [half], TOOLBAR)).toEqual({ left: 0, right: 800 })
+    // 只有一侧贴边（右侧留了 200）→ 也不是通栏
+    const lopsided = { side: 'right' as const, left: 12, top: 12, width: HOST - 212, height: 800 }
+    expect(toolbarBand(HOST, [lopsided], TOOLBAR)).toEqual({ left: 0, right: 12 })
   })
 
   it('与工具栏纵向不重叠的顶部浮动条不参与钳制（#82 复审 S7）', () => {

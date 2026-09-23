@@ -119,21 +119,28 @@ export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: 
 export const TOOLBAR_EDGE_GAP = 8
 
 /**
- * 「通栏抽屉」的宽度比例阈值：面板宽 ≥ 画布宽 × 本值就不算侧边占位。
+ * 「通栏」判定的边缘容差（px）：窄屏下两侧面板是 `left:12px; right:12px; width:auto` 的底部抽屉，
+ * 两侧各留 12 的内边距。取 24（而非 12）只是给「内边距将来调大一点」留余量。
  *
- * 窄屏（≤1023px）两侧面板都变成 `left:12px; right:12px; width:auto` 的底部抽屉（见 globals.css），
- * 它横跨整个画布、不构成左/右约束。若仍按侧边面板扣它，可用区间会塌成贴着**对侧**的一条窄缝
- * （只开右抽屉时是 `{0, 12}`），钳制反而把工具栏推到画布外被 `overflow:hidden` 裁掉。
+ * ⚠️ 判据刻意**不写成宽度比例**（例如「宽 ≥ 画布 60%」）：那种写法与面板实际宽度隐式耦合，
+ * 哪天面板加宽到超过阈值就会**静默反向**（真面板被当成抽屉跳过 → 工具栏直接压在面板上）。
+ * 「左右都贴到画布边」才是抽屉的**定义**，与面板多宽无关。
  */
-export const DRAWER_WIDTH_RATIO = 0.6
+export const DRAWER_EDGE_TOLERANCE = 24
 
-/** 面板的**容器内**矩形。由调用方量好（本模块不碰 DOM，见 `CanvasStage.measureToolbarBand`） */
+/** 面板的**容器内**矩形。由调用方量好（本模块不碰 DOM，见 `CanvasStage` 里的测量 effect） */
 export interface ToolbarPanelRect {
   side: 'left' | 'right'
   left: number
   top: number
   width: number
   height: number
+}
+
+/** 通栏（左右都贴着画布边）= 窄屏抽屉。它不是「侧边占位」，见 `DRAWER_EDGE_TOLERANCE` */
+function isFullWidthDrawer(p: ToolbarPanelRect, hostWidth: number): boolean {
+  if (hostWidth <= 0) return false
+  return p.left <= DRAWER_EDGE_TOLERANCE && p.left + p.width >= hostWidth - DRAWER_EDGE_TOLERANCE
 }
 
 /**
@@ -144,10 +151,14 @@ export interface ToolbarPanelRect {
  *
  * 三条规则：
  * ① 收起的面板不在 DOM 里（调用方 `querySelector` 就返回 null），宽高为 0 的跳过只是防御；
- * ② 通栏抽屉整块跳过（见 `DRAWER_WIDTH_RATIO`）；
+ * ② 通栏抽屉整块跳过（见 `isFullWidthDrawer`）；
  * ③ 与工具栏**纵向不重叠**的面板也跳过。宽屏下两侧面板是 `top:12px; bottom:64px` 的整列，
  *    纵向必然重叠、这条不生效；它真正管的是顶部那两条**收起态浮动条**（高 44、只在顶部）——
  *    不判纵向就会拿它去钳画布**底部**的工具栏，白白把工具栏挤到半边去。
+ *
+ * 已知取舍：画布窄到工具栏比区间还宽时（手机 + 选中首行图片），区间会被两侧收起条挤到比工具栏窄，
+ * 退化后必然与收起条部分重叠。此时工具栏 z-index 更高、自己的按钮仍可点，且取消选中即可恢复；
+ * 横向钳制无解，故不再为此加纵向分支。
  */
 export function toolbarBand(
   hostWidth: number,
@@ -158,7 +169,7 @@ export function toolbarBand(
   let right = hostWidth
   for (const p of panels) {
     if (p.width <= 0 || p.height <= 0) continue
-    if (hostWidth > 0 && p.width >= hostWidth * DRAWER_WIDTH_RATIO) continue
+    if (isFullWidthDrawer(p, hostWidth)) continue
     if (p.top >= toolbar.top + toolbar.height || p.top + p.height <= toolbar.top) continue
     if (p.side === 'left') left = Math.max(left, p.left + p.width)
     else right = Math.min(right, p.left)

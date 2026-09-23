@@ -70,6 +70,7 @@ const CLICK_THRESHOLD = 3
  *
  * 用 `querySelector` 读而不是把宽度传下来：宽度是 CSS 决定的（左 280 / 右 372，窄屏还是抽屉，
  * 收起条按内容自适应），硬编码一份就会在改样式时静默失配；而这里要的正是「它此刻实际占了多宽」。
+ * ⚠️ 前提是**页面里只有一份工作台**（这些类名是全局的，`document` 级查询会命中别的实例）。
  */
 const FLOAT_PANEL_SELECTORS: ReadonlyArray<readonly ['left' | 'right', string]> = [
   ['left', '.ws-float-left'],
@@ -78,8 +79,8 @@ const FLOAT_PANEL_SELECTORS: ReadonlyArray<readonly ['left' | 'right', string]> 
   ['right', '.ws-collapsed-right'],
 ]
 
-/** 量出各浮动元素的**容器内矩形**，交给 `@/lib/canvas/viewport` 的纯函数算可用区间 */
-function measureToolbarBand(el: HTMLElement, toolbarTop: number, toolbarHeight: number): { left: number; right: number } {
+/** 量出容器宽与各浮动元素的**容器内矩形**（交给 `@/lib/canvas/viewport` 的纯函数算可用区间） */
+function measureBandInput(el: HTMLElement): { width: number; panels: ToolbarPanelRect[] } {
   const host = el.getBoundingClientRect()
   const panels: ToolbarPanelRect[] = []
   for (const [side, sel] of FLOAT_PANEL_SELECTORS) {
@@ -88,7 +89,7 @@ function measureToolbarBand(el: HTMLElement, toolbarTop: number, toolbarHeight: 
     const r = panel.getBoundingClientRect()
     panels.push({ side, left: r.left - host.left, top: r.top - host.top, width: r.width, height: r.height })
   }
-  return toolbarBand(host.width, panels, { top: toolbarTop, height: toolbarHeight })
+  return { width: host.width, panels }
 }
 
 /**
@@ -625,6 +626,8 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
    * 只在「选中张数变化」时量一次：尺寸只随工具栏内容与字体变，不随缩放/平移变，
    * 跟着 viewport 量会在每次拖拽里读一次布局（强制重排）。
    * 单张与多选是两套按钮（多选还带「已选 N 张」），宽度不同 —— 都以张数为键，切换时自然重量。
+   * ⚠️ 测量发生在 `useEffect`（paint 之后），所以首帧与「1 ↔ N 切换」的那一帧用的是**旧值/裸锚点**，
+   * 下一帧才修正。改 `useLayoutEffect` 能消掉这一帧，但它在 SSR 下会告警，不值得。
    */
   const [toolbarBox, setToolbarBox] = useState({ w: 0, h: 0 })
   useEffect(() => {
@@ -633,22 +636,47 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
   }, [selectedImages.length])
 
   /**
+   * 容器宽 + 各浮动元素的占位。**必须有信号地重算**，不能只在选中张数变化时算一次：
+   * 面板开合会真实增删 `.ws-canvas` 的子节点、窗口缩放会改容器宽，两者都会改变可用区间 ——
+   * 不重算就会出现「钳过之后用户开了面板，工具栏又压在面板上」（#82 复审）。
+   * 故：`ResizeObserver` 盯容器（窗口/布局变化）+ `MutationObserver` 盯 `.ws-canvas` 的 childList
+   * （面板开合 = 直接子节点被换成收起条）。⚠️ 要盯的是 `.ws-canvas` 而不是 `containerRef` 的
+   * `parentElement` —— 面板是 `.ws-canvas` 的子节点，中间还隔着本组件的根 div，盯错了永远不触发。
+   * 两者都是低频事件，不会拖慢拖拽。
+   */
+  const [bandInput, setBandInput] = useState<{ width: number; panels: ToolbarPanelRect[] }>({ width: 0, panels: [] })
+  useEffect(() => {
+    const host = containerRef.current
+    if (!host) return
+    const measure = () => setBandInput(measureBandInput(host))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(host)
+    const shell = host.closest('.ws-canvas')
+    const mo = new MutationObserver(measure)
+    if (shell) mo.observe(shell, { childList: true })
+    return () => {
+      ro.disconnect()
+      mo.disconnect()
+    }
+  }, [])
+
+  /**
    * 工具栏位置 = 锚点 + **横向钳制**。单选与多选共用同一条路径。
    *
-   * 钳制的对象是「两侧浮动面板占掉之后剩下的横向区间」（见 `measureToolbarBand`）：被选图靠画布
+   * 钳制的对象是「两侧浮动面板占掉之后剩下的横向区间」（见 `toolbarBand`）：被选图靠画布
    * 右缘时，工具栏右半原本会伸进生成面板的矩形里，而那半边的按钮就点不动了（#82）。
    * 多选的包围盒更宽、工具栏也更宽，同样会被裁 —— 故两条路径都必须钳。
-   * `toolbarBox.w === 0`（首帧还没量到）时先按原锚点渲染，量到后同一次提交内就会修正。
+   * 尺寸/占位还没量到时先按原锚点渲染，量到后就会修正。
    */
   const toolbarStyle = useMemo(() => {
     if (selectedImages.length === 0) return undefined
     const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), viewport)
     if (!anchor) return undefined
-    const el = containerRef.current
-    if (!el || toolbarBox.w === 0) return anchor
-    const band = measureToolbarBand(el, anchor.top, toolbarBox.h)
-    return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarBox.w, band, el.clientWidth) }
-  }, [selectedImages, placements, viewport, toolbarBox])
+    if (toolbarBox.w === 0 || bandInput.width === 0) return anchor
+    const band = toolbarBand(bandInput.width, bandInput.panels, { top: anchor.top, height: toolbarBox.h })
+    return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarBox.w, band, bandInput.width) }
+  }, [selectedImages, placements, viewport, toolbarBox, bandInput])
 
   /**
    * 摆放矩形列表：`Object.values(placements)` 每次渲染都返回**新数组**，直接当 prop 传会击穿
