@@ -317,7 +317,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   // 长轮询 watch：任务状态变化时立即刷新（替代固定间隔轮询）
   useEffect(() => {
-    if (!activeId) return
+    // 会话已失效就不要再拉起 watch：接口只会一直 401（首个 401 后循环虽会自停，
+    // 但切任务会重新挂一轮、白跑一次请求）。判据与下方列表轮询的 `sessionExpired` 守卫一致。
+    if (!activeId || sessionExpired) return
     let stopped = false
     const ac = new AbortController()
     void (async () => {
@@ -369,7 +371,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       stopped = true
       ac.abort()
     }
-  }, [activeId, refreshDetail, refreshTopics])
+  }, [activeId, sessionExpired, refreshDetail, refreshTopics])
 
   /**
    * 任务列表级监看：切到别的任务后，在跑的那个任务结束了也要有回执。
@@ -439,7 +441,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
           showToast({ tone: 'danger', message: '登录已过期，请重新登录' })
           return
         }
-        showToast({ tone: 'danger', message: e instanceof Error ? e.message : '新任务创建失败，请重试' })
+        // ⚠️ 只有 ApiError（本仓自己的错误类型，message 是服务端给的中文）才透传原文；
+        // 离线时 fetch 直接 reject 出 `TypeError: Failed to fetch`（Safari 是 `Load failed`），
+        // `instanceof Error` 会把英文原文弹成 toast，违反「UI 文案一律中文」。
+        showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '新任务创建失败，请重试' })
       }
     },
     [refreshTopics]
@@ -492,7 +497,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         showToast({ tone: 'danger', message: '登录已过期，请重新登录', timeoutMs: 4000 })
         return
       }
-      const msg = e instanceof Error ? e.message : '提交失败，请重试。'
+      const msg = e instanceof ApiError ? e.message : '提交失败，请重试。'
       showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
       // 额度不足：光提示不够，直接把充值入口送到用户面前
       if (msg.includes('额度不足')) {
@@ -515,7 +520,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       await refreshUser()
       showToast({ tone: 'info', message: '已请求取消任务，正在停止后台生成。' })
     } catch (e) {
-      showToast({ tone: 'danger', message: e instanceof Error ? e.message : '取消失败' })
+      showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '取消失败' })
     }
   }, [detail, refreshDetail])
 
@@ -608,7 +613,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         }))
         showToast({ tone: 'info', message: '参考图已暂存，点「生成」后进入画布' })
       } catch (e) {
-        showToast({ tone: 'danger', message: e instanceof Error ? e.message : '上传失败' })
+        showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '上传失败' })
       }
     },
     [ensureTopic, panel.referenceIds.length]

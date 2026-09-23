@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { MessageStatus } from '../src/types'
 import {
   ACTIVE_MESSAGE_STATUS_VALUES,
+  ALLOWED_SIZES,
   COUNT_MAX,
   COUNT_MIN,
   PASSWORD_RULE_TEXT,
   PROMPT_MAX_LEN,
+  SIZE_RATIOS,
   clampCount,
   costFor,
   inviteRewardFor,
@@ -206,9 +208,10 @@ describe('custom size snap（#83-1.2）', () => {
   })
 
   it('非有限输入兜底到下限，不产出 NaN', () => {
-    const r = snapCustomSize('w', NaN, NaN)
-    expect(Number.isFinite(r.width)).toBe(true)
-    expect(Number.isFinite(r.height)).toBe(true)
+    // 钉住具体值而不只断言 isFinite：兜底口径（两轴都取 SIZE_MIN、比例落到 1:1）一旦被改坏，
+    // 只查 isFinite 会放行（比如把兜底改成 SIZE_MAX 也「有限」）。
+    expect(snapCustomSize('w', NaN, NaN)).toEqual({ width: 256, height: 256, ratio: '1:1' })
+    expect(snapCustomSize('h', Infinity, -Infinity)).toEqual({ width: 256, height: 256, ratio: '1:1' })
   })
 
   it('吸附结果永远能通过 validateSize', () => {
@@ -216,6 +219,23 @@ describe('custom size snap（#83-1.2）', () => {
       const r = snapCustomSize('w', w, 1024)
       expect(validateSize(`${r.width}x${r.height}`).ok, `${w}`).toBe(true)
     }
+  })
+})
+
+describe('size presets 一致性（ALLOWED_SIZES ↔ SIZE_RATIOS）', () => {
+  it('SIZE_RATIOS 由 ALLOWED_SIZES 推导：三档比例逐项一致', () => {
+    // SIZE_RATIOS 是**手抄**的三档比例，与 ALLOWED_SIZES 之间原本没有机械关联 ——
+    // 改了预设尺寸却忘了同步比例表，界面上的吸附档位就会与真实预设对不上。
+    // 这里从 ALLOWED_SIZES 推导出期望值（WxH 约分成 W:H）再逐项比对，把两者钉在一起。
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+    const derived = ALLOWED_SIZES.map((s) => {
+      const [w, h] = s.split('x').map(Number)
+      const g = gcd(w, h)
+      return { key: `${w / g}:${h / g}`, w: w / g, h: h / g }
+    })
+    expect(SIZE_RATIOS.map((r) => ({ key: r.key, w: r.w, h: r.h }))).toEqual(derived)
+    // 三档齐全且互不相同（漏一档或抄重都会在这里暴露）
+    expect(new Set(SIZE_RATIOS.map((r) => r.key)).size).toBe(SIZE_RATIOS.length)
   })
 })
 

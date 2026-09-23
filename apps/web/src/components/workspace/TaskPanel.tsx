@@ -151,6 +151,13 @@ function TaskPanel(p: Props) {
     el.style.height = `${Math.min(el.scrollHeight, PROMPT_MAX_H)}px`
   }, [p.prompt])
 
+  // `sizeNote` 的生命周期：**离开自定义尺寸即失效**。切到别的档、或点「新任务」把面板重置回
+  // 默认的 `auto`，旧回显（「已吸附到 3:2 · 1536×1024」）都不再对应当前尺寸；不清掉的话
+  // 再切回 `custom` 会看到上一轮的吸附结果复现，误导用户以为刚又吸附了一次。
+  useEffect(() => {
+    if (p.size !== 'custom') setSizeNote('')
+  }, [p.size])
+
   return (
     <div className="ws-panel">
       {/* 面板头（状态 + 新任务）**不参与滚动**：状态是「现在在发生什么」的读数，滚走就看不到了。
@@ -314,7 +321,14 @@ function TaskPanel(p: Props) {
                     // 键入即同步消耗文案：`onChange` 只在提交时触发（见上方说明），故读原生实时文本
                     onInput={(e) => {
                       const raw = e.currentTarget.value.trim()
-                      const n = raw === '' ? NaN : Number(raw)
+                      // 清空是「准备重输」的中间态（全选删除再敲新值）：此时立刻报红字纯属噪音，
+                      // 故空值既不报错也不改消耗文案（`liveCount` 归 null 回落到受控值）。
+                      if (raw === '') {
+                        setCountInvalid(false)
+                        setLiveCount(null)
+                        return
+                      }
+                      const n = Number(raw)
                       setCountInvalid(!Number.isFinite(n) || n < COUNT_MIN || n > COUNT_MAX)
                       setLiveCount(Number.isFinite(n) ? clampCount(n) : null)
                     }}
@@ -348,9 +362,16 @@ function TaskPanel(p: Props) {
                     HeroUI 的 enter 动画是 `animate-in duration-150 fade-in-0 zoom-in-90` 外加
                     placement 位移；缩放/位移会让底板与内容的绘制不同步（实测出现「文字先浮上来、
                     底板还没到」的幽灵字）。只留 150ms（≤200ms）的整块淡入 ⇒ 底板与内容同帧出现。
+                    ⚠️ 只声明 `fade-in-0` 是**不够**的：tw-animate-css 的 enter 关键帧读的是三个独立变量
+                    （`--tw-enter-opacity` / `--tw-enter-scale` / `--tw-enter-translate-x|y`），
+                    而 HeroUI 的 components 层已经按 `zoom-in-90` / `slide-in-from-*` 把 scale 与
+                    translate 设成了 .9 与方向位移（见 @heroui/styles popover.css 的 `[data-entering=true]`，
+                    编译产物里是 `--tw-enter-scale:.9`）。utilities 层不显式覆盖这三个变量，
+                    缩放与位移就会**原样保留**，等于白改。故这里用 `zoom-in-100` 把 scale 复位到 1、
+                    再用任意属性把两个 translate 复位到 0（`--percentage-100: 1` 由 tw-animate 主题给出）。
                     ⚠️ 这里是在 Dropdown.Popover 的**公开 className** 上换动画（HeroUI 官方
                     `dropdown/custom-styles` demo 同样在 Popover 上传 className），不是改组件内部样式。 */}
-                <Dropdown.Popover className="data-[entering=true]:animate-in data-[entering=true]:fade-in-0 data-[entering=true]:duration-150 data-[exiting=true]:animate-out data-[exiting=true]:fade-out data-[exiting=true]:duration-100">
+                <Dropdown.Popover className="data-[entering=true]:animate-in data-[entering=true]:fade-in-0 data-[entering=true]:zoom-in-100 data-[entering=true]:[--tw-enter-translate-x:0] data-[entering=true]:[--tw-enter-translate-y:0] data-[entering=true]:duration-150 data-[exiting=true]:animate-out data-[exiting=true]:fade-out data-[exiting=true]:duration-100">
                   <Dropdown.Menu
                     selectionMode="single"
                     selectedKeys={new Set([p.size])}
