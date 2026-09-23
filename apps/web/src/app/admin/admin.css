@@ -375,6 +375,10 @@
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
   margin-top: 14px;
+  /* ⚠️ 必须 start：grid 默认 `stretch` 会让同一行的卡片**等高**，于是「生成轮次」卡
+     因内嵌失败列表长到 ~456px 时，同行的用户/额度/订单卡被一起拉高，留下约 84% 空白（#79-1.2）。
+     改成 start 后每张卡按自身内容定高，不再被高卡带着走。 */
+  align-items: start;
 }
 
 .admin-card {
@@ -695,15 +699,19 @@
   gap: 10px;
   margin-top: 8px;
 }
+/* ⚠️ 64px 而不是 56px：HeroUI ProgressCircle 的 Track 默认 `size-7`（28px），
+   我们通过 Track 的 className 把它放大到 `size-16`（64px），包裹盒必须同尺寸，
+   否则覆盖文字会按包裹盒居中、与环错位。64px 环的内圈直径约 50px，
+   足够放下 12px 的「100.0%」（#79-1.2：此前文字压在环的左缘上）。 */
 .admin-ring-wrap {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
 }
 .admin-ring {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
 }
 .admin-ring-text {
   position: absolute;
@@ -713,6 +721,7 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1;
 }
 .admin-bar-row {
   display: flex;

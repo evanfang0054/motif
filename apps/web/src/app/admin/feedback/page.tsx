@@ -1,11 +1,13 @@
 'use client'
 import { formatDateTime } from '@/lib/format'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ListBox, Select, Table, Typography } from '@heroui/react'
-import { api, type AdminFeedbackRow } from '@/lib/client'
+import { api, type AdminFeedbackRow, type AdminUserBrief } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
+import { userBriefMap, userDisplayLabel } from '@/lib/admin-display'
+import { describeAdminError } from '@/lib/admin-error'
 
 type StatusFilter = '' | 'pending' | 'resolved'
 
@@ -13,6 +15,7 @@ const PAGE_SIZE = 20
 
 export default function AdminFeedbackPage() {
   const [items, setItems] = useState<AdminFeedbackRow[]>([])
+  const [users, setUsers] = useState<AdminUserBrief[]>([])
   const [total, setTotal] = useState(0)
   const [status, setStatus] = useState<StatusFilter>('')
   const [busy, setBusy] = useState(false)
@@ -22,15 +25,18 @@ export default function AdminFeedbackPage() {
   const [page, setPage] = useState(1)
   const { confirm, confirmElement } = useConfirm()
 
+  const userMap = useMemo(() => userBriefMap(users), [users])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const r = await api.adminListFeedback({ status: status || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
+      setUsers(r.users)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -49,7 +55,7 @@ export default function AdminFeedbackPage() {
       setMsg('已标记为已处理')
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '处理失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -86,12 +92,14 @@ export default function AdminFeedbackPage() {
         <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="反馈列表">
             <Table.Header>
-              <Table.Column isRowHeader>内容</Table.Column>
-              <Table.Column>提交用户</Table.Column>
-              <Table.Column>状态</Table.Column>
-              <Table.Column>处理人</Table.Column>
-              <Table.Column>提交时间</Table.Column>
-              <Table.Column>操作</Table.Column>
+              {/* 列宽（#79-1.1）：此前状态 chip 被压成 32×53px 竖条、「标记已处理」按钮一字一行、
+                  提交时间 98px 断成三行。给这几列最小宽后 chip 横排、按钮单行、时间不断行。 */}
+              <Table.Column isRowHeader minWidth={240}>内容</Table.Column>
+              <Table.Column minWidth={180}>提交用户</Table.Column>
+              <Table.Column minWidth={88}>状态</Table.Column>
+              <Table.Column minWidth={180}>处理人</Table.Column>
+              <Table.Column minWidth={168}>提交时间</Table.Column>
+              <Table.Column minWidth={120}>操作</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>
@@ -104,13 +112,23 @@ export default function AdminFeedbackPage() {
                 items.map((f) => (
                   <Table.Row key={f.id}>
                     <Table.Cell data-label="内容">{f.content}</Table.Cell>
-                    <Table.Cell className="admin-mono" data-label="提交用户">{f.userId}</Table.Cell>
+                    {/* 提交用户与处理人都显示「昵称（邮箱）」而不是裸 usr_ ID；摘要缺失时退回 ID。
+                        ID 收进 title（TableCell 自身不接受 title，故套一层 span） */}
+                    <Table.Cell data-label="提交用户">
+                      <span title={f.userId}>{userDisplayLabel(userMap.get(f.userId), f.userId)}</span>
+                    </Table.Cell>
                     <Table.Cell data-label="状态">
                       <span className={`admin-chip ${f.status === 'pending' ? 'is-unredeemed' : 'is-redeemed'}`}>
                         {f.status === 'pending' ? '待处理' : '已处理'}
                       </span>
                     </Table.Cell>
-                    <Table.Cell className="admin-mono" data-label="处理人">{f.resolvedBy ?? '—'}</Table.Cell>
+                    <Table.Cell data-label="处理人">
+                      {f.resolvedBy ? (
+                        <span title={f.resolvedBy}>{userDisplayLabel(userMap.get(f.resolvedBy), f.resolvedBy)}</span>
+                      ) : (
+                        '—'
+                      )}
+                    </Table.Cell>
                     <Table.Cell data-label="提交时间">{formatDateTime(f.createdAt)}</Table.Cell>
                     <Table.Cell data-label="操作">
                       {f.status === 'pending' ? (

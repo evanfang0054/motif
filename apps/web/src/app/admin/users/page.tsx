@@ -6,6 +6,7 @@ import type { User } from '@motif/core'
 import { api } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
+import { describeAdminError } from '@/lib/admin-error'
 
 type RoleFilter = '' | 'user' | 'admin' | 'root'
 type StatusFilter = '' | 'active' | 'disabled'
@@ -42,7 +43,11 @@ export default function AdminUsersPage() {
       setTotal(r.total)
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      // 失败时**清空旧数据与旧计数**：留着上一次的结果会让「筛选没生效」看起来像成功，
+      // 且错误态会与一份过期数据同时出现在页面上，误导运营。
+      setItems([])
+      setTotal(0)
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -69,7 +74,7 @@ export default function AdminUsersPage() {
       setAdjust(null)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '调整失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -89,7 +94,7 @@ export default function AdminUsersPage() {
       setMsg(next === 'disabled' ? `已禁用 ${u.name}` : `已启用 ${u.name}`)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '操作失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -105,7 +110,7 @@ export default function AdminUsersPage() {
       setMsg(`已把 ${u.name} 的角色改为「${ROLE_LABEL[next] ?? next}」`)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '改角色失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -119,7 +124,7 @@ export default function AdminUsersPage() {
       const r = await api.adminResetPassword(u.id)
       setReset({ name: u.name, password: r.password })
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '重置失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -130,14 +135,16 @@ export default function AdminUsersPage() {
       <Typography type="h1" className="admin-title">用户</Typography>
 
       <div className="admin-toolbar">
+        {/* 搜索三路命中：邮箱 / 昵称模糊匹配 + `usr_` ID 精确匹配（服务端 userWhere）。
+            加上 ID 是因为运营从反馈/审计里看到的正是裸 ID，原样贴进来必须能定位到人 */}
         <SearchField
-          aria-label="搜索邮箱或昵称"
+          aria-label="搜索邮箱 / 昵称 / ID"
           value={q}
           onChange={(v) => { setQ(v); setPage(1) }}
         >
           <SearchField.Group>
             <SearchField.SearchIcon />
-            <SearchField.Input placeholder="搜索邮箱或昵称" />
+            <SearchField.Input placeholder="搜索邮箱 / 昵称 / ID" />
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
@@ -170,87 +177,98 @@ export default function AdminUsersPage() {
             </ListBox>
           </Select.Popover>
         </Select>
-        <ListCount loading={loading} total={total} unit="个" />
+        {/* 错误态不显示数字：此时没有可信的 total，但保留计数位并写明「暂不可用」，
+            既不会误导成「共 0 个」，也不会让工具栏跳一下 */}
+        <ListCount loading={loading} total={total} unit="个" errored={!!err} />
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
-      {err && <div className="admin-alert-err" role="alert">{err}</div>}
 
-      <Table>
-        <Table.ScrollContainer className="admin-table-scroll">
-          <Table.Content aria-label="用户列表">
-            <Table.Header>
-              <Table.Column isRowHeader>邮箱</Table.Column>
-              <Table.Column>昵称</Table.Column>
-              <Table.Column>角色</Table.Column>
-              <Table.Column>状态</Table.Column>
-              <Table.Column>额度</Table.Column>
-              <Table.Column>操作</Table.Column>
-            </Table.Header>
-            <Table.Body
-              renderEmptyState={() =>
-                loading ? null : <ListEmptyContent text="（无匹配的用户）" />
-              }
-            >
-              {loading ? (
-                <ListLoadingRows cols={6} />
-              ) : (
-                items.map((u) => {
-                  const isSelf = me?.id === u.id
-                  const isRootTarget = u.role === 'root'
-                  return (
-                    <Table.Row key={u.id}>
-                      <Table.Cell className="admin-mono" data-label="邮箱">{u.email}</Table.Cell>
-                      <Table.Cell data-label="昵称">{u.name}</Table.Cell>
-                      <Table.Cell data-label="角色">
-                        <span className="admin-chip">{ROLE_LABEL[u.role] ?? u.role}</span>
-                      </Table.Cell>
-                      <Table.Cell data-label="状态">
-                        <span className={`admin-chip ${u.status === 'disabled' ? 'is-revoked' : 'is-redeemed'}`}>
-                          {u.status === 'disabled' ? '已禁用' : '正常'}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell data-label="额度">{u.credits}</Table.Cell>
-                      <Table.Cell data-label="操作">
-                        <div className="admin-actions">
-                          <button
-                            className="admin-btn-primary"
-                            disabled={busy || isSelf || (!isRoot && isRootTarget)}
-                            onClick={() => setAdjust({ user: u, delta: '', reason: '' })}
-                            title={isSelf ? '不可调整自己的额度' : undefined}
-                          >
-                            调额度
-                          </button>
-                          <button
-                            className="admin-btn-danger"
-                            disabled={busy || isSelf || (!isRoot && isRootTarget)}
-                            onClick={() => void toggleStatus(u)}
-                          >
-                            {u.status === 'disabled' ? '启用' : '禁用'}
-                          </button>
-                          {/* 改角色与重置密码是 root 独占：admin 登录时连控件都不渲染（服务端也会 403） */}
-                          {isRoot && (
-                            <>
-                              <select value={u.role} disabled={busy} onChange={(e) => void changeRole(u, e.target.value)}>
-                                <option value="user">普通用户</option>
-                                <option value="admin">管理员</option>
-                                <option value="root">超级管理员</option>
-                              </select>
-                              <button disabled={busy} onClick={() => void resetPassword(u)}>重置密码</button>
-                            </>
-                          )}
-                        </div>
-                      </Table.Cell>
-                    </Table.Row>
-                  )
-                })
-              )}
-            </Table.Body>
-          </Table.Content>
-        </Table.ScrollContainer>
-      </Table>
+      {err ? (
+        // 错误态：中文文案 + 重试入口（此前会把英文响应体原样弹出、且表格留着旧数据/旧计数）
+        <div className="admin-alert-err flex items-center justify-between gap-3" role="alert">
+          <span>{err}</span>
+          <button className="admin-btn-primary" disabled={loading} onClick={() => void load()}>重试</button>
+        </div>
+      ) : (
+        <>
+          <Table>
+            <Table.ScrollContainer className="admin-table-scroll">
+              <Table.Content aria-label="用户列表">
+                <Table.Header>
+                  <Table.Column isRowHeader minWidth={200}>邮箱</Table.Column>
+                  <Table.Column minWidth={120}>昵称</Table.Column>
+                  <Table.Column minWidth={88}>角色</Table.Column>
+                  <Table.Column minWidth={88}>状态</Table.Column>
+                  <Table.Column minWidth={72}>额度</Table.Column>
+                  <Table.Column minWidth={260}>操作</Table.Column>
+                </Table.Header>
+                <Table.Body
+                  renderEmptyState={() =>
+                    loading ? null : <ListEmptyContent text="（无匹配的用户）" />
+                  }
+                >
+                  {loading ? (
+                    <ListLoadingRows cols={6} />
+                  ) : (
+                    items.map((u) => {
+                      const isSelf = me?.id === u.id
+                      const isRootTarget = u.role === 'root'
+                      return (
+                        <Table.Row key={u.id}>
+                          <Table.Cell className="admin-mono" data-label="邮箱">{u.email}</Table.Cell>
+                          <Table.Cell data-label="昵称">{u.name}</Table.Cell>
+                          <Table.Cell data-label="角色">
+                            <span className="admin-chip">{ROLE_LABEL[u.role] ?? u.role}</span>
+                          </Table.Cell>
+                          <Table.Cell data-label="状态">
+                            <span className={`admin-chip ${u.status === 'disabled' ? 'is-revoked' : 'is-redeemed'}`}>
+                              {u.status === 'disabled' ? '已禁用' : '正常'}
+                            </span>
+                          </Table.Cell>
+                          <Table.Cell data-label="额度">{u.credits}</Table.Cell>
+                          <Table.Cell data-label="操作">
+                            <div className="admin-actions">
+                              <button
+                                className="admin-btn-primary"
+                                disabled={busy || isSelf || (!isRoot && isRootTarget)}
+                                onClick={() => setAdjust({ user: u, delta: '', reason: '' })}
+                                title={isSelf ? '不可调整自己的额度' : undefined}
+                              >
+                                调额度
+                              </button>
+                              <button
+                                className="admin-btn-danger"
+                                disabled={busy || isSelf || (!isRoot && isRootTarget)}
+                                onClick={() => void toggleStatus(u)}
+                              >
+                                {u.status === 'disabled' ? '启用' : '禁用'}
+                              </button>
+                              {/* 改角色与重置密码是 root 独占：admin 登录时连控件都不渲染（服务端也会 403） */}
+                              {isRoot && (
+                                <>
+                                  <select value={u.role} disabled={busy} onChange={(e) => void changeRole(u, e.target.value)}>
+                                    <option value="user">普通用户</option>
+                                    <option value="admin">管理员</option>
+                                    <option value="root">超级管理员</option>
+                                  </select>
+                                  <button disabled={busy} onClick={() => void resetPassword(u)}>重置密码</button>
+                                </>
+                              )}
+                            </div>
+                          </Table.Cell>
+                        </Table.Row>
+                      )
+                    })
+                  )}
+                </Table.Body>
+              </Table.Content>
+            </Table.ScrollContainer>
+          </Table>
 
-      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+          <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
+        </>
+      )}
 
       <Drawer.Backdrop isOpen={adjust !== null} onOpenChange={(o) => { if (!o) setAdjust(null) }}>
         <Drawer.Content placement="right">

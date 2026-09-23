@@ -16,7 +16,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const { store } = getRuntime()
     const total = store.countFeedback({ status })
     const items = store.listFeedback({ status, limit: pageSize, offset: (page - 1) * pageSize })
-    return NextResponse.json({ items, total, page, pageSize })
+    // 附带昵称/邮箱映射：提交用户与处理人两列都是裸 `usr_` ID，都要能显示成人。
+    // 一次把两列引用的 id 一起解析，避免为「处理人」再查一遍。
+    const users = store.listUserBriefs(items.flatMap((r) => [r.userId, r.resolvedBy ?? '']))
+    return NextResponse.json({ items, total, page, pageSize, users })
   } catch (e) {
     return jsonError(e)
   }

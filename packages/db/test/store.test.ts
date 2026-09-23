@@ -743,6 +743,7 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     expect(o.generations.topErrors[0]).toEqual({ error: '网关 502：上游拒绝', count: 1 })
 
     // 订单 / CDK / 反馈
+    expect(o.orders.total).toBe(1)
     expect(o.orders.paid).toBe(1)
     expect(o.orders.pending).toBe(0)
     // 金额按币种分组：跨币种求和会得出没有意义的数，所以结构是数组而不是单个数字

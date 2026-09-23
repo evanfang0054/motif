@@ -10,7 +10,8 @@ import { PromptSourcePanel } from '@/components/admin/PromptSourcePanel'
 import { useConfirm } from '@/components/admin/confirm'
 import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible, storageFieldVisible } from '@/lib/setting-visibility'
-import { enumOptionItems, pickUpdates } from '@/lib/settings-draft'
+import { enumDisplayValue, enumOptionItems, pickUpdates } from '@/lib/settings-draft'
+import { describeAdminError } from '@/lib/admin-error'
 
 const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   generation: '生图网关',
@@ -60,7 +61,7 @@ export default function AdminSettingsPage() {
       setDirty({})
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -93,7 +94,7 @@ export default function AdminSettingsPage() {
       window.scrollTo({ top: 0, behavior: 'smooth' }) // 危险区在长页底部，滚回顶部让结果提示可见
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '保存失败')
+      setErr(describeAdminError(e))
     } finally {
       setSaving(false)
     }
@@ -110,27 +111,38 @@ export default function AdminSettingsPage() {
       )
     }
     if (item.kind === 'enum') {
-      const current = dirty[item.key] ?? item.value ?? ''
+      // 草稿优先；无草稿时回显**生效值** —— 未显式设置的枚举（如 MOTIF_MAILER / STORAGE_DRIVER）
+      // 此前只显示占位符「选择一个项目」，管理员无法判断是「未设置走默认」还是「已设置没回显」。
+      // 这里补上默认值并用 fromDefault 标注，让两种状态可分辨（#79-1.3）。
+      const drafted = dirty[item.key]
+      const display = drafted !== undefined ? { value: drafted || null, fromDefault: false } : enumDisplayValue(item)
       return (
-        <Select
-          aria-label={item.label}
-          value={current || null}
-          onChange={(v) => setField(item.key, (v as string) ?? '')}
-        >
-          <Select.Trigger>
-            <Select.Value />
-            <Select.Indicator />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              {enumOptionItems(item.options).map((o) => (
-                <ListBox.Item key={`${item.key}-${o.id}`} id={o.id} textValue={o.label}>
-                  {o.label}
-                </ListBox.Item>
-              ))}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        <>
+          <Select
+            aria-label={item.label}
+            value={display.value}
+            onChange={(v) => setField(item.key, (v as string) ?? '')}
+          >
+            <Select.Trigger>
+              <Select.Value />
+              <Select.Indicator />
+            </Select.Trigger>
+            <Select.Popover>
+              <ListBox>
+                {enumOptionItems(item.options).map((o) => (
+                  <ListBox.Item key={`${item.key}-${o.id}`} id={o.id} textValue={o.label}>
+                    {o.label}
+                  </ListBox.Item>
+                ))}
+              </ListBox>
+            </Select.Popover>
+          </Select>
+          {display.fromDefault && (
+            <Typography type="body" className="admin-field-hint" data-slot="enum-default-hint">
+              未显式设置，当前按默认「{display.value}」生效；选其它值后点「保存」即可覆盖。
+            </Typography>
+          )}
+        </>
       )
     }
     if (item.kind === 'boolean') {
@@ -295,7 +307,7 @@ export default function AdminSettingsPage() {
                       : { ok: true, text: `测试邮件已通过 ${r.via} 渠道发出，请查收。` }
                   )
                 } catch (e) {
-                  setTestResult({ ok: false, text: e instanceof Error ? e.message : '发送失败' })
+                  setTestResult({ ok: false, text: describeAdminError(e) })
                 } finally {
                   setTesting(false)
                 }

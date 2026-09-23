@@ -4,14 +4,22 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Link, Spinner, Table, Typography } from '@heroui/react'
 import { ArrowRotateLeft, ArrowRotateRight, ArrowUpRightFromSquare } from '@gravity-ui/icons'
 import { api, type AdminPromptSource } from '@/lib/client'
+import { formatDateTime } from '@/lib/format'
+import { describeAdminError } from '@/lib/admin-error'
 import { ListEmptyContent, ListLoadingRows } from './ListUi'
 import { showToast } from '@/components/ui/toast'
 
-/** 时间戳展示：空值给「—」而不是 Invalid Date */
+/**
+ * 时间戳展示：统一走 `formatDateTime`。
+ *
+ * 此前用 `toLocaleString()`，输出是 `2026/9/23 15:24:29`（斜杠、月日不补零），
+ * 与全站其它管理页的 `2026-09-23 15:29:42` 不一致（#79-1.4）；且 `toLocaleString`
+ * 的输出随运行环境 locale 漂移，同一页在不同机器上可能长得不一样。
+ */
 function fmtTime(value: string | null): string {
   if (!value) return '—'
-  const t = new Date(value)
-  return Number.isNaN(t.getTime()) ? '—' : t.toLocaleString()
+  // formatDateTime 对无法解析的输入会**原样返回**；这里保持旧口径给「—」，不让脏数据冒充时间
+  return Number.isNaN(new Date(value).getTime()) ? '—' : formatDateTime(value)
 }
 
 /**
@@ -35,7 +43,7 @@ function PromptSourcePanel() {
       setSources(r.sources)
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加载失败')
+      setError(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -60,7 +68,7 @@ function PromptSourcePanel() {
             : `已刷新 ${successCount} 个源、共 ${total} 条`,
       })
     } catch (e) {
-      setError(e instanceof Error ? e.message : '刷新失败')
+      setError(describeAdminError(e))
     } finally {
       setRefreshing(false)
     }

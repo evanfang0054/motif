@@ -1,10 +1,11 @@
 'use client'
 import { formatDateTime, formatMoney } from '@/lib/format'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ListBox, SearchField, Select, Table, Typography } from '@heroui/react'
 import { api, type AdminOrder } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
+import { describeAdminError } from '@/lib/admin-error'
 
 const PAGE_SIZE = 20
 
@@ -22,6 +23,9 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
 
+  // 当页出现的币种集合：>1 时说明历史改过币种配置，列表是混排的
+  const currencies = useMemo(() => [...new Set(items.map((o) => o.currency))], [items])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -30,7 +34,7 @@ export default function AdminOrdersPage() {
       setTotal(r.total)
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -46,6 +50,13 @@ export default function AdminOrdersPage() {
       <Typography type="body" className="admin-muted">
         订单为只读记录。当前唯一支付路径是模拟收银台，「已支付」不等于真实收款。
       </Typography>
+      {/* 币种是后台可配的（BILLING_CURRENCY），改过配置后历史订单会留下别的币种。
+          混排时单看金额符号容易误读，这里显式说明当前页含哪些币种 */}
+      {currencies.length > 1 && (
+        <Typography type="body" className="admin-muted">
+          本页含 {currencies.length} 种币种（{currencies.map((c) => c.toUpperCase()).join(' / ')}）—— 币种配置改过，历史订单保留原币种，金额不可跨币种相加。
+        </Typography>
+      )}
 
       <div className="admin-toolbar">
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
@@ -63,10 +74,10 @@ export default function AdminOrdersPage() {
             </ListBox>
           </Select.Popover>
         </Select>
-        <SearchField aria-label="按用户 ID 筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
+        <SearchField aria-label="按用户筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
           <SearchField.Group>
             <SearchField.SearchIcon />
-            <SearchField.Input placeholder="按用户 ID 筛选" />
+            <SearchField.Input placeholder="按用户邮箱 / 昵称 / ID" />
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
@@ -79,13 +90,15 @@ export default function AdminOrdersPage() {
         <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="订单列表">
             <Table.Header>
-              <Table.Column isRowHeader>订单号</Table.Column>
-              <Table.Column>套餐</Table.Column>
-              <Table.Column>额度</Table.Column>
-              <Table.Column>金额</Table.Column>
-              <Table.Column>状态</Table.Column>
-              <Table.Column>创建时间</Table.Column>
-              <Table.Column>支付时间</Table.Column>
+              <Table.Column isRowHeader minWidth={200}>订单号</Table.Column>
+              <Table.Column minWidth={120}>套餐</Table.Column>
+              <Table.Column minWidth={72}>额度</Table.Column>
+              {/* 币种单列：混排时它是唯一的「分组标识」，只看 ¥ / HK$ 符号容易看漏 */}
+              <Table.Column minWidth={72}>币种</Table.Column>
+              <Table.Column minWidth={120}>金额</Table.Column>
+              <Table.Column minWidth={88}>状态</Table.Column>
+              <Table.Column minWidth={168}>创建时间</Table.Column>
+              <Table.Column minWidth={168}>支付时间</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>
@@ -93,13 +106,14 @@ export default function AdminOrdersPage() {
               }
             >
               {loading ? (
-                <ListLoadingRows cols={7} />
+                <ListLoadingRows cols={8} />
               ) : (
                 items.map((o) => (
                   <Table.Row key={o.id}>
                     <Table.Cell className="admin-mono" data-label="订单号">{o.id}</Table.Cell>
                     <Table.Cell data-label="套餐">{o.packageId}</Table.Cell>
                     <Table.Cell data-label="额度">{o.credits}</Table.Cell>
+                    <Table.Cell className="admin-mono" data-label="币种">{(o.currency ?? '').toUpperCase() || '—'}</Table.Cell>
                     {/* amountTotal 以「分」存储（868 = HK$8.68），符号与小数位由 lib/format 统一决定 */}
                     <Table.Cell data-label="金额">{formatMoney(o.amountTotal, o.currency)}</Table.Cell>
                     <Table.Cell data-label="状态"><span className="admin-chip">{STATUS_LABEL[o.status] ?? o.status}</span></Table.Cell>
