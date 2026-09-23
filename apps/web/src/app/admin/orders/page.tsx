@@ -48,16 +48,18 @@ export default function AdminOrdersPage() {
       </p>
 
       <div className="admin-toolbar">
-        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as string) ?? ''); setPage(1) }}>
+        {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
+            「全部」用哨兵 `all`，在 onChange 边界映射回 `''`（空串 id 不被 React Aria 接受）。 */}
+        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as string)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
-              <ListBox.Item key="status-pending" id="status-pending">待支付</ListBox.Item>
-              <ListBox.Item key="status-paid" id="status-paid">已支付</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+              <ListBox.Item key="pending" id="pending">待支付</ListBox.Item>
+              <ListBox.Item key="paid" id="paid">已支付</ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>

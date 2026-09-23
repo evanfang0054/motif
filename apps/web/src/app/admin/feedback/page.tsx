@@ -60,16 +60,19 @@ export default function AdminFeedbackPage() {
       <h1 className="admin-title">反馈</h1>
 
       <div className="admin-toolbar">
-        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as StatusFilter) ?? ''); setPage(1) }}>
+        {/* ⚠️ HeroUI v3 的 Select 建在 React Aria 上，`value` 就是 `ListBox.Item` 的 id ——
+            id 必须**等于要回传给接口的值**（裸值），否则接口白名单判非法后静默降级为「不过滤」。
+            「全部状态」用哨兵 `all`（React Aria 不接受空串 id），在 onChange 边界映射回 `''`。 */}
+        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
-              <ListBox.Item key="status-pending" id="status-pending">待处理</ListBox.Item>
-              <ListBox.Item key="status-resolved" id="status-resolved">已处理</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+              <ListBox.Item key="pending" id="pending">待处理</ListBox.Item>
+              <ListBox.Item key="resolved" id="resolved">已处理</ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>

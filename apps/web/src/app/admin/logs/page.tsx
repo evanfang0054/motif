@@ -83,16 +83,18 @@ export default function AdminLogsPage() {
       <p className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</p>
 
       <div className="admin-toolbar">
-        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as string) ?? ''); setPage(1) }}>
+        {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值
+            （动态项也要去掉 `status-` 前缀）；「全部」用哨兵 `all`，在 onChange 边界映射回 `''`。 */}
+        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as string)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
               {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                <ListBox.Item key={`status-${k}`} id={`status-${k}`}>{v}</ListBox.Item>
+                <ListBox.Item key={k} id={k}>{v}</ListBox.Item>
               ))}
             </ListBox>
           </Select.Popover>

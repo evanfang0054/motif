@@ -143,17 +143,19 @@ export default function AdminCdksPage() {
       </div>
 
       <div className="admin-toolbar">
-        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as StatusFilter) ?? ''); setPage(1) }}>
+        {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
+            「全部」用哨兵 `all`，在 onChange 边界映射回 `''`（空串 id 不被 React Aria 接受）。 */}
+        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
-              <ListBox.Item key="status-unredeemed" id="status-unredeemed">未兑换</ListBox.Item>
-              <ListBox.Item key="status-redeemed" id="status-redeemed">已兑换</ListBox.Item>
-              <ListBox.Item key="status-revoked" id="status-revoked">已作废</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+              <ListBox.Item key="unredeemed" id="unredeemed">未兑换</ListBox.Item>
+              <ListBox.Item key="redeemed" id="redeemed">已兑换</ListBox.Item>
+              <ListBox.Item key="revoked" id="revoked">已作废</ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
