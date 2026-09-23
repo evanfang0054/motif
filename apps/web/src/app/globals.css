@@ -112,9 +112,37 @@ html[data-theme="dark"] {
  * HeroUI 令牌桥接（把 DESIGN.md 的语义色映射到 HeroUI 的组件变量）：
  * @heroui/styles 的 -hover/-soft/-soft-foreground 家族均由基令牌 color-mix 派生，
  * 因此这里只覆盖基令牌；同名项目令牌（--background/--foreground/--danger 等定义于上方）
- * 按「后定义者胜」级联自动成为 HeroUI 组件取值（正向桥接）。
+ * 自动成为 HeroUI 组件取值（正向桥接）。⚠️ 起作用的**不是**「后定义者胜」而是**分层**：
+ * HeroUI 的变量全写在 `@layer theme` / `@layer base` 里（`@heroui/styles/dist/index.css` 的
+ * `@import ... layer(...)`），本文件的规则未分层 —— 未分层样式恒胜分层样式，与顺序/特异性无关。
  * --accent 是唯一无项目对应的品牌语义色：HeroUI 默认蓝紫，改接珊瑚。
- * 亮暗同值 #cc785c：暗下对最深表面 5.47:1 已达标，提亮反而降低珊瑚底奶白文字对比。
+ * ⚠️ 它**不再等于**品牌珊瑚 `--brand-warm`（#cc785c）：主按钮文字走 HeroUI 的
+ * `--button-fg: var(--accent-foreground)`（默认 `--snow` ≈ #fcfcfc），而 #cc785c 配它只有 **3.19:1**，
+ * 低于正文 AA 4.5（issue #72）。按「文字压深或底色压深」的方向性，这里把**底色**压深到 #b05a38
+ * （对 #fcfcfc 实测 4.69）。
+ * 连带影响（实测，别当成「顺带全都变好」）：
+ *   · `--brand-warm` 本身不动，项目侧仍消费它（`--field-border-focus` 输入框聚焦边框、landing 装饰、
+ *     拖拽高亮等）。但 **HeroUI 组件的 focus ring 走 `--focus: var(--accent)`**（variables.css:116/248），
+ *     聚焦环也跟着走：亮色反而**变好**（原本对 6 个亮色表面是 2.50–3.11，其中 4 个未达非文字 3:1；
+ *     现 3.67–4.57），暗色**变差**（对 --surface-hover 3.09 · --surface-tertiary 2.74 · --surface-active 2.76，
+ *     跌破 3:1）—— 故暗色块把 `--focus` 显式接回 `--brand-warm`（= 改动前的取值 4.54/4.02/4.05）。
+ *   · **`secondary` 变体的 Button**（`variant="secondary"`，全站 ~48 处）文字走
+ *     `--button-fg: var(--accent-soft-foreground)`、底走 `--default`（button.css:104-107）——
+ *     文字同样是 `--accent` 的 color-mix 派生，所以一并被波及：亮色 4.83 → **6.44**（变好）、
+ *     暗色 6.41 → **4.96**（回落，仍在 AA 之上）。
+ *     ⚠️ `--accent-soft*` 的派生**亮暗参数不同**（亮 `70:30`、`--accent-soft` 15%；暗 `80:30`、12%）——
+ *     别拿一套参数套两套主题去算，本行数字就是踩过这个坑后重算的。
+ *   · checkbox 选中态的底 / switch 打开态的轨道就是 `--accent`（checkbox.css:152 / switch.css），
+ *     对勾与滑块仍是近白 `--accent-foreground` —— 所以**颜色不翻转，但这对配合同主按钮一起
+ *     从 3.19 → 4.69**（是改善）。
+ *   · 进度/仪表类的**填充色**也是 `--accent`（progress-bar/progress-circle/meter/spinner），
+ *     对轨道 `--default` 的对比：亮色 2.75 → 4.04（变好）、暗色 4.55 → **3.10**（回落，非文字阈值 3:1，仍过）。
+ *   · 项目侧还有一处直接消费 `var(--accent)`：`MiniMap` 的视口框（`MiniMap.tsx:125-126`）。
+ *     ⚠️ 它落在小地图容器上，底是 `--surface-primary`（**不是**画布色，MiniMap.tsx:87）：
+ *     亮色 3.11 → 4.57（变好）、暗色 5.09 → **3.47**（回落，非文字阈值 3:1，仍过）。
+ * 同时必须显式定 `--accent-hover`：HeroUI 默认把它算成 `color-mix(--accent 90%, --accent-foreground 10%)`
+ * —— **往浅色混**，静止态达标了 hover 反而掉到 3.91；改接品牌已有的 `--brand-warm-hover`（4.93，方向也回到
+ * 「hover 变深」的惯例）。
  * --danger 保持双角色：按钮底色沿用上方 --danger（白字对比更好）；
  * 表面危险文字角色新增 --danger-quiet（两套主题都要对**它实际落在的底**≥4.5:1，管理后台与工作台消费）。
  * 同理新增 --success-quiet 作表面成功文字角色（亮色需压深，原 --success 对 --success-soft 仅 2.14:1）。
@@ -124,13 +152,17 @@ html[data-theme="dark"] {
  */
 :root,
 [data-theme="light"] {
-  --accent: var(--brand-warm); /* 珊瑚 #cc785c */
+  --accent: #b05a38; /* 压深自品牌珊瑚 #cc785c（原值配按钮近白文字仅 3.19:1，未达 AA，issue #72）；实测对 --accent-foreground #fcfcfc 4.69 */
+  --accent-hover: #a9583e; /* 接 --brand-warm-hover：HeroUI 默认往浅色混会让 hover 掉到 3.91，这里改为变深（4.93） */
+  --focus: var(--accent); /* 聚焦环。HeroUI 默认即 var(--accent)，这里写出来是为了可测：亮色 3.67–4.57（改前 #cc785c 只有 2.50–3.11，未达非文字 3:1） */
   --danger-quiet: #a63a3a; /* 压深自 #c64545（原值对 --danger-soft 仅 4.20:1，未达 AA）。实测：对 --danger-soft #f9ecec 5.55 · 对最暗亮色表面 --surface-active #e8e0d2 4.87 */
   --success-quiet: #2f6b3c; /* 实测对 --success-soft #e9f2ea 5.58:1 */
 }
 
 html[data-theme="dark"] {
-  --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
+  --accent: #b05a38; /* 与亮色同值（暗下按钮文字同为近白，理由同上）。本文件未分层，恒胜 HeroUI 的 @layer theme 块 */
+  --accent-hover: #a9583e; /* 同上：显式定死，别让 HeroUI 往浅色混 */
+  --focus: var(--brand-warm); /* ⚠️ 暗色**必须**显式接回品牌珊瑚，不能跟着 --accent 变深：#b05a38 在暗色 --surface-hover/tertiary/active 上只有 3.09/2.74/2.76，跌破非文字 3:1；#cc785c 是 4.54/4.02/4.05（= 改动前观感） */
   --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76。⚠️ 约束：**不要**把它放在更暗的 --surface-tertiary #32302b / --surface-active #332f2a 上（实测 4.22 / 4.26，低于 AA）—— 要用就先提亮本值 */
   --success-quiet: var(--success); /* 暗色沿用 #5db872：对 --success-soft #1c2b20 实测 6.05:1 */
   --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
