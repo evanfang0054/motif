@@ -3,21 +3,37 @@
  * Motif 图片存储搬迁：把本地 dataDir/storage 下的图片搬到远端（S3 兼容）。
  *
  * 用法：
- *   pnpm storage:migrate --dry-run   # 只看清单，不动任何数据
- *   pnpm storage:migrate             # 正式搬迁（可反复执行，已存在的不重复上传）
+ *   pnpm storage:migrate                      # 正式搬迁（可反复执行，已存在的不重复上传）
+ *   pnpm storage:migrate --dry-run            # 只看清单，不动任何数据
+ *   pnpm storage:migrate --prune-orphans --dry-run   # 只看「将被清理的孤儿」清单
+ *   pnpm storage:migrate --prune-orphans      # ⚠️ 真删孤儿（本地与远端都删，不可恢复）
+ *   pnpm storage:migrate --prune-orphans --force-prune   # 越过「孤儿占比过高」闸（确认过库没错再用）
  *
  * 断点续跑：中断后直接重跑即可 —— 「远端已存在则跳过」天然构成断点，不需要断点文件。
  *
+ * ⚠️ `--prune-orphans` 是**删数据**的动作，与搬迁互斥：给了它就只清孤儿、不搬。默认关。
+ *    它有两道安全闸：空库拒绝（不可越过）、孤儿占比过高拒绝（`--force-prune` 可越过）。
  * ⚠️ 先 bootstrapConfig：S3 凭据的真相在 settings 表，不先播种就读不到库里已改的配置。
  * ⚠️ 用 tsx 跑而不是裸 node：仓库内部 import 无扩展名且用 `@/` 别名，Node 原生解析不了。
  */
 const { bootstrapConfig } = await import('../apps/web/src/server/bootstrap-config.ts')
 const { createStorageFromConfig, describeStorageError } = await import('../apps/web/src/server/storage.ts')
-const { planMigration, runMigration } = await import('../apps/web/src/server/storage-migrate.ts')
+const { assertPruneSafe, listOrphans, planMigration, pruneOrphans, PruneRefusedError, runMigration } = await import(
+  '../apps/web/src/server/storage-migrate.ts'
+)
 const { resolveConfigValues } = await import('../apps/web/src/server/settings.ts')
 const { getRuntime } = await import('../apps/web/src/server/context.ts')
 
 const dryRun = process.argv.includes('--dry-run')
+const prune = process.argv.includes('--prune-orphans')
+/** 越过「孤儿占比过高」闸。空库闸不可越过。 */
+const forcePrune = process.argv.includes('--force-prune')
+
+// 单独给 --force-prune 会被静默忽略、然后去跑搬迁 —— 与用户意图正相反，故直接报错
+if (forcePrune && !prune) {
+  console.error('[motif] --force-prune 只与 --prune-orphans 搭配使用。单独给会被忽略（命令会去跑搬迁），故中止。')
+  process.exit(1)
+}
 
 await bootstrapConfig()
 const { store, dataDir } = getRuntime()
@@ -42,6 +58,11 @@ try {
 try {
   await main()
 } catch (e) {
+  // 安全闸拒绝不是存储层故障：只把原因说清楚，别叠「请检查端点/桶/凭据/网络」那套错提示
+  if (e instanceof PruneRefusedError) {
+    console.error(`[motif] ${e.message}`)
+    process.exit(1)
+  }
   // ⚠️ 用 describeStorageError 而不是 `e.message`：minio 的 S3Error 在服务端没回 <Message> 时
   // message 是空串，直接插值会打出「搬迁失败：」这种什么也没说的日志。
   console.error(`[motif] 搬迁失败：${describeStorageError(e)}`)
@@ -50,8 +71,70 @@ try {
 }
 
 async function main() {
-// 只搬 DB 里仍在册的对象（#58）：本地残留的孤儿（行已删）不该被重新上传回桶里
+// 只搬 DB 里仍在册的对象（#58）：本地残留的孤儿（行已删）不该被重新上传回桶里。
+// #61 起 listAllImageKeys 也含暂存参考图 —— 否则刚上传的参考图会被当成孤儿。
 const liveKeys = new Set(store.listAllImageKeys())
+
+if (prune) {
+  // prune 的失败要自己的标签：走到外层那个 catch 会被打上「搬迁失败：…请检查端点/桶/凭据/网络」，
+  // 而 prune 根本没在搬东西，那个提示会把人带偏。
+  try {
+    // 孤儿清单只扫本地：远端不可达时也能看清单（也不做与清理无关的远端探测）
+    const orphaned = listOrphans(dataDir, liveKeys)
+    // 安全闸（空库 / 孤儿占比过高）。dry-run 也走 —— 否则「连错库」时会打出一份看着正常的
+    // 全量清单。被拦时**仍然把清单打出来**：否则运维连「到底会删什么」都看不到，
+    // 只能无脑加 --force-prune，闸就白设了。
+    let refused = null
+    try {
+      assertPruneSafe(dataDir, liveKeys, forcePrune)
+    } catch (e) {
+      if (!(e instanceof PruneRefusedError)) throw e
+      refused = e.message
+    }
+    if (refused) {
+      console.error(`[motif] ${refused}`)
+      if (orphaned.length) {
+        console.error(`[motif] 被拦下的清单（${orphaned.length} 个，本次不会删）：`)
+        for (const key of orphaned) console.error(`  ${key}`)
+      }
+      process.exit(1)
+    }
+    if (dryRun) {
+      if (!orphaned.length) {
+        console.log('[motif] 没有孤儿对象，无需清理。')
+        process.exit(0)
+      }
+      console.log(`[motif] 将被清理的孤儿对象 ${orphaned.length} 个（本地与远端都会删，不可恢复）：`)
+      for (const key of orphaned) console.log(`  ${key}`)
+      console.log('[motif] --dry-run：未删除任何对象。去掉 --dry-run 才会真删。')
+      process.exit(0)
+    }
+    const r = await pruneOrphans(dataDir, remote, liveKeys, {
+      force: forcePrune,
+      onProgress: (done, total, key) => console.log(`[motif] ${done}/${total} ${key}`),
+    })
+    // ⚠️ 两侧都要回查：只查本地的话，「远端一个都没删掉」也会打印「清理完成」并以 0 退出 ——
+    // 运维会以为桶已经干净了。
+    const unconfirmed = [...new Set([...r.remainingLocal, ...r.remainingRemote])]
+    console.log(`[motif] 孤儿清理完成：尝试删除 ${r.candidates.length} 个。`)
+    if (unconfirmed.length) {
+      console.error(
+        `[motif] ⚠️ 有 ${unconfirmed.length} 个没能确认删掉（本地 ${r.remainingLocal.length} 个 / 远端 ${r.remainingRemote.length} 个）：`
+      )
+      for (const key of unconfirmed) console.error(`  ${key}`)
+      process.exit(1)
+    }
+    process.exit(0)
+  } catch (e) {
+    if (e instanceof PruneRefusedError) {
+      console.error(`[motif] ${e.message}`)
+      process.exit(1)
+    }
+    console.error(`[motif] 孤儿清理失败：${describeStorageError(e)}`)
+    console.error('请检查「系统设置 → 图片存储」的端点、桶与凭据，以及网络可达性。')
+    process.exit(1)
+  }
+}
 
 if (dryRun) {
   const plan = await planMigration(dataDir, remote, liveKeys)

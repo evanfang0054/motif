@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { storagePathFor } from '@motif/db'
-import type { Storage } from './storage'
+import { createStorageFromConfig, type Storage } from './storage'
+import { runBounded } from './bounded'
 
 /**
  * 本地 → 远端的一次性搬迁。CLI（`scripts/storage-migrate.mjs`）只是薄壳，
@@ -88,4 +89,165 @@ export async function runMigration(
     onProgress?.(done, plan.pending.length, key)
   }
   return { uploaded: done, skipped: plan.skipped.length, orphaned: plan.orphaned.length }
+}
+
+/** `pruneOrphans` 的结果。两侧分开报，不合成一个「删了 N 个」—— 合并会掩盖单侧失败。 */
+export interface PruneResult {
+  /** 本次判定为孤儿、并**尝试**删除的 key（本地与远端都尝试了一遍） */
+  candidates: string[]
+  /** 尝试之后**本地**仍存在的 key */
+  remainingLocal: string[]
+  /** 尝试之后**远端**仍存在（或无法确认）的 key */
+  remainingRemote: string[]
+}
+
+/**
+ * 只算孤儿清单，**不碰远端**。
+ *
+ * 单独抽出来有两个用处：dry-run 在远端不可达时也能看清单；以及避开 `planMigration` 里
+ * 那轮对**在册** key 的 `remote.exists` —— prune 只关心孤儿，那些往返纯属白打。
+ */
+export function listOrphans(dataDir: string, liveKeys: ReadonlySet<string>): string[] {
+  return listLocalKeys(dataDir).filter((key) => !liveKeys.has(key))
+}
+
+/**
+ * 回查哪些 key 还在（有界并发，避免黑洞端点下 2N 次串行探测看起来像卡死）。
+ * `exists` 抛错一律按「还在」算 —— **确认不了就不该声称删掉了**，这是删数据场景该有的保守口径。
+ */
+async function stillThere(storage: Storage, keys: readonly string[]): Promise<string[]> {
+  const out: string[] = []
+  await runBounded(keys, VERIFY_CONCURRENCY, async (key) => {
+    try {
+      if (await storage.exists(key)) out.push(key)
+    } catch {
+      out.push(key)
+    }
+  })
+  // 并发 push 的顺序不确定，排一下让返回值可预期（调用方与测试都按集合语义用）
+  return out.sort()
+}
+
+/** 回查阶段（`exists`）的并发上限 */
+const VERIFY_CONCURRENCY = 8
+
+/**
+ * 清掉孤儿对象（#61）：`planMigration` 只算不删，这里才是真正动手的地方。
+ *
+ * ⚠️ **这是删数据的运维动作**，故比搬迁多两道闸（都在 `assertPruneSafe` 里）：
+ * 1. **空库**：`liveKeys` 为空却扫到本地对象 → 拒绝，`--force-prune` **越不过**；
+ * 2. **孤儿占比过高**：孤儿 ≥10 且占比 >50% → 拒绝，`--force-prune` 可越过。
+ * 此外只有显式传了 `--prune-orphans` 才会被调到（CLI 侧把关）。
+ *
+ * 孤儿来源是**本地扫描**：`listOrphans` = `listLocalKeys - liveKeys`。所以「只在桶里、本地没有副本」
+ * 的对象扫不出来 —— 搬迁是复制不是移动，正常流程下本地是超集，故这个限制只在有人手工删过本地
+ * 文件时才会碰到。
+ *
+ * 删除两侧都试，各自 best-effort（与 `removeFromAllStorages` 同语义）：单侧失败不中断整批。
+ * **两侧都回查**并如实回报 —— 只回查本地的话，「远端一个都没删掉」也会被当成清理干净。
+ *
+ * ⚠️ 远端**不能只信 `exists`**：桶名配错时 `statObject` 走 HEAD、404 无 body，于是
+ * `NoSuchBucket` 也会被当成 `NotFound` → `exists` 返回 false（见 `storage.ts` 的说明）。
+ * 唯一能区分「桶配错」与「对象不存在」的信号是 `remove` 抛的错，所以 remove 失败的 key
+ * 一律并入 `remainingRemote`，哪怕 exists 说它不在。
+ */
+export async function pruneOrphans(
+  dataDir: string,
+  remote: Storage,
+  liveKeys: ReadonlySet<string>,
+  opts: {
+    onProgress?: (done: number, total: number, key: string) => void
+    /** 越过「孤儿占比过高」闸（CLI 的 `--force-prune`）。空库闸不可越过。 */
+    force?: boolean
+  } = {}
+): Promise<PruneResult> {
+  assertPruneSafe(dataDir, liveKeys, opts.force ?? false)
+
+  const orphaned = listOrphans(dataDir, liveKeys)
+  const local = createStorageFromConfig({ STORAGE_DRIVER: 'local' }, dataDir)
+  const remoteRemoveFailed = new Set<string>()
+  let done = 0
+  for (const key of orphaned) {
+    try {
+      await local.remove(key)
+    } catch {
+      // 本地删失败：`stillThere(local)` 会如实报出来（本地 exists 就是 fs 探测，可信）
+    }
+    try {
+      await remote.remove(key)
+    } catch {
+      // 远端可能不可达/无权限 —— 不该因此中断整批，但必须记下来（见上方 ⚠️）
+      remoteRemoveFailed.add(key)
+    }
+    done += 1
+    opts.onProgress?.(done, orphaned.length, key)
+  }
+
+  const remainingRemote = await stillThere(remote, orphaned)
+  for (const key of orphaned) {
+    if (remoteRemoveFailed.has(key) && !remainingRemote.includes(key)) remainingRemote.push(key)
+  }
+  remainingRemote.sort()
+
+  return {
+    candidates: orphaned,
+    remainingLocal: await stillThere(local, orphaned),
+    remainingRemote,
+  }
+}
+
+/**
+ * 清理孤儿被安全闸拦下时抛的错。
+ *
+ * 单独一个类型是为了让 CLI 能区分「拒绝执行」与「存储层故障」——
+ * 否则拒绝会走到通用兜底，打出一句「请检查端点、桶与凭据、网络可达性」的错提示，
+ * 把人往网络/凭据的方向带，而真正的原因是指错了库。
+ */
+export class PruneRefusedError extends Error {
+  readonly name = 'PruneRefusedError'
+}
+
+/** 触发「孤儿占比过高」闸的最少孤儿数（低于它就不拦：小规模清理是日常操作） */
+const ORPHAN_GUARD_MIN = 10
+/** 触发占比闸的比例（严格大于才拦） */
+const ORPHAN_GUARD_RATIO = 0.5
+
+/**
+ * 清理孤儿前的**安全闸**（#61）。两道，都抛 `PruneRefusedError`：
+ *
+ * 1. **空库**：`liveKeys` 为空却扫到本地对象 —— 几乎一定是 dataDir 指错、连到了空库。
+ * 2. **孤儿占比过高**：孤儿 ≥10 个且占比 >50%。这道是为了兜住第 1 道拦不住的情况 ——
+ *    `liveKeys` **非空但来自另一个/陈旧的库**（恢复了一份备份库、或 `MOTIF_DB_FILE` 与
+ *    `MOTIF_DATA_DIR` 指向不一致），此时整个存储目录都会被判成孤儿。比例异常是唯一能在
+ *    不看库内容的前提下察觉「这个库不像这份存储的主人」的信号。
+ *    确认无误可加 `--force-prune` 越过（`force = true`）。
+ *
+ * 抽成独立函数是为了让 `--prune-orphans --dry-run` 也走同一道闸 —— 否则「连错库」时
+ * dry-run 会打出一份「全库对象都是孤儿」的清单，看着像正常输出，去掉 `--dry-run` 就清空了。
+ * 返回本地对象总数（调用方打日志用）。
+ *
+ * ⚠️ 已知的**有界**局限：本地对象 <10 个时占比闸不生效，所以「库非空但与本存储完全无关
+ * 且本地只有个位数对象」仍会被放行 —— 影响面就是那几个对象，且此时误拒会挡住合法的
+ * 小规模清理，故不做更激进的拦截。
+ */
+export function assertPruneSafe(dataDir: string, liveKeys: ReadonlySet<string>, force = false): number {
+  const all = listLocalKeys(dataDir)
+  if (liveKeys.size === 0 && all.length > 0) {
+    throw new PruneRefusedError(
+      `拒绝清理孤儿：数据库里没有任何在册对象，本地却扫到 ${all.length} 个。` +
+        '这通常意味着 dataDir / 数据库文件指错了地方，而不是「所有对象都成了孤儿」。' +
+        '按孤儿删会把整个存储目录清空且不可恢复，故中止。请先确认配置指向正确的库。'
+    )
+  }
+  const orphans = all.filter((key) => !liveKeys.has(key))
+  const ratio = all.length > 0 ? orphans.length / all.length : 0
+  if (!force && orphans.length >= ORPHAN_GUARD_MIN && ratio > ORPHAN_GUARD_RATIO) {
+    throw new PruneRefusedError(
+      `拒绝清理孤儿：本次会删掉 ${orphans.length}/${all.length} 个本地对象（${Math.round(ratio * 100)}%），比例过高。` +
+        '数据库里在册的对象与这份存储目录对不上时（例如恢复了一份旧备份库、' +
+        '或 MOTIF_DB_FILE 与 MOTIF_DATA_DIR 指向不一致），孤儿占比就会异常高。' +
+        '若你已确认数据库指向正确、且这些对象确实都该删，请加 --force-prune 再跑一次。'
+    )
+  }
+  return all.length
 }

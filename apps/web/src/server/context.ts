@@ -4,6 +4,7 @@ import { createImageProviderFromEnv, type ImageProvider } from '@motif/image-pro
 import { MisconfiguredMailer, createMailerFromConfig, type MailerConfig } from './mailer'
 import { ConfigError } from './config-error'
 import { createStorageFromConfig, type Storage } from './storage'
+import { runBounded } from './bounded'
 import { resolveConfigValues } from './settings'
 
 /**
@@ -164,4 +165,18 @@ export async function removeFromAllStorages(key: string, dataDir?: string): Prom
       // 对象可能已被清理，或远端暂时不可达 —— 忽略
     }
   }
+}
+
+/** 删任务时一次清很多对象的并发上限。见 `removeManyFromAllStorages` 的说明。 */
+export const REMOVE_CONCURRENCY = 8
+
+/**
+ * 清掉一批 key（#61 删任务用）。
+ *
+ * 为什么要有界并发：s3 驱动下每个 key 是一次网络往返，串行删除会让「图多的任务」把请求
+ * 拖到几十秒（实测 local 驱动 0.24ms/key，s3 是 N×RTT），前端/网关先超时。并发上限取 8 ——
+ * 足够把量级降下来，又不至于把对象存储的连接池打满。
+ */
+export async function removeManyFromAllStorages(keys: readonly string[], dataDir?: string): Promise<void> {
+  await runBounded(keys, REMOVE_CONCURRENCY, (key) => removeFromAllStorages(key, dataDir))
 }

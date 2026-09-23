@@ -817,13 +817,24 @@ export class MotifStore {
     this.db.prepare('UPDATE topics SET updated_at = ? WHERE id = ?').run(nowIso(), id)
   }
 
-  /** 删除任务（FK 级联清理行），返回需清理的磁盘文件 key 列表 */
+  /**
+   * 删除任务（FK 级联清理行），返回需清理的存储对象 key 列表。
+   *
+   * ⚠️ **必须同时收 `reference_uploads`**（#61）：暂存参考图（上传了还没点生成）的对象
+   * 只在这张表里有记录 —— 只查 `canvas_images` 会漏掉它们，删任务时那批文件永远留在盘/桶里。
+   * 两张表都在 DELETE 之前读，故「取 key」与「删行」之间没有窗口。
+   */
   deleteTopic(id: string): string[] {
-    const keys = (
-      this.db.prepare('SELECT image_key FROM canvas_images WHERE topic_id = ?').all(id) as { image_key: string }[]
-    ).map((r) => r.image_key)
+    const rows = [
+      ...(this.db.prepare('SELECT image_key FROM canvas_images WHERE topic_id = ?').all(id) as Array<{
+        image_key: string
+      }>),
+      ...(this.db.prepare('SELECT image_key FROM reference_uploads WHERE topic_id = ?').all(id) as Array<{
+        image_key: string
+      }>),
+    ]
     this.db.prepare('DELETE FROM topics WHERE id = ?').run(id)
-    return keys
+    return rows.map((r) => r.image_key)
   }
 
   getTopicDetail(id: string): TopicDetail | null {
@@ -981,14 +992,21 @@ export class MotifStore {
   }
 
   /**
-   * 全库仍在册的存储对象 key（#58：搬迁只搬这些）。
+   * 全库仍在册的存储对象 key（#58：搬迁只搬这些；#61：孤儿判定也用它）。
    *
    * 为什么需要：`storage:migrate` 只扫本地目录，于是「DB 行已删、本地文件还在」的孤儿对象
    * 会被当成「远端没有 → 待上传」而**重新上传**，桶里持续堆积。按在册 key 过滤即可根治。
+   *
+   * ⚠️ **必须并上 `reference_uploads`**（#61）：暂存参考图的对象只在那张表里有记录。
+   * 只查 `canvas_images` 会让它们被误判成孤儿 —— 轻则搬迁时被跳过（切到 s3 后桶里没有它），
+   * 重则被 `--prune-orphans` 当垃圾删掉（用户刚上传的参考图凭空消失）。
    * 只回 key、不碰配置 —— 调用方（CLI）自己决定怎么用。
    */
   listAllImageKeys(): string[] {
-    const rows = this.db.prepare('SELECT image_key FROM canvas_images').all() as Array<{ image_key: string }>
+    const rows = [
+      ...(this.db.prepare('SELECT image_key FROM canvas_images').all() as Array<{ image_key: string }>),
+      ...(this.db.prepare('SELECT image_key FROM reference_uploads').all() as Array<{ image_key: string }>),
+    ]
     return rows.map((r) => r.image_key)
   }
 
