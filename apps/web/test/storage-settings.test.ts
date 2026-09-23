@@ -18,7 +18,7 @@ afterEach(() => {
 })
 
 describe('storage 分组的键', () => {
-  it('7 个键都在 storage 组，驱动为枚举且默认 local', () => {
+  it('8 个键都在 storage 组，驱动为枚举且默认 local', () => {
     const keys = SETTING_DEFS.filter((d) => d.group === 'storage').map((d) => d.key)
     expect(keys).toEqual([
       'STORAGE_DRIVER',
@@ -28,6 +28,7 @@ describe('storage 分组的键', () => {
       'S3_ACCESS_KEY_ID',
       'S3_SECRET_ACCESS_KEY',
       'S3_FORCE_PATH_STYLE',
+      'S3_PUBLIC_BASE_URL',
     ])
     const driver = SETTING_DEFS.find((d) => d.key === 'STORAGE_DRIVER')!
     expect(driver.kind).toBe('enum')
