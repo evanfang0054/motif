@@ -8,6 +8,7 @@ import {
   allocateSlots,
   displaySize,
   inviteRewardFor,
+  isBusyTopicStatus,
   placementRect,
   validateEmail,
   validateName,
@@ -228,7 +229,7 @@ export async function enqueueGeneration(
     topic = store.createTopic(user.id, summarize(input.prompt))
   }
 
-  if (topic.status === 'pending' || topic.status === 'running' || topic.status === 'canceling') {
+  if (isBusyTopicStatus(topic.status)) {
     throw new ServiceError(409, '当前任务仍在生成中，请稍候。')
   }
 
@@ -306,7 +307,7 @@ export async function enqueueGeneration(
     enhancePrompt: enhanced,
     referenceIds: validRefs,
   })
-  store.setTopicActive(topic.id, message.id, basePrompt, 'pending')
+  store.syncTopicStatus(topic.id, message.id, basePrompt, 'queued')
 
   return {
     prompt: basePrompt,
@@ -410,7 +411,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       finishCancel(store, msg, done)
     } else {
       store.setMessageStatus(messageId, 'completed')
-      store.setTopicActive(msg.topicId, null, null, 'idle')
+      store.syncTopicStatus(msg.topicId, null, null, 'completed')
     }
   } catch (e) {
     const done = store.countGeneratedInMessage(messageId)
@@ -419,7 +420,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     const raw = e instanceof Error ? e.message : String(e)
     console.error('[motif] 生成失败:', raw)
     store.setMessageStatus(messageId, 'failed', friendlyGenerateError(raw, refund))
-    store.setTopicActive(msg.topicId, null, null, 'idle')
+    store.syncTopicStatus(msg.topicId, null, null, 'failed')
   }
 }
 
@@ -437,7 +438,7 @@ export function finishCancel(store: MotifStore, msg: { id: string; topicId: stri
   const refund = msg.requestedCount - done
   if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund, { source: 'generation_refund', refId: msg.id, note: '取消退额' })
   store.setMessageStatus(msg.id, 'canceled')
-  store.setTopicActive(msg.topicId, null, null, 'idle')
+  store.syncTopicStatus(msg.topicId, null, null, 'canceled')
 }
 
 // ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------

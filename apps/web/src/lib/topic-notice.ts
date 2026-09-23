@@ -8,13 +8,15 @@
  * 后台任务由任务列表级监看提示。两处各写一份文案，改一处必漏另一处。
  */
 import type { TopicDetail } from '@motif/core'
+import { isBusyTopicStatus } from '@motif/core'
 
-/** 进行中的任务态。终态由 message 携带，topic 自己会回到 `idle` */
-const BUSY_TOPIC_STATUSES = new Set(['pending', 'running', 'canceling'])
-
-export function isBusyStatus(s: string | undefined): boolean {
-  return typeof s === 'string' && BUSY_TOPIC_STATUSES.has(s)
-}
+/**
+ * 进行中的任务态判定 —— 直接用 `@motif/core` 的那一份。
+ *
+ * ⚠️ 这里**不再**本地定义状态集合：DB 的读取自愈要用同一个判据（「活跃消息已不在跑」
+ * 才落定），两边各写一份就会出现「自愈把 UI 仍认为在跑的任务 settle 掉」这类只在一侧可见的错误。
+ */
+export const isBusyStatus = isBusyTopicStatus
 
 /**
  * 从「在跑」落到「不在跑」= 一次真正的结束。

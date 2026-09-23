@@ -19,6 +19,10 @@ import {
   newVerificationCode,
   newSessionToken,
   newOrderId,
+  topicStatusFromMessage,
+  isBusyTopicStatus,
+  BUSY_TOPIC_STATUS_VALUES,
+  ACTIVE_MESSAGE_STATUS_VALUES,
   type CanvasImage,
   type CanvasImagePlacement,
   type CanvasMeta,
@@ -29,6 +33,7 @@ import {
   type StagedReference,
   type Topic,
   type TopicDetail,
+  type TopicStatus,
   type User,
   type UserRole,
   type UserStatus,
@@ -38,6 +43,23 @@ import { applySchema } from './schema'
 function nowIso(): string {
   return new Date().toISOString()
 }
+
+/** 读取自愈落定后的 topic 态（由同一份派生函数给出，不写字面量） */
+const SETTLED_TOPIC_STATUS = topicStatusFromMessage(null)
+
+const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(',')
+
+/**
+ * 读取自愈的 WHERE 片段：topic 声称在跑，但活跃消息已不在跑（含 `active_message_id` 为空）。
+ *
+ * ⚠️ 两个状态清单都从 `@motif/core` 取，**不在此处抄字面量** —— 抄一份就意味着
+ * 将来改了「在跑」的定义，自愈判据会与 UI 的口径悄悄分叉。
+ */
+const STALE_TOPIC_WHERE = `status IN (${placeholders(BUSY_TOPIC_STATUS_VALUES.length)})
+   AND (active_message_id IS NULL OR NOT EXISTS (
+     SELECT 1 FROM messages m
+     WHERE m.id = topics.active_message_id AND m.status IN (${placeholders(ACTIVE_MESSAGE_STATUS_VALUES.length)})
+   ))`
 
 /** reference_ids 列为 JSON 数组字符串；容错解析历史脏数据 */
 function safeParseIds(raw: string | null | undefined): string[] {
@@ -780,17 +802,37 @@ export class MotifStore {
   }
 
   getTopic(id: string): Topic | null {
-    const row = this.db.prepare('SELECT * FROM topics WHERE id = ?').get(id) as TopicRow | undefined
-    return row ? rowToTopic(row) : null
+    const read = (): TopicRow | undefined => this.db.prepare('SELECT * FROM topics WHERE id = ?').get(id) as TopicRow | undefined
+    const row = read()
+    if (!row) return null
+    // 读取自愈：只在 topic 自称在跑时才可能要做写（idle 是常见态，不该为它付一次写事务）
+    if (isBusyTopicStatus(row.status) && this.settleStaleTopic(id)) {
+      const healed = read()
+      return healed ? rowToTopic(healed) : null
+    }
+    return rowToTopic(row)
   }
 
   listTopics(userId: string): Topic[] {
-    const rows = this.db.prepare('SELECT * FROM topics WHERE user_id = ? ORDER BY updated_at DESC').all(userId) as TopicRow[]
+    const read = (): TopicRow[] =>
+      this.db.prepare('SELECT * FROM topics WHERE user_id = ? ORDER BY updated_at DESC').all(userId) as TopicRow[]
+    let rows = read()
+    // 同 getTopic：只有存在自称在跑的任务时才尝试收敛
+    if (rows.some((r) => isBusyTopicStatus(r.status)) && this.settleStaleTopicsOfUser(userId) > 0) {
+      rows = read()
+    }
     return rows.map(rowToTopic)
   }
 
   /** 「新任务」复用：当前用户最近更新的 idle 且 0 张画布图的会话（不存在则 null） */
   findReusableTopic(userId: string): Topic | null {
+    // 也是读取路径：先自愈，否则「脏 pending」的空会话会一直不可复用，
+    // 而复用判定与列表展示（listTopics 会自愈）就会出现「列表说空闲、却复用不到」的分叉。
+    // 与 getTopic / listTopics 同口径：先判有没有脏状态，不为一次必然 no-op 的 UPDATE 付写事务。
+    const stale = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM topics WHERE user_id = ? AND ${STALE_TOPIC_WHERE}`)
+      .get(userId, ...BUSY_TOPIC_STATUS_VALUES, ...ACTIVE_MESSAGE_STATUS_VALUES) as { c: number }
+    if (stale.c > 0) this.settleStaleTopicsOfUser(userId)
     const row = this.db
       .prepare(
         `SELECT t.* FROM topics t
@@ -807,10 +849,61 @@ export class MotifStore {
     return this.getTopic(id)
   }
 
-  setTopicActive(id: string, messageId: string | null, prompt: string | null, status: string): void {
+  /**
+   * 直接写 topic 状态与活跃消息。
+   *
+   * ⚠️ **不要从外面调它**：状态必须由 `syncTopicStatus` 从消息状态派生，否则又回到
+   * 「两边各写各的」那个根因（#81 / #86）。参数类型收窄成 `TopicStatus` 只是编译期兜底，
+   * 真正的守卫是 `store.test.ts` 里那条扫全仓源码的机械断言。
+   */
+  setTopicActive(id: string, messageId: string | null, prompt: string | null, status: TopicStatus): void {
     this.db
       .prepare('UPDATE topics SET active_message_id = ?, active_prompt = ?, status = ?, updated_at = ? WHERE id = ?')
       .run(messageId, prompt, status, nowIso(), id)
+  }
+
+  /**
+   * **收口所有 `topics.status` 写入**：状态一律由消息状态经 `topicStatusFromMessage` 派生，
+   * 不接受调用方直接给字面量。
+   *
+   * 为什么必须收口：topic 状态是**活跃生成轮次的投影**，两边各自写就会出现
+   * 「任务说在停止、轮次早已失败」这类互相矛盾的中间态（#81 / #86 的共同根因）。
+   */
+  syncTopicStatus(topicId: string, messageId: string | null, prompt: string | null, msgStatus: MessageStatus | null): void {
+    const status = topicStatusFromMessage(msgStatus)
+    // 派生为 idle 时活跃消息/提示词必须一起清空 —— 否则会留下「话题空闲、却仍挂着一条终态消息」
+    // 的半状态（读的人得自己判断那条消息算不算数）。状态与它携带的上下文必须同生同灭。
+    const settled = status === SETTLED_TOPIC_STATUS
+    this.setTopicActive(topicId, settled ? null : messageId, settled ? null : prompt, status)
+  }
+
+  /**
+   * 读取自愈（单条）：topic 声称在跑、但活跃消息已不在跑时就地落定为 idle。
+   *
+   * 条件全在 UPDATE 的 WHERE 里，故「读-判-写」之间没有窗口：即便并发下判据已过期，
+   * 语句也只会变成 no-op，不会误 settle 一个真正在跑的任务。
+   *
+   * @returns 真的落定了返回 `true`（调用方据此决定要不要重读）
+   */
+  private settleStaleTopic(id: string): boolean {
+    const res = this.db
+      .prepare(
+        `UPDATE topics SET status = ?, active_message_id = NULL, active_prompt = NULL, updated_at = ?
+         WHERE id = ? AND ${STALE_TOPIC_WHERE}`
+      )
+      .run(SETTLED_TOPIC_STATUS, nowIso(), id, ...BUSY_TOPIC_STATUS_VALUES, ...ACTIVE_MESSAGE_STATUS_VALUES)
+    return res.changes > 0
+  }
+
+  /** 读取自愈（按用户批量）：语义同 `settleStaleTopic`，供列表读取一次性收敛 */
+  private settleStaleTopicsOfUser(userId: string): number {
+    const res = this.db
+      .prepare(
+        `UPDATE topics SET status = ?, active_message_id = NULL, active_prompt = NULL, updated_at = ?
+         WHERE user_id = ? AND ${STALE_TOPIC_WHERE}`
+      )
+      .run(SETTLED_TOPIC_STATUS, nowIso(), userId, ...BUSY_TOPIC_STATUS_VALUES, ...ACTIVE_MESSAGE_STATUS_VALUES)
+    return res.changes
   }
 
   touchTopic(id: string): void {
@@ -890,6 +983,9 @@ export class MotifStore {
       this.db
         .prepare(`UPDATE messages SET status = 'running', worker_id = ?, locked_at = ?, lease_token = ?, lease_expires_at = ?, attempts = attempts + 1 WHERE id = ?`)
         .run(workerId, new Date(t).toISOString(), workerId, new Date(t + leaseMs).toISOString(), row.id)
+      // 认领即把 topic 同步为「生成中」（#86）：由消息状态派生，与其余写入点同一口径。
+      // 放在同一事务里 —— 不允许出现「消息在跑、任务仍显示排队中」的中间态被别的读看到。
+      this.syncTopicStatus(row.topic_id, row.id, row.prompt, 'running')
       return this.getMessage(row.id)
     })
     return tx()
@@ -908,12 +1004,28 @@ export class MotifStore {
   requeueExpiredLeases(skipIds: string[] = []): void {
     const placeholders = skipIds.map(() => '?').join(',')
     const skipClause = skipIds.length ? ` AND id NOT IN (${placeholders})` : ''
-    this.db
+    const now = nowIso()
+    // 先取回将被重排的消息，才能在同一个事务里把它们的 topic 一并同步回「排队中」。
+    // ⚠️ 不同步的话会留下「消息已回 queued、任务仍显示 running」的不一致 ——
+    // 而这正是本批要消灭的那类中间态（且它两侧都算「在跑」，读取自愈也修不了）。
+    const rows = this.db
       .prepare(
-        `UPDATE messages SET status = 'queued', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+        `SELECT id, topic_id, prompt FROM messages
          WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
       )
-      .run(nowIso(), ...skipIds)
+      .all(now, ...skipIds) as Array<{ id: string; topic_id: string; prompt: string }>
+    if (rows.length === 0) return
+
+    const tx = this.db.transaction((): void => {
+      this.db
+        .prepare(
+          `UPDATE messages SET status = 'queued', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+           WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
+        )
+        .run(now, ...skipIds)
+      for (const r of rows) this.syncTopicStatus(r.topic_id, r.id, r.prompt, 'queued')
+    })
+    tx()
   }
 
   /**
@@ -935,9 +1047,7 @@ export class MotifStore {
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式
       // 在「用户取消排队任务」这一条路径上破掉（而这条路径原本没有任何测试覆盖）
       this.addCredits(userId, row.requested_count, { source: 'generation_refund', refId: id, note: '取消排队中的生成' })
-      this.db
-        .prepare(`UPDATE topics SET active_message_id = NULL, active_prompt = NULL, status = 'idle', updated_at = ? WHERE id = ?`)
-        .run(nowIso(), row.topic_id)
+      this.syncTopicStatus(row.topic_id, null, null, 'canceled')
       return { found: true, canceled: true, refund: row.requested_count }
     })
     return tx()

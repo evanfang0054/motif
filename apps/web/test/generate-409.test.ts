@@ -43,7 +43,18 @@ afterEach(() => {
 describe('同任务互斥 409', () => {
   for (const status of ['pending', 'running', 'canceling'] as const) {
     it(`topic.status=${status} 时返回 409，且不产生 generation_charge 流水`, async () => {
-      store.setTopicActive(topicId, null, null, status)
+      // ⚠️ 夹具必须是**可达**的进行态：任务自称在跑时，必然挂着一条在跑的消息。
+      // 早先这里只写 `setTopicActive(topicId, null, null, status)`（无活跃消息却自称在跑），
+      // 而那正是「读取自愈」要落定的脏状态 —— 用它当夹具会让 409 永远测不到。
+      const msgStatus = status === 'pending' ? 'queued' : status
+      const m = store.createMessage({
+        topicId, userId, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false,
+      })
+      store.setMessageStatus(m.id, msgStatus)
+      store.setTopicActive(topicId, m.id, 'p', status)
+      // 顺带断言自愈不误伤：有活跃在跑消息的任务，读取后状态不变
+      expect(store.getTopic(topicId)?.status).toBe(status)
+
       const before = chargeRows()
       const res = await POST(req(token, {
         prompt: '一只猫', count: 4, size: '1024x1024', enhance: false,

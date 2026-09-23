@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import type { MessageStatus } from '../src/types'
 import {
+  ACTIVE_MESSAGE_STATUS_VALUES,
   costFor,
   inviteRewardFor,
   DEFAULT_INVITE_REWARD_CREDITS,
   DEFAULT_INVITE_REWARD_MAX_INVITEES,
+  isBusyTopicStatus,
   newCanvasImageId,
   newInviteCode,
   newMessageId,
@@ -121,5 +124,31 @@ describe('status', () => {
     expect(topicStatusFromMessage('canceled')).toBe('idle')
     expect(topicStatusFromMessage('failed')).toBe('idle')
     expect(topicStatusFromMessage(null)).toBe('idle')
+  })
+
+  it('「在跑」话题态只有 pending / running / canceling', () => {
+    expect(isBusyTopicStatus('pending')).toBe(true)
+    expect(isBusyTopicStatus('running')).toBe(true)
+    expect(isBusyTopicStatus('canceling')).toBe(true)
+    expect(isBusyTopicStatus('idle')).toBe(false)
+    // 终态由 message 携带、topic 会回到 idle，故终态三态都不算「在跑」
+    expect(isBusyTopicStatus('completed')).toBe(false)
+    expect(isBusyTopicStatus('failed')).toBe(false)
+    expect(isBusyTopicStatus('canceled')).toBe(false)
+    // 空值不能当成「在跑」：读取自愈会据此判断要不要落定，误判会把好任务 settle 掉
+    expect(isBusyTopicStatus(undefined)).toBe(false)
+    expect(isBusyTopicStatus(null)).toBe(false)
+    expect(isBusyTopicStatus('')).toBe(false)
+  })
+
+  it('「在跑的消息态」清单与 topicStatusFromMessage 的推导一致（不得分叉）', () => {
+    // 这两个集合是读取自愈的判据：一个说「任务自称在跑」、一个说「消息在跑」。
+    // 一旦分叉，自愈就会误伤真正在飞的任务 —— 故把它钉成断言。
+    const allMessageStatuses: MessageStatus[] = ['queued', 'running', 'canceling', 'completed', 'failed', 'canceled']
+    for (const s of allMessageStatuses) {
+      expect(ACTIVE_MESSAGE_STATUS_VALUES.includes(s), s).toBe(isBusyTopicStatus(topicStatusFromMessage(s)))
+    }
+    // 且清单里不含任何非法值（防止将来有人往 Record 里塞错 key）
+    for (const s of ACTIVE_MESSAGE_STATUS_VALUES) expect(allMessageStatuses).toContain(s)
   })
 })
