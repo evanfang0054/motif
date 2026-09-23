@@ -953,10 +953,14 @@ html[data-theme="dark"] .lp-hero {
   pointer-events: none;
 }
 
-/* 选中图片上方的浮动工具栏 */
+/* 选中图片上方的浮动工具栏。
+   ⚠️ z-index 必须**高于两侧浮动面板（25）**：工具栏锚在被选图顶部居中，图靠右缘时它的右半会伸进
+   生成面板的矩形里，层级低于面板时「删除所选图片」被盖住、点了毫无反应（#82）。
+   光靠钳位置不够（窄视口下面板与画布本就会重叠），层级是最后一道保险；
+   但仍低于 `.ws-nav`（30）—— 顶栏是全局导航，不该被画布上的浮动控件盖住。 */
 .canvas-toolbar {
   position: absolute;
-  z-index: 20;
+  z-index: 26;
   transform: translateX(-50%);
   display: flex;
   align-items: center;

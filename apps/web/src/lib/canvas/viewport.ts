@@ -114,3 +114,30 @@ export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: 
   const below = worldToScreen(cx, maxY, v)
   return { left: below.x, top: below.y + TOOLBAR_DROP }
 }
+
+/** 工具栏左右各留的最小边距（px）：贴到面板/视口边缘时仍看得出是一枚浮动控件 */
+export const TOOLBAR_EDGE_GAP = 8
+
+/**
+ * 把工具栏的**中心 x** 钳进可用横向区间。
+ *
+ * 为什么需要：工具栏锚在被选图的顶部居中，图靠画布右缘时它的右半会伸进右侧生成面板的矩形里；
+ * 面板 z-index 更高，于是「删除所选图片」被盖住 —— 点下去没有任何反应（#82，实测
+ * `elementFromPoint` 命中的是面板里的文本）。抬 z-index 能让它可点，但会变成「工具栏压在面板上」；
+ * 所以两条一起做：钳住位置（默认不重叠）＋ 抬高层级（真重叠时也可点）。
+ *
+ * `band` 是**可用区间**（容器内坐标），已扣掉两侧面板的占位；区间比工具栏还窄时退化为区间中点 ——
+ * 宁可让它压住面板，也不能把它推出画布（推出去就彻底点不到了）。
+ */
+export function clampToolbarCenter(
+  center: number,
+  toolbarWidth: number,
+  band: { left: number; right: number },
+  gap = TOOLBAR_EDGE_GAP
+): number {
+  const half = toolbarWidth / 2 + gap
+  const min = band.left + half
+  const max = band.right - half
+  if (min > max) return (band.left + band.right) / 2
+  return Math.min(Math.max(center, min), max)
+}

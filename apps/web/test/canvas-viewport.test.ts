@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
+import { clampScale, clampToolbarCenter, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
 describe('缩放锚点', () => {
@@ -217,5 +217,39 @@ describe('背景图案', () => {
       expect(s.backgroundSize).not.toContain('NaN')
       expect(s.backgroundPosition).not.toContain('NaN')
     }
+  })
+})
+
+describe('clampToolbarCenter（工具栏横向钳制，#82）', () => {
+  const BAND = { left: 0, right: 1000 }
+
+  it('区间够宽时只在越界时钳住，区间内原样返回', () => {
+    expect(clampToolbarCenter(500, 200, BAND)).toBe(500)
+    // 右越界：中心最多到 right - 半宽 - 间隙
+    expect(clampToolbarCenter(990, 200, BAND)).toBe(1000 - 100 - TOOLBAR_EDGE_GAP)
+    // 左越界：对称
+    expect(clampToolbarCenter(10, 200, BAND)).toBe(0 + 100 + TOOLBAR_EDGE_GAP)
+  })
+
+  it('扣掉两侧面板占位后，工具栏整体落在可用区间内（正是 #82 的判据）', () => {
+    // 右面板占了 [800, 1000]，可用区间只剩 [0, 800]
+    const band = { left: 0, right: 800 }
+    const w = 260
+    const center = clampToolbarCenter(900, w, band)
+    expect(center + w / 2).toBeLessThanOrEqual(800)
+    expect(center - w / 2).toBeGreaterThanOrEqual(0)
+  })
+
+  it('两侧面板都占位时同样成立', () => {
+    const band = { left: 280, right: 700 }
+    const w = 200
+    const center = clampToolbarCenter(500, w, band)
+    expect(center - w / 2).toBeGreaterThanOrEqual(280)
+    expect(center + w / 2).toBeLessThanOrEqual(700)
+  })
+
+  it('可用区间比工具栏还窄时退化为区间中点（宁可压住面板，也不推出画布）', () => {
+    const band = { left: 0, right: 100 }
+    expect(clampToolbarCenter(500, 400, band)).toBe(50)
   })
 })

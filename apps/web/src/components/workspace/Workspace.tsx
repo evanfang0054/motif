@@ -235,7 +235,11 @@ function Workspace({ initialUser }: { initialUser: User }) {
       })
       .catch(() => {
         setDetailFailed(true)
-        setDetail(null)
+        // ⚠️ **刻意不清空 detail**（#85-1.2）：清空会让画布与面板瞬间变空 —— 实测窄屏首次点「适应」
+        // 时 14 张图全消失、约 4 秒后才自己恢复（同一窗口里页面正在重取 canvas-images / topics）。
+        // 重取失败不该先清空再加回：保留**同一任务**的旧数据，失败由 `detailFailed` 表达。
+        // 换了任务则必须清 —— 否则会把上一个任务的画布当成新任务的显示出来。
+        setDetail((d) => (d && d.topic.id === activeId ? d : null))
       })
   }, [activeId, refreshDetail])
 
