@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CanvasImage, GenerateImagesInput, StagedReference, Topic, TopicDetail, User } from '@motif/core'
-import { MAX_REFERENCE_IMAGES, planReferenceAdd } from '@motif/core'
-import { api } from '@/lib/client'
+import { MAX_REFERENCE_IMAGES, planReferenceAdd, isSessionExpiredStatus, validatePrompt } from '@motif/core'
+import { api, ApiError } from '@/lib/client'
 import { usePublicConfig } from '@/lib/use-public-config'
 import { useMediaQuery, WIDE_QUERY } from '@/lib/use-media-query'
 import { TopNav } from './TopNav'
@@ -109,6 +109,14 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const [topicsLoaded, setTopicsLoaded] = useState(false)
   /** 详情拉取失败：不能一直转圈（长轮询会继续重试，成功后自动复位） */
   const [detailFailed, setDetailFailed] = useState(false)
+  /**
+   * 会话已失效（401 / 404）。
+   *
+   * 401 = 登录过期、404 = 任务已不存在：两者都不该继续轮询（#83-1.6 / #73-1.4 同源），
+   * 否则 watch 会变成对失效资源的无间隔请求风暴，而用户只看到「网络抖动」。
+   * 置位后终止 watch 并给出「登录已过期」的明确出口（重新登录）。
+   */
+  const [sessionExpired, setSessionExpired] = useState(false)
   const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | 'promptLibrary' | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<
     | { kind: 'image'; ids: CanvasImage[] }
@@ -345,8 +353,14 @@ function Workspace({ initialUser }: { initialUser: User }) {
               void refreshTopics()
             }
           }
-        } catch {
+        } catch (e) {
           if (stopped) return
+          // 会话失效：终止轮询并明确告知（否则会一直重试同一个失效资源，用户只当是网络抖动）
+          if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
+            stopped = true
+            setSessionExpired(true)
+            return
+          }
           await new Promise((r) => setTimeout(r, 1500))
         }
       }
@@ -366,14 +380,17 @@ function Workspace({ initialUser }: { initialUser: User }) {
    */
   const hasBusyTopic = topics.some((t) => isBusyStatus(t.status))
   useEffect(() => {
-    if (!hasBusyTopic) return
+    // 会话已失效就不要再轮询：接口只会一直 401，白跑请求也刷不出新数据
+    if (!hasBusyTopic || sessionExpired) return
     const timer = setInterval(() => {
       // 标签页在后台时不发请求：省掉没人看的轮询，回到前台的下一个 tick 自动追上
       if (typeof document !== 'undefined' && document.hidden) return
-      void refreshTopics().catch(() => {})
+      void refreshTopics().catch((e) => {
+        if (e instanceof ApiError && isSessionExpiredStatus(e.status)) setSessionExpired(true)
+      })
     }, TOPIC_LIST_POLL_MS)
     return () => clearInterval(timer)
-  }, [hasBusyTopic, refreshTopics])
+  }, [hasBusyTopic, sessionExpired, refreshTopics])
 
   const creatingRef = useRef(false)
   /** 确保存在活动任务：已有则直接复用 id；没有才向服务端创建/复用未使用任务（不动面板内容） */
@@ -382,15 +399,19 @@ function Workspace({ initialUser }: { initialUser: User }) {
     if (creatingRef.current) return null
     creatingRef.current = true
     try {
-      const { topic, reused } = await fetch('/api/topics', {
+      const res = await fetch('/api/topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: '新任务' }),
-      }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
-      setActiveId(topic.id)
+      })
+      const data = (await res.json()) as { topic?: Topic; reused?: boolean; error?: string }
+      // 不检查 res.ok 的话，401 的 `{error}` 会被当成 `{topic: undefined}`，
+      // 崩在 `topic.id` 上并报出一句看不懂的 TypeError（#83-1.6 的现象之一）
+      if (!res.ok || !data.topic) throw new ApiError(res.status, data.error || '新任务创建失败，请重试')
+      setActiveId(data.topic.id)
       await refreshTopics()
-      if (reused) showToast({ tone: 'info', message: '已自动新建任务' })
-      return topic.id
+      if (data.reused) showToast({ tone: 'info', message: '已自动新建任务' })
+      return data.topic.id
     } finally {
       creatingRef.current = false
     }
@@ -401,16 +422,24 @@ function Workspace({ initialUser }: { initialUser: User }) {
     async () => {
       setPanel(IDLE_PANEL)
       try {
-        const { topic, reused } = await fetch('/api/topics', {
+        const res = await fetch('/api/topics', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: '新任务' }),
-        }).then((r) => r.json() as Promise<{ topic: Topic; reused: boolean }>)
-        setActiveId(topic.id)
+        })
+        const data = (await res.json()) as { topic?: Topic; reused?: boolean; error?: string }
+        if (!res.ok || !data.topic) throw new ApiError(res.status, data.error || '新任务创建失败，请重试')
+        setActiveId(data.topic.id)
         await refreshTopics()
-        showToast({ tone: 'success', message: reused ? '已回到未使用的空任务' : '已创建新任务' })
-      } catch {
-        showToast({ tone: 'danger', message: '新任务创建失败，请重试' })
+        showToast({ tone: 'success', message: data.reused ? '已回到未使用的空任务' : '已创建新任务' })
+      } catch (e) {
+        // 会话失效时给「登录已过期」而不是通用的「创建失败」——用户才知道该重新登录（#83-1.6）
+        if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
+          setSessionExpired(true)
+          showToast({ tone: 'danger', message: '登录已过期，请重新登录' })
+          return
+        }
+        showToast({ tone: 'danger', message: e instanceof Error ? e.message : '新任务创建失败，请重试' })
       }
     },
     [refreshTopics]
@@ -427,6 +456,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
   }, [detail])
 
   const submitGenerate = useCallback(async () => {
+    // 提示词超限（>4000 字）在前端先行阻断：服务端也会 400，但用户不该等到提交才知道（#83-1.3）
+    const promptErr = validatePrompt(panel.prompt)
+    if (promptErr) {
+      showToast({ tone: 'danger', message: promptErr, timeoutMs: 4000 })
+      return
+    }
     try {
       // 保证在明确的活动任务下提交（没有则自动创建），避免依赖服务端对空 topicId 的隐式处理
       const tid = await ensureTopic()
@@ -451,6 +486,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
       await refreshDetail(res.topic.id)
       showToast({ tone: 'info', message: '任务已加入队列，后台生成中。' })
     } catch (e) {
+      // 会话失效：明确告知「登录已过期」，并把画布上的提示条也点亮（#83-1.6）
+      if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
+        setSessionExpired(true)
+        showToast({ tone: 'danger', message: '登录已过期，请重新登录', timeoutMs: 4000 })
+        return
+      }
       const msg = e instanceof Error ? e.message : '提交失败，请重试。'
       showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
       // 额度不足：光提示不够，直接把充值入口送到用户面前
@@ -565,7 +606,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           staged: [...p.staged, reference],
           stagedPreviews: { ...p.stagedPreviews, [reference.id]: previewUrl },
         }))
-        showToast({ tone: 'info', message: '参考图已暂存，点「开始生成」后进入画布' })
+        showToast({ tone: 'info', message: '参考图已暂存，点「生成」后进入画布' })
       } catch (e) {
         showToast({ tone: 'danger', message: e instanceof Error ? e.message : '上传失败' })
       }
@@ -816,8 +857,19 @@ function Workspace({ initialUser }: { initialUser: User }) {
             各自硬编码 `top` 就会互相盖住。顺序 = 「正在发生什么 → 出了什么问题」。
             z-index 26：高于两侧面板（25），真重叠时也点得到 —— 与 `.canvas-toolbar` 同一取舍；
             仍低于顶栏（30）。`pointer-events` 交给各条自己开（只有带按钮的那条需要）。 */}
-        {busy || (detail && detailFailed) ? (
+        {sessionExpired || busy || (detail && detailFailed) ? (
           <div className="ws-canvas-notices">
+            {/* 会话失效置顶：它是最该被看到、也唯一有明确出路的一条（重新登录） */}
+            {sessionExpired ? (
+              <div role="alert" className="ws-canvas-notice ws-canvas-notice-action" data-canvas-no-zoom>
+                <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }}>
+                  登录已过期，请重新登录后再继续。
+                </InlineText>
+                <Button size="sm" variant="secondary" onPress={() => window.location.assign('/')}>
+                  重新登录
+                </Button>
+              </div>
+            ) : null}
             {/* 生成进行中的全局提示：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
             {busy ? (
               <div role="status" aria-live="polite" className="ws-canvas-notice" style={{ color: 'var(--foreground)' }}>

@@ -275,9 +275,11 @@
   border-color: var(--danger);
 }
 
+/* 禁用态降透明度统一走 HeroUI 的语义令牌（#78-1.1）：全站只有这一个来源，
+   不再各处硬编码 0.5，也就不会出现「本体一层 + 内部元素再叠一层」的叠加。 */
 .admin-btn-primary:disabled,
 .admin-btn-danger:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
@@ -475,9 +477,13 @@
   font-size: 13px;
 }
 
-.admin-actions button:disabled,
+/* ⚠️ `:not(.button)` 是关键（#78-1.1）：HeroUI 的 `<Button>` 也是原生 `<button class="button">`，
+   它自己已有 `status-disabled`（同一份 `--disabled-opacity`）。不排除它就会出现
+   「HeroUI 一层 + 本规则一层」的叠加（0.5 × 0.5 = 0.25），label 明显发虚。
+   排除后：原生按钮由本规则降透明度，HeroUI 按钮由组件语义降 —— 每个按钮恰好一层。 */
+.admin-actions button:disabled:not(.button),
 .admin-actions select:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 
@@ -545,8 +551,9 @@
   cursor: pointer;
 }
 
-.admin-pager button:disabled {
-  opacity: 0.5;
+/* 同上：排除 HeroUI 按钮，避免与组件自带的禁用态叠成 0.25 */
+.admin-pager button:disabled:not(.button) {
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 

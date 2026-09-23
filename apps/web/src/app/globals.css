@@ -936,8 +936,11 @@ html[data-theme="dark"] .lp-hero {
   color: var(--brand-warm);
 }
 
+/* 禁用态降透明度统一走 HeroUI 的语义令牌（#78-1.1）：全站只有这一个来源，
+   避免出现「按钮本体一层 + 内部元素再叠一层」的叠加。上传格是原生 button（非 HeroUI 控件），
+   拿不到 `status-disabled` 工具类，故显式引用同一个变量而不是再写一个 0.5。 */
 .ws-ref-add:disabled {
-  opacity: 0.5;
+  opacity: var(--disabled-opacity);
   cursor: not-allowed;
 }
 

@@ -160,7 +160,7 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
 
         {hasAttachable && (
           <Typography type="body-xs" className="shrink-0 leading-5" style={{ color: 'var(--muted)' }}>
-            「用作参考图」会把这张示例图放进本任务的参考图暂存区（点「开始生成」后进入画布）；
+            「用作参考图」会把这张示例图放进本任务的参考图暂存区（点「生成」后进入画布）；
             <b>提示词不会被改动</b>。
           </Typography>
         )}

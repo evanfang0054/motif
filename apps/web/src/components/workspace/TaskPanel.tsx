@@ -1,12 +1,23 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
-import { MAX_REFERENCE_IMAGES, TOPIC_STATUS_LABEL, finiteNumber } from '@motif/core'
+import {
+  COUNT_MAX,
+  COUNT_MIN,
+  MAX_REFERENCE_IMAGES,
+  PROMPT_MAX_LEN,
+  SIZE_MAX,
+  SIZE_MIN,
+  TOPIC_STATUS_LABEL,
+  clampCount,
+  finiteNumber,
+  snapCustomSize,
+} from '@motif/core'
 import type { CanvasImage, StagedReference } from '@motif/core'
 
 interface Props {
@@ -90,7 +101,6 @@ function TaskPanel(p: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const credits = p.credits
-  const insufficient = typeof credits === 'number' && credits < p.count
   // 可移除的暂存参考（上传后、生成前）；「@ 引用」进来的画布图不进暂存列表，但仍计入 referenceCount
   const stagedOnly = p.staged
   const canvasOnly = p.canvasReferences
@@ -98,6 +108,39 @@ function TaskPanel(p: Props) {
   // 上传与「@ 引用」共用同一个上限：这里只看总量，满了就不让再选文件
   const atReferenceCap = p.referenceCount >= MAX_REFERENCE_IMAGES
   const sizeLabel = sizeLabelOf(p.size)
+
+  /**
+   * 张数的「键入即同步」与「非法提示」。
+   *
+   * RAC 的 NumberField 只在**提交（失焦 / 步进器 / 回车）**时才触发 `onChange`，
+   * 键入期间底部「本次将消耗 N 张」会停在旧值（#78-1.5 的现象）。
+   * 这里用 Input 的原生 `onInput` 读实时文本，只为**显示**同步一个钳制后的张数，
+   * 不写回受控值 —— 否则每敲一个字符都会把输入框重写成归一值，比失焦归一更烦人。
+   * `countInvalid` 只在键入期间为真：失焦后 RAC 会把输入框复位成合法值，提示随之收起。
+   */
+  const [liveCount, setLiveCount] = useState<number | null>(null)
+  const [countInvalid, setCountInvalid] = useState(false)
+  /** 自定义尺寸吸附后的回显（如「已吸附到 3:2 · 1536×1024」）；空串表示不显示 */
+  const [sizeNote, setSizeNote] = useState('')
+
+  const displayCount = liveCount ?? p.count
+  const insufficient = typeof credits === 'number' && credits < displayCount
+  const promptTooLong = p.prompt.length > PROMPT_MAX_LEN
+
+  /** 张数失焦：先 round 再 clamp 后写回（与核心库的 clampCount 同一份判据） */
+  const commitCount = (v: number) => {
+    p.onCountChange(clampCount(finiteNumber(v, 1)))
+    setLiveCount(null)
+    setCountInvalid(false)
+  }
+
+  /** 自定义宽高失焦：按当前比例吸附到最近的一档，并回显最终生效尺寸 */
+  const commitCustomSize = (edited: 'w' | 'h', w: number, h: number) => {
+    const snapped = snapCustomSize(edited, w, h)
+    p.onCustomSizeChange(snapped.width, snapped.height)
+    const size = `${snapped.width}×${snapped.height}`
+    setSizeNote(snapped.ratio ? `已吸附到 ${snapped.ratio} · ${size}` : `已吸附到 ${size}`)
+  }
 
   // 提示词框随内容长高（到上限为止）。⚠️ 先把 height 归零再读 scrollHeight，
   // 否则删字时 scrollHeight 会被上一轮的内联高度撑住，框只增不减。
@@ -256,21 +299,40 @@ function TaskPanel(p: Props) {
           {/* 张数与尺寸并排：两个都是短字段，各占一行纯属浪费垂直空间 */}
           <div className="flex items-end gap-4">
             <div>
-              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>张数</div>
+              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>张数（{COUNT_MIN}–{COUNT_MAX} 张）</div>
               <NumberField
-                aria-label="张数"
-                minValue={1}
-                maxValue={12}
+                aria-label={`张数（${COUNT_MIN}–${COUNT_MAX} 张）`}
+                minValue={COUNT_MIN}
+                maxValue={COUNT_MAX}
                 value={p.count}
-                onChange={(v) => p.onCountChange(finiteNumber(v, 1))}
+                onChange={commitCount}
                 className="w-[144px]"
               >
                 <NumberField.Group>
                   <NumberField.DecrementButton />
-                  <NumberField.Input />
+                  <NumberField.Input
+                    // 键入即同步消耗文案：`onChange` 只在提交时触发（见上方说明），故读原生实时文本
+                    onInput={(e) => {
+                      const raw = e.currentTarget.value.trim()
+                      const n = raw === '' ? NaN : Number(raw)
+                      setCountInvalid(!Number.isFinite(n) || n < COUNT_MIN || n > COUNT_MAX)
+                      setLiveCount(Number.isFinite(n) ? clampCount(n) : null)
+                    }}
+                    // 失焦：RAC 会把输入框复位成合法值，键入期的非法提示随之收起。
+                    // ⚠️ 不能省：`onChange` 只在值真的变了才触发，清空后失焦（值没变）不会触发它。
+                    onBlur={() => {
+                      setLiveCount(null)
+                      setCountInvalid(false)
+                    }}
+                  />
                   <NumberField.IncrementButton />
                 </NumberField.Group>
               </NumberField>
+              {countInvalid && (
+                <InlineText type="body-xs" role="alert" className="mt-1 block" style={{ color: 'var(--danger-quiet)' }}>
+                  张数需为 {COUNT_MIN}–{COUNT_MAX} 的整数。
+                </InlineText>
+              )}
             </div>
             <div className="min-w-0">
               <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>尺寸</div>
@@ -282,7 +344,13 @@ function TaskPanel(p: Props) {
                   {sizeLabel}
                   <ChevronDown />
                 </Button>
-                <Dropdown.Popover>
+                {/* #78-1.2：把 HeroUI 默认的「淡入 + 90% 缩放 + 方向位移」换成**只有一次淡入**。
+                    HeroUI 的 enter 动画是 `animate-in duration-150 fade-in-0 zoom-in-90` 外加
+                    placement 位移；缩放/位移会让底板与内容的绘制不同步（实测出现「文字先浮上来、
+                    底板还没到」的幽灵字）。只留 150ms（≤200ms）的整块淡入 ⇒ 底板与内容同帧出现。
+                    ⚠️ 这里是在 Dropdown.Popover 的**公开 className** 上换动画（HeroUI 官方
+                    `dropdown/custom-styles` demo 同样在 Popover 上传 className），不是改组件内部样式。 */}
+                <Dropdown.Popover className="data-[entering=true]:animate-in data-[entering=true]:fade-in-0 data-[entering=true]:duration-150 data-[exiting=true]:animate-out data-[exiting=true]:fade-out data-[exiting=true]:duration-100">
                   <Dropdown.Menu
                     selectionMode="single"
                     selectedKeys={new Set([p.size])}
@@ -317,7 +385,15 @@ function TaskPanel(p: Props) {
               `flex-wrap` 是配套的：两个 144px 字段 + × + 说明文字在窄屏放不下一行，允许换行而不是溢出。 */}
           {p.size === 'custom' && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
-              <NumberField aria-label="自定义宽度" minValue={256} maxValue={2048} value={p.customW} onChange={(v) => p.onCustomSizeChange(finiteNumber(v, 256), p.customH)} className="w-[144px]">
+              <NumberField
+                aria-label="自定义宽度"
+                minValue={SIZE_MIN}
+                maxValue={SIZE_MAX}
+                value={p.customW}
+                // 失焦（提交）即吸附：保留正在编辑的宽，按最近的一档比例推高（#83-1.2）
+                onChange={(v) => commitCustomSize('w', finiteNumber(v, SIZE_MIN), p.customH)}
+                className="w-[144px]"
+              >
                 <NumberField.Group>
                   <NumberField.DecrementButton />
                   <NumberField.Input />
@@ -325,14 +401,27 @@ function TaskPanel(p: Props) {
                 </NumberField.Group>
               </NumberField>
               ×
-              <NumberField aria-label="自定义高度" minValue={256} maxValue={2048} value={p.customH} onChange={(v) => p.onCustomSizeChange(p.customW, finiteNumber(v, 256))} className="w-[144px]">
+              <NumberField
+                aria-label="自定义高度"
+                minValue={SIZE_MIN}
+                maxValue={SIZE_MAX}
+                value={p.customH}
+                // 反之保高推宽
+                onChange={(v) => commitCustomSize('h', p.customW, finiteNumber(v, SIZE_MIN))}
+                className="w-[144px]"
+              >
                 <NumberField.Group>
                   <NumberField.DecrementButton />
                   <NumberField.Input />
                   <NumberField.IncrementButton />
                 </NumberField.Group>
               </NumberField>
-              <InlineText type="body-sm">像素（256–2048）</InlineText>
+              <InlineText type="body-sm">像素（{SIZE_MIN}–{SIZE_MAX}）</InlineText>
+              {sizeNote && (
+                <InlineText type="body-xs" role="status" className="basis-full" style={{ color: 'var(--muted-strong)' }}>
+                  {sizeNote}
+                </InlineText>
+              )}
             </div>
           )}
         </div>
@@ -343,6 +432,14 @@ function TaskPanel(p: Props) {
           <div className="mb-2 flex items-center justify-between">
             <InlineText type="body-sm" className="ws-panel-label">提示词</InlineText>
             <div className="flex items-center gap-1">
+              {/* 字数计数（#83-1.3）：超限变色，配合下方的内联提示与置灰的主按钮阻断提交 */}
+              <InlineText
+                type="body-xs"
+                role={promptTooLong ? 'alert' : undefined}
+                style={{ color: promptTooLong ? 'var(--danger-quiet)' : 'var(--muted)' }}
+              >
+                {p.prompt.length} / {PROMPT_MAX_LEN}
+              </InlineText>
               <IconButton
                 variant="secondary"
                 size="sm"
@@ -365,6 +462,11 @@ function TaskPanel(p: Props) {
               className="w-full min-h-[104px] resize-none"
             />
           </TextField>
+          {promptTooLong && (
+            <InlineText type="body-xs" className="mt-1 block" style={{ color: 'var(--danger-quiet)' }}>
+              提示词超出 {PROMPT_MAX_LEN} 字上限，请精简后再生成。
+            </InlineText>
+          )}
         </div>
       </div>
 
@@ -376,9 +478,9 @@ function TaskPanel(p: Props) {
         {!p.busy && (
           <div className="text-xs" style={{ color: insufficient ? 'var(--danger-quiet)' : 'var(--muted)', minHeight: 16 }}>
             {insufficient
-              ? `本次将消耗 ${p.count} 张，当前余额仅 ${credits} 张，请充值或调小张数`
+              ? `本次将消耗 ${displayCount} 张，当前余额仅 ${credits} 张，请充值或调小张数`
               : typeof credits === 'number'
-                ? `本次将消耗 ${p.count} 张，余额 ${credits} 张`
+                ? `本次将消耗 ${displayCount} 张，余额 ${credits} 张`
                 : null}
           </div>
         )}
@@ -388,8 +490,14 @@ function TaskPanel(p: Props) {
             取消生成
           </Button>
         ) : (
-          <Button variant="primary" className="w-full" onPress={p.onGenerate} isDisabled={!p.prompt.trim()}>
-            {p.prompt.trim() ? `生成（${p.count} 张）` : '生成'}
+          <Button
+            variant="primary"
+            className="w-full"
+            // 提示词超限时阻断提交（#83-1.3）：服务端也会 400，但用户不该等到提交才知道
+            isDisabled={!p.prompt.trim() || promptTooLong}
+            onPress={p.onGenerate}
+          >
+            {p.prompt.trim() ? `生成（${displayCount} 张）` : '生成'}
           </Button>
         )}
       </div>
