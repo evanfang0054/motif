@@ -64,8 +64,10 @@ function Panel() {
   return (
     <Card className="p-6" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
       <div className="flex items-center justify-center gap-2"><BrandMark /><b>支付结果</b></div>
+      {/* ⚠️ 下面那条 `align="center"` 不能省：外层 Card 靠内联 `textAlign: 'center'` 居中，而 `Typography`
+          自己在元素上带 `text-align: start` —— 元素自己的声明盖掉祖先的继承值，去掉就变左对齐。 */}
       {state === 'pending' && (
-        <Typography type="body-sm" className="mt-3" role="status" aria-live="polite">
+        <Typography type="body-sm" align="center" className="mt-3" role="status" aria-live="polite">
           <span className="pay-pulse" /> 支付处理中，到账后本页自动更新…
         </Typography>
       )}

@@ -214,8 +214,11 @@ function Landing() {
               width={96}
               height={96}
             />
-            <Typography type="h2" className="lp-section-title">准备好开始了吗？</Typography>
-            <Typography type="body" className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></Typography>
+            {/* ⚠️ 这两处必须显式 `align="center"`：`Typography` 在**元素自身**上带 `text-align: start`
+                （HeroUI 的默认），而 `text-align` 是可继承属性 —— 元素自己的声明会盖掉祖先的 `.lp-cta-inner
+                { text-align: center }`。裸 `<h2>`/`<p>` 时代靠继承居中，换成 Typography 后就变左对齐了。 */}
+            <Typography type="h2" align="center" className="lp-section-title">准备好开始了吗？</Typography>
+            <Typography type="body" align="center" className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></Typography>
             <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
           </div>
         </section>
