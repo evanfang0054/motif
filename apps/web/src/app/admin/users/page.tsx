@@ -141,30 +141,32 @@ export default function AdminUsersPage() {
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <Select aria-label="角色筛选" value={role || null} onChange={(v) => { setRole((v as RoleFilter) ?? ''); setPage(1) }}>
+        {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
+            两个下拉各自用哨兵 `all`（id 只需在同一个 ListBox 内唯一），在 onChange 边界映射回 `''`。 */}
+        <Select aria-label="角色筛选" value={role || 'all'} onChange={(v) => { setRole(v === 'all' ? '' : (v as RoleFilter)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="role-all" id="role-all">全部角色</ListBox.Item>
-              <ListBox.Item key="role-user" id="role-user">普通用户</ListBox.Item>
-              <ListBox.Item key="role-admin" id="role-admin">管理员</ListBox.Item>
-              <ListBox.Item key="role-root" id="role-root">超级管理员</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部角色</ListBox.Item>
+              <ListBox.Item key="user" id="user">普通用户</ListBox.Item>
+              <ListBox.Item key="admin" id="admin">管理员</ListBox.Item>
+              <ListBox.Item key="root" id="root">超级管理员</ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
-        <Select aria-label="状态筛选" value={status || null} onChange={(v) => { setStatus((v as StatusFilter) ?? ''); setPage(1) }}>
+        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="status-all" id="status-all">全部状态</ListBox.Item>
-              <ListBox.Item key="status-active" id="status-active">正常</ListBox.Item>
-              <ListBox.Item key="status-disabled" id="status-disabled">已禁用</ListBox.Item>
+              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+              <ListBox.Item key="active" id="active">正常</ListBox.Item>
+              <ListBox.Item key="disabled" id="disabled">已禁用</ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>

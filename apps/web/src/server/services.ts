@@ -46,6 +46,20 @@ export class ServiceError extends Error {
 
 // ---------- auth ----------
 
+/**
+ * 拼「重置密码」直达链接；站点地址未配置时返回 `null`（**不发链接，而不是发半成品或报错**）。
+ *
+ * 为什么抽成纯函数：拼装口径要被单测钉住（末尾多斜杠、需转义的邮箱），且 CLI 与服务端共用同一份。
+ *
+ * ⚠️ 复用 `SITE_URL`（它同时被支付回调使用）。该键在「支付与套餐」组里、且只在选真实支付渠道时才必填，
+ * 所以**必须容忍它为空** —— 缺它只意味着「发不了链接」，绝不意味着「重置流程不可用」。
+ */
+export function buildResetLink(siteUrl: string | undefined, email: string, code: string): string | null {
+  const base = (siteUrl ?? '').trim().replace(/\/+$/, '')
+  if (!base) return null
+  return `${base}/?reset=1&email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`
+}
+
 export async function sendCode(
   store: MotifStore,
   mailer: MailerConfig,
@@ -66,8 +80,11 @@ export async function sendCode(
     throw new ServiceError(429, '请求过于频繁，请稍后再试。')
   }
   const code = store.createVerificationCode(purpose, email, 1000 * 60 * 10)
+  // 只给「找回密码」拼直达链接：注册验证码没有深链语义。
+  // 站点地址缺失时 buildResetLink 返回 null → 邮件正文与改造前逐字一致（降级而非报错）。
+  const link = purpose === 'password-reset' ? buildResetLink(resolveSetting(store, process.env, 'SITE_URL') ?? undefined, email, code) : null
   // 真实渠道（smtp/resend/sendgrid）发信；console 为本地直出（只打日志）
-  await mailer.mailer.sendVerificationCode(email, code, purpose)
+  await mailer.mailer.sendVerificationCode(email, code, purpose, link ?? undefined)
   // 安全默认：devCode 回传仅限「console 渠道 + 非生产」或「显式开启直出开关」。
   // 开关读配置（数据库优先、回退环境变量），因此可以在管理后台危险区里热改。
   // ⚠️ 保留「非生产」这一半：本地开发默认直出是既有行为，改成纯开关会让本地注册流程拿不到验证码。

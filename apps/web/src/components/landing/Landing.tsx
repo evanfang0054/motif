@@ -6,6 +6,7 @@ import { Button } from '@heroui/react'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
 import { usePublicConfig } from '@/lib/use-public-config'
+import { parseResetParams, type ResetPrefill } from '@/lib/reset-link'
 import { AuthModal, type Mode } from './AuthModal'
 
 /**
@@ -22,11 +23,29 @@ function Landing() {
   // 弹窗模式由 Landing 持有：默认 login（回访/老用户主路径）；注册意图入口显式切 register
   const [authMode, setAuthMode] = useState<Mode>('login')
   const [authOpen, setAuthOpen] = useState(false)
+  // 找回密码深链带来的预填值（只在首次进入时设一次；用户后续操作以弹窗内 state 为准）
+  const [resetPrefill, setResetPrefill] = useState<ResetPrefill | null>(null)
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
   // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」
+  // 另：/?reset=1&email=..&code=.. 是找回密码邮件里的**直达链接**（#21）—— 自动进重置模式并预填
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    // 深链优先于 mode：邮件链接是明确的单一意图，不该被同时带的 mode 参数抢走
+    const reset = parseResetParams(Object.fromEntries(params))
+    if (reset) {
+      setResetPrefill(reset)
+      setAuthMode('reset')
+      setAuthOpen(true)
+      // 预填值已进 state，立刻把深链自己的三个参数从地址栏与浏览器历史里抹掉：
+      // 验证码不该长期停在 URL 上（截图、转发、共用屏幕都会漏）。
+      // 只删这三个参数、不动别人的（hash 也原样保留）；用 replaceState 而非 router.replace —— 页面没变，无需 RSC 往返。
+      for (const k of ['reset', 'email', 'code']) params.delete(k)
+      const rest = params.toString()
+      const url = rest ? `${window.location.pathname}?${rest}` : window.location.pathname
+      window.history.replaceState(null, '', url + window.location.hash)
+      return
+    }
     const mode = params.get('mode')
     if (mode === 'register' || mode === 'login') {
       setAuthMode(mode)
@@ -42,6 +61,15 @@ function Landing() {
   const openAuth = (m: Mode) => {
     setAuthMode(m)
     setAuthOpen(true)
+  }
+
+  /**
+   * 弹窗关闭：顺手清掉深链预填值。
+   * 预填只服务「从邮件点进来的那一次」—— 不清的话，之后切到注册表单会带出一个可能已过期的验证码。
+   */
+  const closeAuth = () => {
+    setAuthOpen(false)
+    setResetPrefill(null)
   }
 
   /** 锚点平滑滚动到色带（section）顶部：配合 scroll-margin-top 让整段模块完整入画 */
@@ -201,7 +229,12 @@ function Landing() {
       </footer>
 
       {authOpen && (
-        <AuthModal mode={authMode} onModeChange={setAuthMode} onClose={() => setAuthOpen(false)} />
+        <AuthModal
+          mode={authMode}
+          onModeChange={setAuthMode}
+          onClose={closeAuth}
+          prefill={resetPrefill ?? undefined}
+        />
       )}
     </div>
   )

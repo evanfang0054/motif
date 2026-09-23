@@ -10,7 +10,11 @@ export type MailPurpose = 'register' | 'password-reset'
 
 export interface Mailer {
   readonly name: string
-  sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void>
+  /**
+   * @param link 可选**直达链接**（找回密码用）：带上它用户点开就能直接填新密码，不必手抄邮箱与验证码。
+   *   缺省时正文与改造前逐字一致 —— 站点地址没配好不该让邮件变成半成品，更不该阻断重置流程。
+   */
+  sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void>
   /** 管理后台测试发送：发一封纯文本测试邮件，失败原样抛底层错误（如 SMTP 535 授权码错误） */
   sendTest(to: string): Promise<void>
 }
@@ -22,21 +26,47 @@ const PURPOSE_TEXT: Record<MailPurpose, string> = {
   'password-reset': '重置 Motif 密码',
 }
 
-function codeEmailHtml(code: string, purpose: MailPurpose): string {
+/**
+ * HTML 上下文转义（属性与文本都够用）。
+ *
+ * ⚠️ 为什么必须有：直达链接里含管理员可配置的 `SITE_URL`。`new URL()` **不会**拒绝带引号的串
+ * （`https://x.io/?a=" onmouseover=...` 能通过校验并原样落库），所以裸插值进 `href="${link}"`
+ * 会让配置值**突破属性边界**，在发往用户的邮件里注入属性/事件/第二个链接（钓鱼面）。
+ * `&` 必须最先替换，否则会把后面生成的实体二次转义。
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function codeEmailHtml(code: string, purpose: MailPurpose, link?: string): string {
+  // 有直达链接时追加一段「点链接即可」的引导；没有就完全不渲染，保持原文案
+  const linkBlock = link
+    ? `
+  <p style="color:#52525b;font-size:14px;margin:20px 0 8px;">也可以直接点下面的链接进入重置页，省去手填邮箱与验证码：</p>
+  <a href="${escapeHtml(link)}" style="display:inline-block;background:#cc785c;color:#fff;text-decoration:none;font-size:14px;font-weight:600;border-radius:8px;padding:12px 20px;">前往重置密码</a>
+  <p style="color:#9ca3af;font-size:12px;margin-top:8px;word-break:break-all;">若按钮无法点击，请复制此链接到浏览器打开：${escapeHtml(link)}</p>`
+    : ''
   return `<div style="font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;max-width:520px;margin:0 auto;padding:24px;">
   <h2 style="color:#131311;margin:0 0 8px;">Motif 验证码</h2>
   <p style="color:#52525b;font-size:14px;margin:0 0 16px;">你正在${PURPOSE_TEXT[purpose]}，本次验证码为：</p>
-  <div style="font-size:32px;font-weight:800;letter-spacing:8px;color:#131311;background:#f3efe6;border-radius:12px;padding:16px;text-align:center;">${code}</div>
+  <div style="font-size:32px;font-weight:800;letter-spacing:8px;color:#131311;background:#f3efe6;border-radius:12px;padding:16px;text-align:center;">${code}</div>${linkBlock}
   <p style="color:#9ca3af;font-size:12px;margin-top:16px;">验证码 10 分钟内有效，请勿泄露给他人。若非本人操作，请忽略本邮件。</p>
 </div>`
+}
+
+/** 纯文本版本（nodemailer 的 text 备选）：有链接时追加一行，没有则与改造前一致 */
+function codeEmailText(code: string, purpose: MailPurpose, link?: string): string {
+  const base = `你正在${PURPOSE_TEXT[purpose]}，验证码 ${code}，10 分钟内有效。`
+  return link ? `${base}\n\n直达链接（也可直接点开填写新密码）：${link}` : base
 }
 
 /** 本地开发：验证码只打日志（配合 MOTIF_EXPOSE_DEV_CODE 在页面直出） */
 export class ConsoleMailer implements Mailer {
   readonly name = 'console'
 
-  async sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void> {
-    console.log(`[motif] ${purpose} 验证码已生成 → ${to}: ${code}`)
+  async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
+    // 本地联调：把链接一并打出来，省得去库里翻 SITE_URL 手工拼
+    console.log(`[motif] ${purpose} 验证码已生成 → ${to}: ${code}${link ? `\n[motif] 直达链接：${link}` : ''}`)
   }
 
   async sendTest(to: string): Promise<void> {
@@ -62,13 +92,13 @@ export class SmtpMailer implements Mailer {
     })
   }
 
-  async sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void> {
+  async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
     await this.transporter.sendMail({
       from: `"Motif" <${this.config.from}>`,
       to,
       subject: `Motif 验证码：${code}`,
-      html: codeEmailHtml(code, purpose),
-      text: `你正在${PURPOSE_TEXT[purpose]}，验证码 ${code}，10 分钟内有效。`,
+      html: codeEmailHtml(code, purpose, link),
+      text: codeEmailText(code, purpose, link),
     })
   }
 
@@ -92,7 +122,7 @@ export class ResendMailer implements Mailer {
     private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch
   ) {}
 
-  async sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void> {
+  async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
     const res = await this.fetchFn('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
@@ -100,7 +130,8 @@ export class ResendMailer implements Mailer {
         from: this.from,
         to: [to],
         subject: `Motif 验证码：${code}`,
-        html: codeEmailHtml(code, purpose),
+        html: codeEmailHtml(code, purpose, link),
+        text: codeEmailText(code, purpose, link),
       }),
       signal: AbortSignal.timeout(30_000),
     })
@@ -139,7 +170,7 @@ export class SendGridMailer implements Mailer {
     private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch
   ) {}
 
-  async sendVerificationCode(to: string, code: string, purpose: MailPurpose): Promise<void> {
+  async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
     const res = await this.fetchFn('https://api.sendgrid.com/v3/mail/send', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
@@ -147,7 +178,10 @@ export class SendGridMailer implements Mailer {
         personalizations: [{ to: [{ email: to }] }],
         from: { email: this.from },
         subject: `Motif 验证码：${code}`,
-        content: [{ type: 'text/html', value: codeEmailHtml(code, purpose) }],
+        content: [
+          { type: 'text/plain', value: codeEmailText(code, purpose, link) },
+          { type: 'text/html', value: codeEmailHtml(code, purpose, link) },
+        ],
       }),
       signal: AbortSignal.timeout(30_000),
     })
