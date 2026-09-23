@@ -227,7 +227,9 @@ function OverviewSkeleton() {
           </div>
         ))}
       </div>
-      <div className="admin-panel" style={{ marginTop: 16 }}>
+      {/* ⚠️ 不套 .admin-panel：概览页的骨架是渲染在**外层 section.admin-panel 里面**的，
+          再套一层会变成「卡中卡」（双边框 + 双阴影）—— admin.css 自己写明要避免。 */}
+      <div style={{ marginTop: 16 }}>
         <Skeleton className="h-4 w-28 rounded-medium" />
         {Array.from({ length: 5 }, (_, i) => (
           <Skeleton className="mt-3 h-3 w-full rounded-medium" key={i} />

@@ -70,24 +70,25 @@ const TOPIC_LIST_POLL_MS = 5000
  * 位置写死几组百分比：骨架不需要真随机，稳定反而更好（不会每次闪动）。
  */
 function CanvasSkeleton() {
+  // ⚠️ 用 `aspect-ratio` 定形状、**只给宽度**：真实画布上的缩略图被 `displaySize` 钳成 ≤240×240 的**方图**
+  // （见 packages/core/src/canvas.ts 的 SLOT_W）。若同时给宽高百分比，块的像素比例 = 画布宽高比 ×(w/h)，
+  // 宽屏下会变成 1.7:1 的扁条，完全不像图片。位置用百分比（相对画布，任意视口都不重叠、不溢出）。
   const blocks = [
-    { left: '7%', top: '13%', w: '21%', h: '29%' },
-    { left: '33%', top: '7%', w: '25%', h: '35%' },
-    { left: '63%', top: '17%', w: '21%', h: '29%' },
-    { left: '21%', top: '51%', w: '23%', h: '31%' },
-    { left: '53%', top: '55%', w: '25%', h: '29%' },
+    { left: '7%', top: '12%', w: '20%' },
+    { left: '33%', top: '6%', w: '23%' },
+    { left: '62%', top: '15%', w: '20%' },
+    { left: '20%', top: '54%', w: '22%' },
+    { left: '52%', top: '58%', w: '23%' },
   ]
   return (
-    <div className="h-full w-full" style={{ background: 'var(--canvas-background)' }} aria-hidden>
-      <div className="relative h-full w-full">
-        {blocks.map((b, i) => (
-          <Skeleton
-            key={i}
-            className="absolute rounded-lg"
-            style={{ left: b.left, top: b.top, width: b.w, height: b.h }}
-          />
-        ))}
-      </div>
+    <div className="relative h-full w-full" aria-hidden>
+      {blocks.map((b, i) => (
+        <Skeleton
+          key={i}
+          className="absolute rounded-lg"
+          style={{ left: b.left, top: b.top, width: b.w, aspectRatio: '1 / 1' }}
+        />
+      ))}
     </div>
   )
 }

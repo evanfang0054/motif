@@ -45,10 +45,11 @@ export function ListEmptyContent({ text }: { text: string }) {
  * 早先显示的是「共 … 个」—— 诚实但会闪一下；改成与数字等宽的骨架条，位置不跳。
  */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
-  if (loading) return <Skeleton className="inline-block h-4 w-16 rounded-medium" />
+  // ⚠️ 外层 span 必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
+  // 若加载时整个换掉、完成后再挂一个新 span，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
   return (
     <span className="admin-muted" role="status">
-      共 {total} {unit}
+      {loading ? <Skeleton className="inline-block h-4 w-16 rounded-medium" /> : `共 ${total} ${unit}`}
     </span>
   )
 }
