@@ -127,11 +127,16 @@ function Workspace({ initialUser }: { initialUser: User }) {
   /** 列表请求序号：迟到的旧响应不许落地（否则状态快照回退 ⇒ 同一次结束被报两遍） */
   const listSeqRef = useRef(0)
   /**
-   * 详情请求序号：**迟到的失败响应不许落地**。
+   * 详情请求序号：**迟到的响应不许落地**（两种后果都由它兜住）。
    *
-   * A（已加载）→ 点 B → 立刻点回 A：A 的请求成功、B 的请求随后才 reject —— 没有序号守卫时
-   * 那句 catch 会按「换了任务」把 A 的画布清空，正是 #85-1.2 要消掉的「画布突然变空」。
-   * 与 `listSeqRef` 同一手法：只在「这仍是最新一次详情请求」时才允许改失败位或清 detail。
+   * ① 迟到的**失败**：A（已加载）→ 点 B → 立刻点回 A，B 的 reject 随后才到，那句 catch 会按
+   *    「换了任务」把 A 的画布清空 —— 正是 #85-1.2 要消掉的「画布突然变空」，触发者是**已经离开的任务**。
+   * ② 迟到的**成功**：同场景下 B 的响应后到会把 `detail` 写成 B —— 画布显示 B 的图而 `activeId` 是 A；
+   *    更糟的是 `detailRef` 变成 B 后，长轮询算出的 `since` 是空串，而 watch 路由对空 `since`
+   *    **立即返回** `changed:false` ⇒ 无间隔请求风暴，且不会自愈。
+   *
+   * 序号由**发起方**自增（切任务 effect 与 `retryDetail`），不放进 `refreshDetail` 内部 ——
+   * 它同时被 `submitGenerate` / `renameTopic` 这类用户动作调用，那些必须无条件落地。
    */
   const detailSeqRef = useRef(0)
 
@@ -189,9 +194,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
     return topics
   }, [])
 
+  /**
+   * 拉详情并落地。
+   *
+   * `seq` 是**发起方**的请求序号（见 `detailSeqRef`）：不等于当前序号即视为已被更新的请求取代，
+   * 既不落地也不回给调用方（返回 `null`）。
+   * 不传 `seq` 表示「无条件落地」—— `submitGenerate` / `renameTopic` / `cancelRunning` /
+   * `removeImages` 由用户动作直接触发，长轮询自带 `stopped` 守卫，都不该被序号误伤。
+   */
   const refreshDetail = useCallback(
-    async (id: string): Promise<TopicDetail> => {
+    async (id: string, seq?: number): Promise<TopicDetail | null> => {
       const d = await api.topicDetail(id)
+      if (seq !== undefined && seq !== detailSeqRef.current) return null
       applyDetail(d)
       // 成功即复位失败态：长轮询恢复后不必等用户点「重试」
       setDetailFailed(false)
@@ -202,7 +216,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   /**
    * 把一次成功拉取的详情同步进面板（暂存参考以服务端为准；本地预览 URL 不跨会话，只保留名称）。
-   * 切任务与失败态重试共用 —— 两处各写一份必然漏一处。
+   * ⚠️ 会**整体替换** `referenceIds`，只在「换了任务」或「画布已被清空」时才成立 ——
+   * 同一任务的重试里调用它会把用户用「@ 引用」加的画布参考图摘掉，下一次生成静默少图。
    */
   const applyFreshDetail = useCallback((fresh: TopicDetail) => {
     const staged = fresh.staged ?? []
@@ -216,14 +231,15 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const retryDetail = useCallback(() => {
     if (!activeId) return
     const seq = ++detailSeqRef.current
-    void refreshDetail(activeId)
+    void refreshDetail(activeId, seq)
       .then((fresh) => {
-        if (seq === detailSeqRef.current) applyFreshDetail(fresh)
+        // 只有「画布已被清空」的失败态才重置面板（见 `applyFreshDetail` 的告警）
+        if (fresh && detail === null) applyFreshDetail(fresh)
       })
       .catch(() => {
         if (seq === detailSeqRef.current) setDetailFailed(true)
       })
-  }, [activeId, refreshDetail, applyFreshDetail])
+  }, [activeId, detail, refreshDetail, applyFreshDetail])
 
   // 初始化：加载任务列表并选中最近一个
   useEffect(() => {
@@ -257,10 +273,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
     const seq = ++detailSeqRef.current
     // 换任务即视为「失败态未知」，由这次请求的结果决定 —— 否则上一个任务的失败提示会闪在新任务上
     setDetailFailed(false)
-    void refreshDetail(activeId)
+    void refreshDetail(activeId, seq)
       .then((fresh) => {
-        if (seq !== detailSeqRef.current) return
-        applyFreshDetail(fresh)
+        // 被更新的请求取代时 `refreshDetail` 返回 null（迟到的成功不许落地，见 `detailSeqRef`）
+        if (fresh) applyFreshDetail(fresh)
       })
       .catch(() => {
         // ⚠️ 迟到的失败不许落地：A→B→A 时 B 的 reject 若按「换了任务」处理，会把 A 的画布清空 ——
@@ -298,11 +314,16 @@ function Workspace({ initialUser }: { initialUser: User }) {
     void (async () => {
       while (!stopped) {
         const since = detailRef.current?.topic.id === activeId ? detailRef.current.topic.updatedAt : ''
+        // ⚠️ `since` 为空串时 watch 路由是**立即返回** `changed:false`（那是「给我基线」的语义）——
+        // 不 sleep 就会变成对 /watch 的无间隔请求风暴。正常切任务时这个窗口只有几十毫秒，
+        // 但一旦 `detailRef` 被写成别的任务（见 `detailSeqRef` 的说明）就会一直空转，故这里兜一道。
+        if (!since) await new Promise((r) => setTimeout(r, 1000))
+        if (stopped) return
         try {
           const r = await api.watchTopic(activeId, since, ac.signal)
           if (stopped) return
           if (r.changed) {
-            let fresh: TopicDetail
+            let fresh: TopicDetail | null
             try {
               fresh = await refreshDetail(activeId)
             } catch {
@@ -317,7 +338,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             // ⚠️ 这里到 refreshTopics 之间还有一次 /api/me 往返：用户中途切走时若不复检 stopped，
             // 循环会带着「已不是当前任务」的旧 id 继续刷新 —— 那条结束会被当成后台任务再报一遍
             if (stopped) return
-            if (fresh.topic.status === 'idle') {
+            if (fresh && fresh.topic.status === 'idle') {
               await refreshUser()
               if (stopped) return
               void refreshTopics()
