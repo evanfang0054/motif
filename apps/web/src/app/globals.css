@@ -131,7 +131,7 @@ html[data-theme="dark"] {
 
 html[data-theme="dark"] {
   --accent: var(--brand-warm); /* 暗色同值珊瑚：与 HeroUI dark 块同特异性，靠后定义者胜 */
-  --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76 */
+  --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76。⚠️ 约束：**不要**把它放在更暗的 --surface-tertiary #32302b / --surface-active #332f2a 上（实测 4.22 / 4.26，低于 AA）—— 要用就先提亮本值 */
   --success-quiet: var(--success); /* 暗色沿用 #5db872：对 --success-soft #1c2b20 实测 6.05:1 */
   --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
 }

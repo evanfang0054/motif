@@ -70,17 +70,14 @@ function resolve(tokens: Record<string, string>, name: string, depth = 0): strin
 const AA = 4.5
 
 describe('文字对比度守卫（#55）', () => {
-  it('守卫自身可用：算出来的值与手算一致（否则下面全是假绿）', () => {
-    // 手算基准：白 vs 黑 = 21:1；同色 = 1:1
+  it('辅助函数自检（不是对令牌的守护，只是保证算得对）', () => {
     expect(contrast('#ffffff', '#000000')).toBeCloseTo(21, 1)
     expect(contrast('#a63a3a', '#a63a3a')).toBeCloseTo(1, 5)
   })
 
-  it('守卫可证伪：**修前**的那对值必须被判为不达标（这正是 #55 的现场）', () => {
-    // 修前：亮色 --danger-quiet = --danger #c64545，落在 --danger-soft #f9ecec 上
-    expect(contrast('#c64545', '#f9ecec')).toBeLessThan(AA)
-    // 且「压深底色」的原始方案更差（方向错了）
-    expect(contrast('#c64545', '#f2d8d8')).toBeLessThan(contrast('#c64545', '#f9ecec'))
+  it('⚠️ 亮色 --danger-quiet 不再是 --danger 的别名（改回别名就会丢掉 4.5 达标）', () => {
+    // 修前它就是 `var(--danger)` → 4.20:1。这条断言**随 CSS 变化**，改回去立刻红。
+    expect(resolve(LIGHT, '--danger-quiet')).not.toBe(resolve(LIGHT, '--danger'))
   })
 
   it('亮色：--danger-quiet 对 --danger-soft ≥4.5（#55 本体）', () => {
@@ -97,7 +94,7 @@ describe('文字对比度守卫（#55）', () => {
 
   it('亮色：--danger-quiet 对**它可能落在的每个表面**都 ≥4.5（不止 alert 那一处）', () => {
     const fg = resolve(LIGHT, '--danger-quiet')
-    // 消费点：alert 底 / 面板 / 侧栏 / 三级面 / 悬停面 / 激活面（最暗的那个是瓶颈）
+    // 消费点：alert 底 / 面板 / 侧栏 / 三级面 / 悬停面 / 激活面
     const surfaces = ['--danger-soft', '--surface-primary', '--surface-secondary', '--surface-tertiary', '--surface-hover', '--surface-active']
     for (const s of surfaces) {
       const bg = resolve(LIGHT, s)
@@ -105,11 +102,24 @@ describe('文字对比度守卫（#55）', () => {
     }
   })
 
-  it('暗色：--danger-quiet / --success-quiet 同样 ≥4.5（暗色一直是达标的，别改坏）', () => {
+  it('亮色：没有哪个 --surface-* 比 --surface-active 更暗（拿它当最坏情况才成立）', () => {
+    // 上面那张清单是「最坏情况」推断 —— 把它变成可证伪的断言：
+    // 将来新增更暗的表面时这里会红，提示把它补进清单并复核对比度。
+    const worst = luminance(resolve(LIGHT, '--surface-active'))
+    const darker = Object.keys(LIGHT)
+      .filter((k) => k.startsWith('--surface-') && /^#[0-9a-f]{6}$/i.test(resolve(LIGHT, k)))
+      .filter((k) => luminance(resolve(LIGHT, k)) < worst)
+    expect(darker, `这些表面比 --surface-active 更暗，需复核 --danger-quiet 的对比度：${darker.join(', ')}`).toEqual([])
+  })
+
+  it('暗色：--danger-quiet / --success-quiet 对各自落点 ≥4.5（暗色一直达标，别改坏）', () => {
+    // ⚠️ 暗色只钉**实际消费到**的表面。globals.css 里已写明约束：暗色 --danger-quiet
+    // 不允许落在 --surface-tertiary / --surface-active 上（实测 4.22 / 4.26，未达 AA）。
     for (const [fgName, bgName] of [
       ['--danger-quiet', '--danger-soft'],
-      ['--success-quiet', '--success-soft'],
       ['--danger-quiet', '--surface-primary'],
+      ['--danger-quiet', '--surface-secondary'],
+      ['--success-quiet', '--success-soft'],
       ['--success-quiet', '--surface-primary'],
     ]) {
       const fg = resolve(DARK, fgName)
@@ -118,9 +128,9 @@ describe('文字对比度守卫（#55）', () => {
     }
   })
 
-  it('解析器没有静默取到注释里的值（注释里也写着这些令牌名）', () => {
-    // 注释里出现过 `--danger-quiet`；若未剥注释，取值可能变成注释文本而不是色值
-    expect(resolve(LIGHT, '--danger-quiet')).toMatch(/^#[0-9a-f]{6}$/i)
-    expect(resolve(DARK, '--danger-quiet')).toMatch(/^#[0-9a-f]{6}$/i)
+  it('解析器会剥掉注释里的同名声明（不剥就会取到注释里的值）', () => {
+    // 反证式样本：把「同名声明」放进**真声明之后**的块注释里 —— 不剥注释时它会被后读到、覆盖真值。
+    const sample = ':root {\n  --danger-quiet: #a63a3a;\n  /*\n  --danger-quiet: #000000;\n  */\n}'
+    expect(blockTokens(sample, /^:root\s*\{([\s\S]*?)\}/gm)['--danger-quiet']).toBe('#a63a3a')
   })
 })
