@@ -14,8 +14,12 @@ import { join } from 'node:path'
  * 它保证的是「没人把修好的 id 又改回带前缀」，不是「筛选逻辑正确」。
  *
  * 已知盲区（刻意接受，不为此把守卫写复杂）：`id={裸变量}`（如 `id={k}` / `id={o.id}`）的取值
- * 静态判不出来 —— 但**裸变量正是期望形态**，所以不判；只有表达式里混了字符串字面量
- * （`id={'status-' + k}` 这类拼接）才报，因为那时取值已经不受控。
+ * 静态判不出来 —— 但**裸变量正是期望形态**，所以不判；只要表达式不是纯取值路径
+ * （`id={'status-' + k}` / `id={prefix + k}` / `id={makeId(status)}`）就报，因为那时取值已经不受控。
+ *
+ * ⚠️ `stripComments` 是**启发式**：它不解析字符串字面量，所以「字符串里恰好出现行注释符或块注释符」
+ * 会被误删（当前 admin 源码里没有这种写法）。它只用来避免「注释里的 `=== 'all'` 冒充映射」，
+ * 判错的方向是**误红**（报出来会被人看到），不会静默放过。
  */
 const ADMIN_DIR = new URL('../src/app/admin', import.meta.url)
 
@@ -71,13 +75,44 @@ function staticPrefix(id: ItemId): string {
   return ''
 }
 
+/** 允许的表达式形态：**纯取值路径**（`k` / `o.id` / `a.b.c`）—— 这正是期望的「裸值」 */
+const BARE_PATH = /^[A-Za-z_$][\w$]*(\.[\w$]+)*$/
+
 /** 可疑则返回原因（供断言输出），没问题返回 null */
 function suspectReason(id: ItemId): string | null {
   const prefix = staticPrefix(id)
   const prefixed = prefix.match(/^(status|role)-/)
   if (prefixed) return `id 带 \`${prefixed[0]}\` 前缀，回传值会匹配不上接口白名单`
-  if (id.kind === 'expr' && /['"`]/.test(id.raw)) return `id 是含字面量的拼接表达式（${id.raw}），取值不受控`
+  // 裸变量（`id={k}`）是期望形态；但**变量拼接 / 函数调用**（`id={prefix + k}`）取值同样不受控，要报
+  if (id.kind === 'expr' && !BARE_PATH.test(id.raw)) {
+    return `id 是表达式 \`${id.raw}\`（含拼接或调用），不是单纯的取值路径 —— 静态判不出取值是否受控`
+  }
   return null
+}
+
+/**
+ * 按 `<Select …>` 把源码切成「一个下拉一块」。
+ * ⚠️ 必须逐块查：一个 Select 的 `onChange` 与它的 `ListBox.Item` 必然同块，
+ * 文件级计数抓不住「映射写进了另一个下拉」这种错位（#52 的原始故障形态）。
+ */
+function selectBlocks(src: string): string[] {
+  const starts: number[] = []
+  for (const m of src.matchAll(/<Select[\s>]/g)) starts.push(m.index ?? 0)
+  return starts.map((start, i) => src.slice(start, starts[i + 1] ?? src.length))
+}
+
+/** 逐下拉检查哨兵映射：返回问题清单（空数组 = 通过） */
+function sentinelProblems(name: string, src: string): string[] {
+  const problems: string[] = []
+  selectBlocks(src).forEach((block, i) => {
+    const sentinels = itemIds(block).filter((id) => staticPrefix(id) === 'all').length
+    if (sentinels === 0) return
+    const mapped = countMatches(block, /===\s*'all'/g)
+    if (mapped < sentinels) {
+      problems.push(`${name} 第 ${i + 1} 个 Select：${sentinels} 个 all 哨兵，只有 ${mapped} 处 === 'all'`)
+    }
+  })
+  return problems
 }
 
 function countMatches(src: string, re: RegExp): number {
@@ -86,45 +121,40 @@ function countMatches(src: string, re: RegExp): number {
 
 describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 防复发）', () => {
   const files = adminTsxFiles()
+  /** 一次读盘 + 去注释，三处断言共用同一份口径（两侧口径不一致会制造假红/假绿） */
+  const sources = files.map((f) => ({ name: rel(f), src: stripComments(readFileSync(f, 'utf8')) }))
 
-  it('能扫到 admin 下的文件（守卫本身没瞎）', () => {
-    // 防「路径写错 → 扫到 0 个文件 → 断言恒真」这种假绿
+  it('能扫到 admin 下的文件与下拉（守卫本身没瞎）', () => {
+    // 防「路径写错 → 扫到 0 个文件 / 0 个 Select → 下面几条断言恒真」这种假绿
     expect(files.length).toBeGreaterThanOrEqual(5)
     expect(files.some((f) => f.includes('feedback'))).toBe(true)
+    const blocks = sources.flatMap((s) => selectBlocks(s.src))
+    expect(blocks.length).toBeGreaterThanOrEqual(6)
+    const sentinels = blocks.flatMap(itemIds).filter((id) => staticPrefix(id) === 'all').length
+    expect(sentinels).toBeGreaterThanOrEqual(5)
   })
 
   it('不存在带 `status-` / `role-` 前缀的 id（前缀会让接口判非法后静默不过滤）', () => {
     const bad: string[] = []
-    for (const f of files) {
-      for (const id of itemIds(readFileSync(f, 'utf8'))) {
+    for (const { name, src } of sources) {
+      for (const id of itemIds(src)) {
         const why = suspectReason(id)
-        if (why) bad.push(`${rel(f)}: id=${id.raw} —— ${why}`)
+        if (why) bad.push(`${name}: id=${id.raw} —— ${why}`)
       }
     }
     expect(bad, `这些 id 写法有问题：\n${bad.join('\n')}`).toEqual([])
   })
 
-  it('用了 `all` 哨兵的下拉，**每一个**都要有 `=== \'all\'` 映射回空串', () => {
+  it('**每个**用了 `all` 哨兵的下拉都要有 `=== \'all\'` 映射回空串（逐下拉查，不是文件级计数）', () => {
     // 只改 id 忘了映射 → 选「全部」后 state 会变成字面量 'all'，同样匹配不上接口。
-    // 按**个数**比（users 页有两个下拉）：一处映射满足不了两个哨兵。
-    const problems: string[] = []
-    for (const f of files) {
-      const src = readFileSync(f, 'utf8')
-      const sentinels = itemIds(src).filter((id) => staticPrefix(id) === 'all').length
-      if (sentinels === 0) continue
-      const mapped = countMatches(stripComments(src), /===\s*'all'/g)
-      if (mapped < sentinels) problems.push(`${rel(f)}: ${sentinels} 个 all 哨兵，只有 ${mapped} 处 === 'all'`)
-    }
+    // users 页有两个下拉，所以必须**按 Select 分块**比：文件级计数会被「映射错位」蒙过去。
+    const problems = sources.flatMap((s) => sentinelProblems(s.name, s.src))
     expect(problems, `哨兵缺映射（选「全部」会写入字面量 'all'）：\n${problems.join('\n')}`).toEqual([])
   })
 
   it('没有页面仍在用 `(v as XxxFilter) ?? \'\'` 这种「原样写入回传值」的旧写法', () => {
     // 旧写法把回传值直接塞进 state，正是 #52 的成因；修好后应改为显式判哨兵
-    const legacy: string[] = []
-    for (const f of files) {
-      const src = readFileSync(f, 'utf8')
-      if (/as (Role|Status)Filter\)\s*\?\?\s*''/.test(src)) legacy.push(rel(f))
-    }
+    const legacy = sources.filter((s) => /as (Role|Status)Filter\)\s*\?\?\s*''/.test(s.src)).map((s) => s.name)
     expect(legacy, `这些文件仍是旧写法：${legacy.join(', ')}`).toEqual([])
   })
 
@@ -140,16 +170,39 @@ describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 �
     expect(suspectReason(itemIds(sample)[0])).toMatch(/前缀/)
   })
 
-  it('守卫可证伪：表达式里的字符串拼接也能被检出', () => {
-    const sample = `<ListBox.Item key={k} id={'status-' + k}>{v}</ListBox.Item>`
-    expect(itemIds(sample)).toEqual([{ raw: "'status-' + k", kind: 'expr' }])
-    expect(suspectReason(itemIds(sample)[0])).toMatch(/拼接/)
+  it('守卫可证伪：表达式里的字符串拼接、变量拼接、函数调用都能被检出', () => {
+    for (const raw of [`'status-' + k`, 'prefix + k', 'makeId(status)']) {
+      const sample = `<ListBox.Item key={k} id={${raw}}>{v}</ListBox.Item>`
+      expect(itemIds(sample)).toEqual([{ raw, kind: 'expr' }])
+      expect(suspectReason(itemIds(sample)[0]), raw).toMatch(/表达式/)
+    }
   })
 
-  it('守卫不误报：裸变量的 id 放行（这正是期望形态）', () => {
-    for (const sample of ['<ListBox.Item key={k} id={k}>{v}</ListBox.Item>', '<ListBox.Item key={x} id={o.id} textValue={o.label}>v</ListBox.Item>']) {
-      expect(itemIds(sample).map(suspectReason)).toEqual([null])
+  it('守卫不误报：裸变量 / 成员访问的 id 放行（这正是期望形态）', () => {
+    for (const raw of ['k', 'o.id', 'row.status']) {
+      const sample = `<ListBox.Item key={x} id={${raw}} textValue={o.label}>v</ListBox.Item>`
+      expect(itemIds(sample).map(suspectReason), raw).toEqual([null])
     }
+  })
+
+  it('守卫可证伪：映射在文件里「总数够」但错位到另一个下拉时也能被检出', () => {
+    // 两个下拉各一个 all 哨兵；第一块里出现两处 `=== 'all'`、第二块一处都没有。
+    // 文件级计数 2 >= 2 会放过（假绿），逐下拉计数会红 —— 这正是 #52 的原始故障形态。
+    const moved = `
+      <Select value={role || 'all'} onChange={(v) => { setRole(v === 'all' ? '' : v); if (v === 'all') setPage(1) }}>
+        <ListBox.Item key="all" id="all">全部角色</ListBox.Item>
+      </Select>
+      <Select value={status || 'all'} onChange={(v) => { setStatus(v as StatusFilter); setPage(1) }}>
+        <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+      </Select>`
+    expect(countMatches(moved, /===\s*'all'/g)).toBe(2) // 文件级：够
+    const problems = sentinelProblems('sample', moved)
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('第 2 个 Select')
+
+    // 正对照：各自映射各自的下拉 → 必须通过（否则上一条是恒真断言）
+    const ok = moved.replace("setStatus(v as StatusFilter)", "setStatus(v === 'all' ? '' : (v as StatusFilter))")
+    expect(sentinelProblems('sample', ok)).toEqual([])
   })
 
   it('守卫可证伪：只在注释里出现的 `=== \'all\'` 不算映射', () => {

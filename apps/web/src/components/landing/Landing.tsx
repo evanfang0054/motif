@@ -39,10 +39,11 @@ function Landing() {
       setAuthOpen(true)
       // 预填值已进 state，立刻把深链自己的三个参数从地址栏与浏览器历史里抹掉：
       // 验证码不该长期停在 URL 上（截图、转发、共用屏幕都会漏）。
-      // 只删这三个参数、不动别人的；用 replaceState 而非 router.replace —— 页面没变，无需 RSC 往返。
+      // 只删这三个参数、不动别人的（hash 也原样保留）；用 replaceState 而非 router.replace —— 页面没变，无需 RSC 往返。
       for (const k of ['reset', 'email', 'code']) params.delete(k)
       const rest = params.toString()
-      window.history.replaceState(null, '', rest ? `${window.location.pathname}?${rest}` : window.location.pathname)
+      const url = rest ? `${window.location.pathname}?${rest}` : window.location.pathname
+      window.history.replaceState(null, '', url + window.location.hash)
       return
     }
     const mode = params.get('mode')
