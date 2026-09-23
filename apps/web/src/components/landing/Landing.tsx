@@ -132,9 +132,9 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
-                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
-                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
+                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
+                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
+                <InlineText color="muted" type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
               </div>
             </div>
           </div>
@@ -152,9 +152,9 @@ function Landing() {
                   保持同一支蜡烛的形态与香色氛围。
                 </Typography>
                 <div className="mt-3">
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">已解析参考图主体与光线特征</InlineText></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">已套用「电商商品全套图」模板</InlineText></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">4 张图片进入云端队列生成</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已解析参考图主体与光线特征</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已套用「电商商品全套图」模板</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">4 张图片进入云端队列生成</InlineText></div>
                 </div>
               </div>
               <div className="lp-shot">
@@ -222,11 +222,11 @@ function Landing() {
       </main>
 
       <footer className="lp-footer">
-        <InlineText type="body" className="lp-brand" style={{ fontSize: 14 }}>
+        <InlineText color="muted" type="body" className="lp-brand" style={{ fontSize: 14 }}>
           <BrandMark size={22} />
           Motif
         </InlineText>
-        <InlineText type="body-sm">© 2026 Motif · AI 商业图片批量生成工作台</InlineText>
+        <InlineText color="muted" type="body-sm">© 2026 Motif · AI 商业图片批量生成工作台</InlineText>
       </footer>
 
       {authOpen && (

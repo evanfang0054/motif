@@ -44,7 +44,7 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
           </ol>
           {qr[c.id] && (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <InlineText type="body-sm" className="admin-qr">
+            <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" className="admin-qr">
               <img src={qr[c.id]} alt={`${c.linkLabel} 二维码`} width={160} height={160} />
             </InlineText>
           )}

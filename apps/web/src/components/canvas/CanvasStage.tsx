@@ -1101,13 +1101,13 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           {source === 'local' && (
             <>
               <span className="canvas-status-divider" />
-              <InlineText type="body-sm" data-testid="canvas-local-draft">本地草稿</InlineText>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">本地草稿</InlineText>
             </>
           )}
           {selected.length > 0 && (
             <>
               <span className="canvas-status-divider" />
-              <InlineText type="body-sm">已选 {selected.length}</InlineText>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已选 {selected.length}</InlineText>
               <IconButton size="sm" variant="ghost" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
                 <CircleXmark />
               </IconButton>

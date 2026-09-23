@@ -40,7 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <ArrowLeft className="me-1 inline align-[-0.125em]" aria-hidden />
             返回工作台
           </Link>
-          <InlineText type="body-sm" className="admin-brand">Motif 管理后台</InlineText>
+          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">Motif 管理后台</InlineText>
         </div>
         <InlineText type="body-sm" className="admin-identity">
           {user.name}
