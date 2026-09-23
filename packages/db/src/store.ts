@@ -980,6 +980,18 @@ export class MotifStore {
     return rows.map(rowToCanvasImage)
   }
 
+  /**
+   * 全库仍在册的存储对象 key（#58：搬迁只搬这些）。
+   *
+   * 为什么需要：`storage:migrate` 只扫本地目录，于是「DB 行已删、本地文件还在」的孤儿对象
+   * 会被当成「远端没有 → 待上传」而**重新上传**，桶里持续堆积。按在册 key 过滤即可根治。
+   * 只回 key、不碰配置 —— 调用方（CLI）自己决定怎么用。
+   */
+  listAllImageKeys(): string[] {
+    const rows = this.db.prepare('SELECT image_key FROM canvas_images').all() as Array<{ image_key: string }>
+    return rows.map((r) => r.image_key)
+  }
+
   // ---------- 画布摆放与元信息（画布升级） ----------
 
   /** 画布元信息（视口/背景）：JSON 列，脏数据回退默认值 */

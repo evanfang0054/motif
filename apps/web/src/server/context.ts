@@ -135,3 +135,26 @@ export function resolveLocalStorage(dataDir?: string): Storage {
 export function resolveReadStorages(dataDir?: string): { local: Storage; remote: Storage | null } {
   return { local: resolveLocalStorage(dataDir), remote: resolveRemoteStorage(dataDir) }
 }
+
+/**
+ * 删除时把**两侧**都清掉（#58）。
+ *
+ * 为什么不能只删当前驱动那一份：双读存在时同一个 key 可能在本地与远端各有一份 ——
+ * s3 驱动下只删远端 → 本地残留；local 驱动下只删本地 → 远端残留。而残留的那一份会让
+ * `planMigration` 认为「远端不存在」从而把它**重新上传**（DB 行已删，桶里却持续堆积垃圾）。
+ *
+ * 对象身份来自刚删除的 DB 行，key 是确定的，所以不存在「跨驱动误删」的风险。
+ * best-effort：单个失败不吞掉整个请求（行已删，文件残留不影响功能，孤儿由搬迁统计兜底）。
+ * 复用 `resolveRemoteStorage()` 的语义 —— 它**只在 s3 驱动下非 null**，所以 local 驱动时只删一次。
+ */
+export async function removeFromAllStorages(key: string, dataDir?: string): Promise<void> {
+  const remote = resolveRemoteStorage(dataDir)
+  const targets = remote ? [remote, resolveLocalStorage(dataDir)] : [resolveLocalStorage(dataDir)]
+  for (const storage of targets) {
+    try {
+      await storage.remove(key)
+    } catch {
+      // 对象可能已被清理，或远端暂时不可达 —— 忽略
+    }
+  }
+}

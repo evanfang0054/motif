@@ -52,7 +52,7 @@ describe('本地 key 枚举', () => {
 describe('搬迁幂等性', () => {
   it('首次搬迁把本地对象集合搬到远端', async () => {
     seedLocal([A, B])
-    expect(await runMigration(dir, remote)).toEqual({ uploaded: 2, skipped: 0 })
+    expect(await runMigration(dir, remote)).toEqual({ uploaded: 2, skipped: 0, orphaned: 0 })
     expect(await remote.exists(A)).toBe(true)
     expect(await remote.exists(B)).toBe(true)
   })
@@ -60,7 +60,7 @@ describe('搬迁幂等性', () => {
   it('重复执行不重复上传（第二次 uploaded 为 0）', async () => {
     seedLocal([A, B])
     await runMigration(dir, remote)
-    expect(await runMigration(dir, remote)).toEqual({ uploaded: 0, skipped: 2 })
+    expect(await runMigration(dir, remote)).toEqual({ uploaded: 0, skipped: 2, orphaned: 0 })
   })
 
   it('部分已存在时只补缺的（断点续跑），且已存在的**不被覆盖**', async () => {

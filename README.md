@@ -161,6 +161,7 @@ motif/
 | `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
 | `STORAGE_DRIVER` | `local` | 图片存储驱动：`local`（默认，存 `dataDir/storage`）/ `s3`（S3 兼容对象存储，自建 MinIO 也可） |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY_ID` `S3_SECRET_ACCESS_KEY` | — | 驱动为 `s3` 时**必填**；`S3_REGION` 多数自建服务不校验、`S3_FORCE_PATH_STYLE` 自建 MinIO 需开 |
+| `S3_PUBLIC_BASE_URL` | 留空 | 图片**公开访问前缀**（如 `https://cdn.example.com`）。配了之后画布图片与打包下载直接由它取，字节不再经应用转发（**桶需允许公开读**）；留空则一切照旧走应用代理 |
 | `MOTIF_INPROC_WORKER` | `true` | `false` = web 进程不跑生成队列 worker，改由独立进程 `pnpm worker` 接管（**改后需重启服务**） |
 | `LLM_ENHANCE_ENABLED` | `false` | 提示词增强总开关；开启后**还需**配好 `LLM_API_BASE_URL` + `LLM_API_KEY` 才真正生效（缺则静默降级为原文） |
 | `LLM_API_BASE_URL` `LLM_API_KEY` `LLM_MODEL` `LLM_TIMEOUT_MS` | — | 增强用的 OpenAI 兼容 `chat/completions` 网关（与生图网关相互独立，可不同域名/密钥） |
@@ -172,7 +173,11 @@ motif/
 1. **图片存储 local ⇄ S3**：「系统设置 → 图片存储」选 `s3` 并填端点/桶/凭据。切换后**已有老图仍可读**
    （读路径「本地优先、本地没有才读远端」，不必等搬迁跑完）；新图按驱动写入。
    搬迁老图：`pnpm storage:migrate --dry-run` 先看清单（不动任何数据），确认后去掉 `--dry-run` 执行；
-   **可反复执行**，远端已存在的不重复上传（中断后重跑即断点续跑）。
+   **可反复执行**，远端已存在的不重复上传（中断后重跑即断点续跑），且**只搬数据库里仍有记录的对象**
+   （已删除图片的本地残留会被列为「已删除」并跳过，不会被重新传回桶里）。
+   想让图片直连对象存储 / CDN（不再经应用转发字节）：在同一个分组填**图片公开访问前缀** `S3_PUBLIC_BASE_URL`，
+   并让桶允许公开读 —— 图片 key 含用户与任务 ID 加随机串，不算可猜但也不是秘密，所以这个开关由你显式开启。
+   删除图片时本地与远端**两份都会清掉**（best-effort，单侧失败不影响删除本身）。
 2. **队列 worker 进程内 ⇄ 独立进程**：关掉「本进程内运行生成队列 worker」后，用 `pnpm worker`
    起独立消费进程。⚠️ 推荐**先关掉进程内 worker 再跑独立进程**：并发认领本身安全（租约语义），
    但单批耗时超过租约（30 分钟）时两个进程可能并发执行同一条消息。
