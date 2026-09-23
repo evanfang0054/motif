@@ -56,15 +56,35 @@ describe('失败重试的表单还原（#73-1.5）', () => {
     expect(clamp(Number.NaN)).toBe(COUNT_MIN)
   })
 
-  it('提示词用原始 prompt 而不是 finalPrompt（否则会把上一轮的增强结果当原文再增强一遍）', () => {
-    const plan = planRetryFromMessage({ message: msg({ prompt: '原始提示词' }), canvasImageIds: [] })
+  it('合法张数原样保留（4 → 4，不被归一改动）', () => {
+    const plan = planRetryFromMessage({ message: msg({ requestedCount: 4 }), canvasImageIds: [] })
+    expect(plan.count).toBe(4)
+  })
+
+  it('提示词取原始 prompt —— 即使消息上带着 finalPrompt 也不读它', () => {
+    // 入参类型（Pick<Message,…>）本就不含 finalPrompt，这里刻意多塞一个：
+    // 钉住实现只能读 prompt —— 若改成读 finalPrompt，下面两条断言会立刻红。
+    const message: Parameters<typeof planRetryFromMessage>[0]['message'] & { finalPrompt: string } = {
+      ...msg({ prompt: '原始提示词' }),
+      finalPrompt: '上一轮增强后的结果',
+    }
+    const plan = planRetryFromMessage({ message, canvasImageIds: [] })
     expect(plan.prompt).toBe('原始提示词')
+    expect(plan.prompt).not.toBe('上一轮增强后的结果')
   })
 
   it('参考图按当前画布图过滤：已删掉的 id 必须摘掉（残留会让提交直接 400）', () => {
     const plan = planRetryFromMessage({
       message: msg({ referenceIds: ['cimg_1', 'cimg_gone', 'cimg_2'] }),
       canvasImageIds: ['cimg_1', 'cimg_2', 'cimg_3'],
+    })
+    expect(plan.referenceIds).toEqual(['cimg_1', 'cimg_2'])
+  })
+
+  it('参考图去重：同一 id 重复出现只保留一条（服务端按条数计入上限，重复会白占名额）', () => {
+    const plan = planRetryFromMessage({
+      message: msg({ referenceIds: ['cimg_1', 'cimg_1', 'cimg_2', 'cimg_2', 'cimg_2'] }),
+      canvasImageIds: ['cimg_1', 'cimg_2'],
     })
     expect(plan.referenceIds).toEqual(['cimg_1', 'cimg_2'])
   })

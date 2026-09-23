@@ -453,14 +453,6 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   const busy = isBusyStatus(detail?.topic.status)
 
-  // 最近一次生成失败的信息（含退额说明）：持久展示在面板上，直到下次提交
-  const lastError = useMemo(() => {
-    if (!detail) return null
-    const active = detail.messages.find((m) => m.id === detail.topic.activeMessageId) ?? detail.messages[detail.messages.length - 1]
-    if (!active || active.status !== 'failed') return null
-    return `上次生成失败：${active.error ?? '未知原因'}`
-  }, [detail])
-
   /**
    * 提交生成的**公共路径**：表单提交与「失败重试」都走它。
    *
@@ -555,6 +547,17 @@ function Workspace({ initialUser }: { initialUser: User }) {
     const msg = activeMessage(detail)
     return msg && msg.status === 'failed' ? msg : null
   }, [detail])
+
+  /**
+   * 最近一次生成失败的信息（含退额说明）：持久展示在右侧面板上，直到下次提交。
+   *
+   * ⚠️ 必须由 `failedRound` 派生，**不要**再自己找一遍 `activeMessage`：两处各判一次，
+   * 将来改一处就会出现「画布上有卡片、点重试却说没有可重试的轮次」（见上方 failedRound 的注释）。
+   */
+  const lastError = useMemo(
+    () => (failedRound ? `上次生成失败：${failedRound.error ?? '未知原因'}` : null),
+    [failedRound]
+  )
 
   /**
    * 重试失败轮次：把该轮的提示词 / 张数 / 尺寸 / 参考图还原后**直接重新提交**。
@@ -932,7 +935,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             onAddReferences={addReferencesFromCanvas}
             onRegenerate={regenerateFrom}
           />
-        ) : (
+        ) : failedRound && !busy ? null : (
           <CanvasEmptyGuide onOpenPromptLibrary={() => setDialog('promptLibrary')} />
         )}
         {/* 画布顶部的状态条**栈**：顶部居中，落在收起态浮动条（12..56）之下、两侧面板之间的中缝里。
@@ -978,18 +981,28 @@ function Workspace({ initialUser }: { initialUser: User }) {
         ) : null}
         {/* 失败卡片进画布（#73-1.5）。
             原先失败只在右侧面板留一条横幅 —— 用户的第一视线在画布上，画布却什么都没有；
-            空任务失败时甚至还会落进新手引导说「画布现在是空的」（对一个刚失败的任务是假陈述）。
+            空任务失败时还会落进新手引导说「画布现在是空的」（对一个刚失败的任务是假陈述）。
             卡片画在**画布区**（`section.ws-canvas` 的绝对定位子元素）而不是 CanvasStage 内部：
             它不属于画布坐标系（不随平移/缩放移动、不可选中/拖动、不参与归档与整理），
             且 `CanvasStage` 只在有图时渲染 —— 失败轮次往往一张图都没有，放进去就永远看不到。
-            `data-canvas-no-zoom` 让双击卡片不触发「收起生成面板」（该选择器已在豁免名单里）。 */}
+            `data-canvas-no-zoom` 让双击卡片不触发「收起生成面板」（该选择器已在豁免名单里）。
+
+            ⚠️ 空任务失败时**不再渲染新手引导**（上面画布分支里的 `failedRound && !busy ? null`）：
+            卡片会盖在引导正中间，引导那句「画布现在是空的」对刚失败的任务是假陈述，
+            两个一起显示只会让人以为「任务没发生过」。引导让位给卡片，卡片自己就是这条路径的出口。
+
+            ⚠️ 层级是 **z-24**（= 窄屏遮罩），不是 26：窄屏抽屉（面板/浮动条 z-25）打开时，
+            卡片恰好落在抽屉区域内（700px 高视口下卡片 y≈270–430，抽屉覆盖 y≈142–688）——
+            若卡片压过抽屉，那块区域就成了死区，抽屉里的按钮点不到。z-24 让卡片在宽屏下
+            落在两侧面板（25）之下（卡片居中、面板在两侧，本就不重叠），窄屏下被遮罩压暗即可。
+            配套：容器 `pointer-events-none`（整张卡片不该吃掉画布手势），只有「重试」按钮开回 `auto`。 */}
         {failedRound && !busy ? (
           <div
             // ⚠️ 刻意**不用** role="alert"：同一次失败在右侧面板的横幅上已经是一个 live region，
             // 两处都声明就会把同一句话播报两遍。这里的角色是「画布上的可见卡片 + 重试入口」，
             // 播报由横幅负责（见 TaskPanel 的失败 Alert）。
             data-canvas-no-zoom
-            className="absolute left-1/2 top-1/2 z-[26] w-[min(360px,calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-4 shadow-lg"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-[24] w-[min(360px,calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-4 shadow-lg"
             style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
           >
             <InlineText type="body-sm" className="block font-semibold" style={{ color: 'var(--danger-quiet)' }}>
@@ -1001,7 +1014,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             <InlineText type="body-xs" className="mt-1 block" style={{ color: 'var(--muted)' }}>
               本轮请求 {failedRound.requestedCount} 张，未产出的额度已退回。
             </InlineText>
-            <Button size="sm" variant="primary" className="mt-3" onPress={() => retryLastFailed()}>
+            <Button size="sm" variant="primary" className="pointer-events-auto mt-3" onPress={() => retryLastFailed()}>
               重试
             </Button>
           </div>

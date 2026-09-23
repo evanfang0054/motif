@@ -5,6 +5,7 @@ import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, Tex
 import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight, ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
+import { useMediaQuery } from '@/lib/use-media-query'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
 import {
   COUNT_MAX,
@@ -57,14 +58,18 @@ interface Props {
 /** 提示词输入框的自适应高度上限：再高就把「参数」区挤出视野了 */
 const PROMPT_MAX_H = 320
 /**
- * 矮视口（≤650px）下的自适应上限（#73-1.6）。
+ * 矮视口（≤720px）下的自适应上限（#73-1.6）。
  * 为什么不能只靠 CSS 的 `min-height`：输入框高度是**内联 height**（见下方自适应 effect），
  * 而 min-height 压不住更大的内联 height —— 空框的 scrollHeight（≈96px）会把输入区顶到粘性底栏之下。
  * 故这里按视口高度把上限一起收一档，配合 CSS 侧的 `min-height` 变体（TaskPanel 的 className）。
+ *
+ * ⚠️ 断点取 **720px** 而不是 issue 里那两个点（700 正常 / ≤650 裁切）中的 650：
+ * 651–699px 这一段同样会裁（面板高度不足以容纳空框 + 底栏），650 只是当时实测到的一个样本，
+ * 按它切会把一整段仍然裁切的视口漏在断点之外。抬到 720 才把「700 正常」也纳入矮视口收窄档。
  */
 const PROMPT_SHORT_MAX_H = 72
-/** 矮视口判据：与 globals.css 里那条 `@media (max-height: 650px)` 必须一致 */
-const SHORT_VIEWPORT_QUERY = '(max-height: 650px)'
+/** 矮视口判据：与 globals.css 里那条 `@media (max-height: 720px)` 必须一致 */
+const SHORT_VIEWPORT_QUERY = '(max-height: 720px)'
 
 /**
  * NumberField 的取值兜底。
@@ -156,13 +161,16 @@ function TaskPanel(p: Props) {
   // 提示词框随内容长高（到上限为止）。⚠️ 先把 height 归零再读 scrollHeight，
   // 否则删字时 scrollHeight 会被上一轮的内联高度撑住，框只增不减。
   // 上限分两档（见 PROMPT_SHORT_MAX_H）：矮视口下必须压低，否则空框也会把输入区顶到底栏之下（#73-1.6）。
+  // ⚠️ 依赖里必须带 `shortViewport`：只看 `p.prompt` 的话，**窗口从高变矮**（内容没变）不会重算，
+  // 内联 height 会停在旧上限、把输入框顶到底栏之下 —— 用 matchMedia 的订阅值当依赖才能跟着重算。
+  const shortViewport = useMediaQuery(SHORT_VIEWPORT_QUERY)
   useEffect(() => {
     const el = promptRef.current
     if (!el) return
-    const cap = window.matchMedia(SHORT_VIEWPORT_QUERY).matches ? PROMPT_SHORT_MAX_H : PROMPT_MAX_H
+    const cap = shortViewport ? PROMPT_SHORT_MAX_H : PROMPT_MAX_H
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, cap)}px`
-  }, [p.prompt])
+  }, [p.prompt, shortViewport])
 
   // `sizeNote` 的生命周期：**离开自定义尺寸即失效**。切到别的档、或点「新任务」把面板重置回
   // 默认的 `auto`，旧回显（「已吸附到 3:2 · 1536×1024」）都不再对应当前尺寸；不清掉的话
@@ -507,7 +515,7 @@ function TaskPanel(p: Props) {
             </div>
           </div>
           <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
-            {/* 矮视口（≤650px）下把最小高度收一档（#73-1.6）：面板高度不够时，
+            {/* 矮视口（≤720px）下把最小高度收一档（#73-1.6）：面板高度不够时，
                 104px 的输入框会被粘性底栏裁掉下半截、placeholder 看起来像坏了。
                 ⚠️ 必须同时改 `min-height`（这里）与内联 `height` 的上限（见上方自适应 effect）：
                 内联 height 会压过 min-height，只改一处等于没改。 */}
@@ -515,7 +523,7 @@ function TaskPanel(p: Props) {
               ref={promptRef}
               placeholder="描述你要生成的图片，或从提示词库挑一条…"
               rows={4}
-              className="w-full min-h-[104px] resize-none [@media(max-height:650px)]:min-h-[72px]"
+              className="w-full min-h-[104px] resize-none [@media(max-height:720px)]:min-h-[72px]"
             />
           </TextField>
           {promptTooLong && (

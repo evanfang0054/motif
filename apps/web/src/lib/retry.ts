@@ -27,13 +27,15 @@ const DEFAULT_CUSTOM_PX = 1024
 /**
  * 把一条失败消息还原成表单状态。
  *
- * - `prompt` 用**原始提示词**（`message.prompt`）而不是 `finalPrompt`：面板里的「增强」开关
- *   会在提交时再叠一次，用 finalPrompt 会把上一轮的增强结果当原文再增强一遍。
+ * - `prompt` 用**原始提示词**（`message.prompt`）而不是 `finalPrompt`：提交时服务端会按
+ *   `publicCtx.llmEnhanceEnabled` 再叠一次增强，用 finalPrompt 会把上一轮的增强结果当原文再增强一遍。
  * - `size` 是预设 / auto 就原样回填；其余交给核心库的 `validateSize` 判 —— **不自己再写一份解析**。
  *   它同时是服务端 `POST /api/generate-images` 的判据，复用它才能保证「重试提交的尺寸
  *   一定是服务端会接受的形状」；判不通过（历史脏数据）时回退 `'auto'`，与面板默认值一致。
- * - `referenceIds` 按当前画布图集合过滤：失败那轮引用过的图可能已被删除，
+ * - `referenceIds` 先按当前画布图集合过滤：失败那轮引用过的图可能已被删除，
  *   残留 id 会让下一次提交直接 400「参考图不存在或不属于当前任务」。
+ *   同时**按 id 去重**：服务端把参考图按「条数」计入上限（同一张重复提交也各算一条，
+ *   见 `generate-refs-cap.test.ts`），重试携带重复 id 会平白把 5 张的名额占满。
  */
 export function planRetryFromMessage(input: {
   message: Pick<Message, 'prompt' | 'size' | 'requestedCount' | 'referenceIds'>
@@ -47,7 +49,7 @@ export function planRetryFromMessage(input: {
     count: clampCount(message.requestedCount),
     customW: DEFAULT_CUSTOM_PX,
     customH: DEFAULT_CUSTOM_PX,
-    referenceIds: message.referenceIds.filter((id) => alive.has(id)),
+    referenceIds: [...new Set(message.referenceIds)].filter((id) => alive.has(id)),
   }
 
   if (message.size === 'auto' || (ALLOWED_SIZES as readonly string[]).includes(message.size)) {

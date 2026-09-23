@@ -914,13 +914,15 @@ html[data-theme="dark"] .lp-hero {
   color: var(--muted-strong);
 }
 
-/* 矮视口（≤650px，见 #73-1.6）：右侧生成面板的「提示词」输入框会被粘性底栏裁在下边缘上，
-   placeholder 只剩半截、看着像坏了（1440×700 正常）。这里把面板上下留白、面板头、段间距
-   一起收一档，给输入框腾出完整可见的高度；输入框自身的最小高度在 TaskPanel 里按同一断点收窄
-   （`[@media(max-height:650px)]:min-h-[72px]`，且自适应上限同步压低 —— 内联 height 会压过 min-height）。
+/* 矮视口（≤720px，见 #73-1.6）：右侧生成面板的「提示词」输入框会被粘性底栏裁在下边缘上，
+   placeholder 只剩半截、看着像坏了。这里把面板上下留白、面板头、段间距一起收一档，
+   给输入框腾出完整可见的高度；输入框自身的最小高度在 TaskPanel 里按同一断点收窄
+   （`[@media(max-height:720px)]:min-h-[72px]`，且自适应上限同步压低 —— 内联 height 会压过 min-height）。
+   ⚠️ 断点取 720 而不是 issue 给的 650：issue 只标了「700 正常 / ≤650 裁切」两个点，
+   651–699px 这一段同样会裁，按 650 切会把这一整段仍裁切的视口漏在断点之外（700 也一并纳入收窄档）。
    ⚠️ 面板高度那条必须限定 `min-width: 1024px`：窄屏（≤1023）的面板是底部抽屉，其
    `top: auto; bottom: 12px` 定义在更早的媒体查询里，这里无条件覆盖会把抽屉重新钉回顶部。 */
-@media (min-width: 1024px) and (max-height: 650px) {
+@media (min-width: 1024px) and (max-height: 720px) {
   .ws-float-panel {
     top: 8px;
     /* 56 = 底部工具栏占位（bottom:12 + 高 44）；60 再留 4px 缝，不压住工具栏 */
@@ -928,7 +930,7 @@ html[data-theme="dark"] .lp-hero {
   }
 }
 
-@media (max-height: 650px) {
+@media (max-height: 720px) {
   .ws-panel-head {
     padding: 8px 12px 6px 16px;
   }
