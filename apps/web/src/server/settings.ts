@@ -96,7 +96,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
   // 不进 runtime 缓存，保存即热生效，无需重建 provider / mailer。
-  { key: 'SITE_URL', group: 'payment', label: '站点地址', kind: 'url', hint: '如 https://motif.example.com；支付回调与支付完成跳转由此拼接，真实渠道必填' },
+  { key: 'SITE_URL', group: 'payment', label: '站点地址', kind: 'url', hint: '如 https://motif.example.com；支付回调与支付完成跳转，以及找回密码邮件里的一键直达链接都由它拼接；真实渠道必填，未配时该邮件只发验证码' },
   { key: 'BILLING_CURRENCY', group: 'payment', label: '套餐币种', kind: 'enum', options: ['cny', 'usd', 'hkd', 'eur', 'gbp'], defaultHint: 'hkd', hint: '全局单币种，不含零小数货币（jpy 会与按分计价冲突放大 100 倍金额）；易支付网关基本仅支持 cny' },
   { key: 'PRICE_CREDITS_50', group: 'payment', label: '50 张价格（所选币种）', kind: 'money', defaultHint: '68.00', hint: '单位跟随套餐币种主单位；两位小数、单档 ≤99999.99；需高于渠道最低收款额（Stripe 按币种 USD0.50/HKD4.00…，易支付站点常见 ≥1 元）；下单按分落库' },
   { key: 'PRICE_CREDITS_100', group: 'payment', label: '100 张价格（所选币种）', kind: 'money', defaultHint: '136.00' },

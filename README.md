@@ -151,6 +151,7 @@ motif/
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `MAIL_FROM` | smtp 渠道（QQ 邮箱 = smtp.qq.com:465 + 授权码） |
 | `SMTP_SECURE` | 按端口推断 | 465 默认 SSL；非 465 端口如需关闭可设 `false` |
 | `RESEND_API_KEY` / `SENDGRID_API_KEY` | 对应 API 渠道 |
+| `SITE_URL` | 站点对外地址（如 `https://motif.example.com`）。支付回调 / 支付完成跳转，以及**找回密码邮件里的一键直达链接**都由它拼接；未配时该邮件只发验证码（降级，不阻断重置）。在管理后台「支付与套餐」组 |
 | `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` | 数据位置（默认 `apps/web/.data/motif.db`）。**只能在环境变量里改**，管理后台只读展示 |
 | `MOTIF_ADMIN_EMAIL` | 自动创建的管理员邮箱，默认 `admin@motif.local` |
 | `MOTIF_ADMIN_PASSWORD` | 指定管理员初始密码（不设则生成 20 位随机强密码） |
@@ -184,7 +185,9 @@ motif/
 凭据到手后全部在管理后台完成，不碰代码、不重启（配置保存即热生效）：
 
 1. **邮件发信**：「系统设置 → 邮件发信」选渠道，按引导卡申请凭据（QQ 邮箱授权码 /
-   Resend / SendGrid 均有入口二维码）→ 粘贴保存 → 点「发送测试邮件」验证
+   Resend / SendGrid 均有入口二维码）→ 粘贴保存 → 点「发送测试邮件」验证。
+   顺带在「支付与套餐」里填好**站点地址**（`SITE_URL`）：找回密码邮件会附带一键直达链接
+   （点开即预填邮箱与验证码，只需输新密码）；未配则只发验证码，重置流程照样可用
 2. **支付渠道**：「系统设置 → 支付与套餐」配置站点地址（SITE_URL）、套餐币种与四档价格，
    并粘贴渠道凭据——易支付填网关地址 / 商户 ID / 密钥三件套，或 Stripe 填
    `sk_…` 密钥与 `whsec_…` webhook 签名密钥（Stripe Dashboard 需添加回调地址
