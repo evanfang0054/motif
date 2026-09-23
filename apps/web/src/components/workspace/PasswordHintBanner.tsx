@@ -2,68 +2,53 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Modal, Typography } from '@heroui/react'
+import { isHintDismissed, markHintDismissed, sessionStore } from '@/lib/password-hint'
 
 /**
  * 强制改密软提示：仅在账号由引导创建或被管理员重置后显示。
  * 刻意不做页面重定向、不拦截 API —— 用户可继续使用，只做提醒。
  *
- * 2026-09-21 裁决（用户）：① 由顶部横幅改为弹窗；② 点「稍后」之后**本机不再提醒**。
+ * 2026-09-21 裁决（用户）：由顶部横幅改为弹窗。
+ * 2026-09-23 批准的设计 **D12**（取代「本机永久不再提醒」的旧口径）：保留全屏弹窗，但
+ * 「稍后」写**本次会话**抑制标记（`sessionStorage`），不再定时重弹；首次登录仍弹一次。
+ * 抑制的键与读写都在 `@/lib/password-hint`（纯函数 + 单测），这里只负责 UI。
  *
- * 为什么「稍后」记在 localStorage 而不是库里：用户裁决按本机记（不动数据库）。
- * 代价是换浏览器/清缓存后会再提醒一次 —— 这是有意的取舍，不是缺陷。
- *
- * ⚠️ 存储键**按 userId 分**：同一浏览器换账号登录时，A 点过「稍后」不能把 B 的提醒也吞掉。
- *
- * ⚠️ 弹窗**不可点背景/Esc 关闭**（isDismissable={false} + isKeyboardDismissDisabled）：
- * 若把「误点背景」也当成「稍后」，用户会在毫不知情的情况下永久丢掉这条提醒 ——
+ * ⚠️ 遮罩**不可点背景/Esc 关闭**（`isDismissable={false}` + `isKeyboardDismissDisabled`）：
+ * 若把「误点背景」也当成一个出口，用户会在毫不知情的情况下丢掉这条提醒 ——
  * 而这提醒的价值恰恰在于「你现在用的是一串系统随机密码」。故只留「去修改」「稍后」两个明确出口。
+ * 「遮罩在屏时拦住画布点击」是模态的**正常行为**，设计 §6.2 明确不单独改 ——
+ * 抑制生效后就没有遮罩了，验收项「点『稍后』后画布交互立即可用」即由此成立。
  *
- * ⚠️ 初始态是「不显示」而不是「显示」：localStorage 只能在 effect 里读（SSR 期不存在），
- * 首帧若按「显示」渲染，已点过「稍后」的用户每次进工作台都会看到弹窗闪一下。
+ * ⚠️ 初始态是「不显示」而不是「显示」：storage 只能在 effect 里读（SSR 期不存在），
+ * 首帧若按「显示」渲染，已抑制过的用户每次进工作台都会看到弹窗闪一下。
  */
-const STORAGE_PREFIX = 'motif:password-hint-dismissed:'
-
-function dismissKey(userId: string) {
-  return `${STORAGE_PREFIX}${userId}`
-}
-
 export function PasswordHintBanner({
   show,
   userId,
   onChangePassword,
 }: {
   show: boolean
-  /** 当前用户 id：用于按账号隔离「已稍后」标记 */
+  /** 当前用户 id：用于按账号隔离抑制标记 */
   userId: string
   onChangePassword: () => void
 }) {
-  /** 本机持久标记（点过「稍后」）：默认 true = 不显示，挂载后再读（见文件头注释） */
-  const [dismissedForever, setDismissedForever] = useState(true)
-  /** 本次会话已处理过（点过「去修改」或「稍后」）：不再弹回来 */
-  const [handled, setHandled] = useState(false)
+  /** 本次会话已抑制：默认 true = 不显示，挂载后再读（见文件头注释） */
+  const [dismissed, setDismissed] = useState(true)
 
   useEffect(() => {
-    try {
-      setDismissedForever(localStorage.getItem(dismissKey(userId)) === '1')
-    } catch {
-      // 隐私模式下 localStorage 可能抛异常：读不到就按「没点过稍后」处理（照常提醒）
-      setDismissedForever(false)
-    }
-    // 换账号要复位本次会话的处理位（否则切到另一个待改密的账号会被上一次的「稍后」吞掉）
-    setHandled(false)
+    setDismissed(isHintDismissed(sessionStore(), userId))
   }, [userId])
 
-  if (!show || dismissedForever || handled) return null
+  if (!show || dismissed) return null
 
-  /** 「稍后」：先关掉再写标记 —— 写 localStorage 在隐私模式下可能抛异常，不能挡住关闭动作 */
+  /**
+   * 两个出口写**同一个**会话标记：口径是「本次会话抑制」，不按按钮区分持久性
+   * （用户点「去修改」也可能只是去看看、并没真改，这次会话内就不该再拿同一件事打扰他）。
+   * 顺序：先关掉再写 —— 写失败（隐私模式）不该挡住关闭动作。
+   */
   const dismiss = () => {
-    setHandled(true)
-    try {
-      localStorage.setItem(dismissKey(userId), '1')
-    } catch {
-      // 写不进去就只关掉本次：下次进来还会提醒，属于可接受降级
-    }
-    setDismissedForever(true)
+    setDismissed(true)
+    markHintDismissed(sessionStore(), userId)
   }
 
   return (
@@ -86,7 +71,7 @@ export function PasswordHintBanner({
             <Button
               variant="primary"
               onPress={() => {
-                setHandled(true)
+                dismiss()
                 onChangePassword()
               }}
             >

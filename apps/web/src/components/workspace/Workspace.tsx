@@ -21,6 +21,7 @@ import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialo
 import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
+import { clearHintDismissed, sessionStore } from '@/lib/password-hint'
 import { AlertDialog, Button, Spinner, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { showToast } from '@/components/ui/toast'
@@ -736,8 +737,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
 
   const logout = useCallback(async () => {
     await api.logout()
+    // 清掉改密提醒的会话抑制标记：CONTEXT「会话抑制」把边界定在**一次登录**（重新登录可再次提示），
+    // 而 sessionStorage 的天然边界是标签页 —— 靠这一步对齐。放在 await 之后：
+    // 登出失败时用户还在登录态，此时清标记会让提醒在下一次重挂载时重新弹出来。
+    clearHintDismissed(sessionStore(), user.id)
     router.refresh()
-  }, [router])
+  }, [router, user.id])
 
   const onPaid = useCallback(
     async (user: User) => {
@@ -761,7 +766,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       />
 
       {/* 改密入口即既有的个人资料弹窗（ProfileDialog 内含改密表单）。
-          「稍后」的持久化与「本次会话已处理」都在 PasswordHintBanner 内部，
+          抑制标记（本次会话，`sessionStorage`）与两个出口都在 PasswordHintBanner 内部，
           这里只负责「账号是否被标记为需改密」这一个条件。 */}
       <PasswordHintBanner
         show={!!user?.mustChangePassword}
