@@ -4,12 +4,14 @@
  * 全站唯一 Toast 出口。
  * 全站一律经此触发，禁止直接使用 @heroui/react 的 toast 底层 API。
  * 文案必须由调用方字面量直传——出口层不得改写/拼接/翻译。
+ * `message` 允许是 JSX（如快捷键提示里的 `<Kbd>`），出口层原样透传。
  */
+import type { ReactNode } from 'react'
 import { toast } from '@heroui/react'
 
 export function showToast(opts: {
   tone?: 'info' | 'success' | 'warning' | 'danger'
-  message: string
+  message: ReactNode
   /** 毫秒；缺省用 HeroUI 默认时长（4000ms） */
   timeoutMs?: number
 }) {

@@ -21,7 +21,7 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
 import {
   Archive,
   ArrowDownToLine,
@@ -668,7 +668,25 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
     const el = containerRef.current
     const bounds = boundsOf(treePlan.map((p) => p.rect))
     if (el && bounds) store.setViewport(fitView(bounds, el.clientWidth, el.clientHeight))
-    showToast({ tone: 'success', message: `已按来源重新排列 ${treePlan.length} 张（Ctrl+Z 可撤销）` })
+    showToast({
+      tone: 'success',
+      message: (
+        <>
+          已按来源重新排列 {treePlan.length} 张（
+          {/* 撤销键 Mac 上是 ⌘、Win/Linux 上是 Ctrl（见 lib/canvas/shortcuts.ts 的 isModifierShortcut），
+              故双写。
+              ⚠️ 两个键帽之间那个 `{' '}` 不能省：键帽之间的空隙只来自 `.kbd` 自己的 padding，
+              不会进 DOM 文本 —— 少了它，复制出去和读屏读到的都是 `⌘/CtrlZ`（粘在一起）。 */}
+          <Kbd>
+            <Kbd.Content>⌘/Ctrl</Kbd.Content>
+          </Kbd>{' '}
+          <Kbd>
+            <Kbd.Content>Z</Kbd.Content>
+          </Kbd>{' '}
+          可撤销）
+        </>
+      ),
+    })
   }, [treePlan])
 
   /** 当前摆放（导出与导入比对共用）：store 里是稀疏表，这里转成 placement 列表 */

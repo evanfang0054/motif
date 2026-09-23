@@ -7,17 +7,32 @@
  */
 'use client'
 
-import { Button, Surface } from '@heroui/react'
+import type { ReactNode } from 'react'
+import { Button, Kbd, Surface } from '@heroui/react'
 import { BookOpen } from '@gravity-ui/icons'
 
 interface Props {
   onOpenPromptLibrary: () => void
 }
 
-const STEPS: Array<{ title: string; desc: string }> = [
+const STEPS: Array<{ title: string; desc: ReactNode }> = [
   { title: '写提示词', desc: '在右侧表单里描述你要生成的图片；张数与尺寸也在那里选。' },
   { title: '可选：上传参考图', desc: '想让主体在整组图里保持一致就上传参考图。上传后只暂存，生成时才进画布。' },
-  { title: '点「生成」', desc: '出图后会自动落在画布上，可以拖动、缩放，Shift+拖拽框选，也可以导出布局。' },
+  {
+    title: '点「生成」',
+    desc: (
+      <>
+        出图后会自动落在画布上，可以拖动、缩放，
+        {/* 这里用 `Kbd.Content` 写字面量 Shift，而不是 `Kbd.Abbr keyValue="shift"` 的 ⇧：
+            空态引导是给第一次用的人看的，保留字面量才不会让不认识 ⇧ 的人（含读屏用户 ——
+            abbr 的 title 不进可访问名，只留符号）丢掉信息 */}
+        <Kbd>
+          <Kbd.Content>Shift</Kbd.Content>
+        </Kbd>{' '}
+        拖拽框选，也可以导出布局。
+      </>
+    ),
+  },
 ]
 
 function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
