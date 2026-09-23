@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizePublicBase, withPublicImageBase } from '@/server/image-url'
+import { normalizePublicBase, publicImageBaseFor, withPublicImageBase } from '@/server/image-url'
 
 /**
  * #57：把返回给前端的图片 `src` 换成对象存储直链。
@@ -48,5 +48,20 @@ describe('#57 withPublicImageBase：未配时零行为差异，配了才换直�
     expect(normalizePublicBase('   ')).toBeNull()
     expect(normalizePublicBase('https://x.io/')).toBe('https://x.io')
     expect(normalizePublicBase('https://x.io')).toBe('https://x.io')
+  })
+
+  it('⚠️ 按驱动门控：local 驱动下即使配了前缀也不生效（图片从没进过桶，直链必然取不到）', () => {
+    expect(publicImageBaseFor('local', 'https://cdn.example.com')).toBeNull()
+    expect(publicImageBaseFor(undefined, 'https://cdn.example.com')).toBeNull()
+    expect(publicImageBaseFor('', 'https://cdn.example.com')).toBeNull()
+  })
+
+  it('s3 驱动下才生效（大小写不敏感）', () => {
+    expect(publicImageBaseFor('s3', 'https://cdn.example.com/')).toBe('https://cdn.example.com')
+    expect(publicImageBaseFor('S3', 'https://cdn.example.com')).toBe('https://cdn.example.com')
+  })
+
+  it('反证：s3 驱动 + 配了前缀 → 必须非 null（否则上面那条「local 为 null」可能恒真）', () => {
+    expect(publicImageBaseFor('s3', 'https://cdn.example.com')).not.toBeNull()
   })
 })

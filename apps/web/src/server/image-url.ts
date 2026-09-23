@@ -17,6 +17,22 @@ export function normalizePublicBase(base: string | null | undefined): string | n
 }
 
 /**
+ * 算「这次请求该不该用直链」。
+ *
+ * ⚠️ **必须按驱动门控**：`local` 驱动下图片从来没进过桶，配了前缀也拼不出能取到的 URL ——
+ * 那会把整页画布变成破图。而 `S3_*` 在驱动不是 s3 时**在管理后台是隐藏的**（保存不进去），
+ * 所以「误配了就自己去后台清掉」这条路也不通。这里直接让它在非 s3 驱动下失效，
+ * 既防破图，也不需要在后台为它开例外。
+ *
+ * 另：s3 驱动下**尚未搬迁**的老图只在本地，直链同样取不到 —— 那属于部署顺序问题，
+ * 已在 README 写明「先跑完 storage:migrate 再配这个前缀」。
+ */
+export function publicImageBaseFor(driver: string | null | undefined, base: string | null | undefined): string | null {
+  if ((driver ?? 'local').toLowerCase() !== 's3') return null
+  return normalizePublicBase(base)
+}
+
+/**
  * 把 `src` 重写为 `${base}/${imageKey}`。
  *
  * `imageKey` 形如 `<userId>/<topicId>/<uuid>.png`，**分隔符就是 `/` 且各段只含

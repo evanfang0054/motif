@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { MotifStore, storagePathFor } from '@motif/db'
 import { removeFromAllStorages } from '@/server/context'
-import { normalizePublicBase, withPublicImageBase } from '@/server/image-url'
 import { planMigration, runMigration } from '@/server/storage-migrate'
 import { writeSettings } from '@/server/settings'
 import type { Storage } from '@/server/storage'
@@ -152,5 +151,14 @@ describe('#58 removeFromAllStorages：两侧都清', () => {
   it('反证：本地那份确实是被这个函数删的（不调用时文件还在）', () => {
     seedLocal()
     expect(existsSync(storagePathFor(dir, KEY))).toBe(true)
+  })
+
+  it('⚠️ s3 驱动但凭据没填全（构造即抛）时，本地那份仍要被清掉且不抛', async () => {
+    // 只把驱动切成 s3、不填 S3_*：resolveRemoteStorage() 会直接抛「缺少配置」。
+    // 若构造不在 try 里，本地清理根本走不到 → 本地文件残留（正是 #58 的缺口）。
+    writeSettings(store, { STORAGE_DRIVER: 's3' }, { danger: false })
+    seedLocal()
+    await expect(removeFromAllStorages(KEY)).resolves.toBeUndefined()
+    expect(existsSync(storagePathFor(dir, KEY))).toBe(false)
   })
 })

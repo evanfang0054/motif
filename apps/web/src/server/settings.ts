@@ -92,7 +92,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'S3_ACCESS_KEY_ID', group: 'storage', label: 'Access Key ID', kind: 'string', required: true },
   { key: 'S3_SECRET_ACCESS_KEY', group: 'storage', label: 'Secret Access Key', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
   { key: 'S3_FORCE_PATH_STYLE', group: 'storage', label: '强制 path-style 寻址', kind: 'boolean', defaultHint: 'false', hint: '自建 MinIO / 无 DNS 泛解析的兼容服务需开启。' },
-  { key: 'S3_PUBLIC_BASE_URL', group: 'storage', label: '图片公开访问前缀', kind: 'url', hint: '如 https://cdn.example.com；配了之后画布图片与打包下载直接由它取，不再经应用转发字节（桶需允许公开读）。留空则一切照旧走应用代理。' },
+  { key: 'S3_PUBLIC_BASE_URL', group: 'storage', label: '图片公开访问前缀', kind: 'url', hint: '如 https://cdn.example.com；配了之后画布图片与打包下载直接由它取，不再经应用转发字节。前提：驱动为 s3、老图已用 `pnpm storage:migrate` 搬完、桶允许公开读并允许跨域 GET（批量下载走 fetch）。留空则一切照旧走应用代理。' },
 
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，

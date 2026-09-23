@@ -148,7 +148,14 @@ export function resolveReadStorages(dataDir?: string): { local: Storage; remote:
  * 复用 `resolveRemoteStorage()` 的语义 —— 它**只在 s3 驱动下非 null**，所以 local 驱动时只删一次。
  */
 export async function removeFromAllStorages(key: string, dataDir?: string): Promise<void> {
-  const remote = resolveRemoteStorage(dataDir)
+  // ⚠️ 构造也要包起来：选了 s3 但凭据没填全时 `resolveRemoteStorage()` **直接抛**，
+  // 那样连本地那份都清不掉、请求还会报错。构造失败一律视为「没有远端」，继续清本地。
+  let remote: Storage | null = null
+  try {
+    remote = resolveRemoteStorage(dataDir)
+  } catch {
+    remote = null
+  }
   const targets = remote ? [remote, resolveLocalStorage(dataDir)] : [resolveLocalStorage(dataDir)]
   for (const storage of targets) {
     try {
