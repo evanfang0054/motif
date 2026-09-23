@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRuntime, resolveStorage } from '@/server/context'
+import { getRuntime, removeFromAllStorages } from '@/server/context'
 import { jsonError, readJson, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
 
@@ -17,15 +17,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return img
     })
     store.deleteCanvasImages(owned.map((img) => img.id))
-    // 逐个 best-effort 清理：单个失败不阻塞整批（行已删除，文件残留不影响功能）
-    const storage = resolveStorage()
-    for (const img of owned) {
-      try {
-        await storage.remove(img.imageKey)
-      } catch {
-        // 对象可能已被清理或远端暂时不可达，忽略
-      }
-    }
+    // 逐个两侧 best-effort 清理（#58）：单个失败不阻塞整批（行已删除，文件残留不影响功能）
+    for (const img of owned) await removeFromAllStorages(img.imageKey)
     return NextResponse.json({ ok: true, deleted: owned.length })
   } catch (e) {
     return jsonError(e)

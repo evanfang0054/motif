@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getRuntime, resolveReadStorages, resolveStorage } from '@/server/context'
+import { getRuntime, removeFromAllStorages, resolveReadStorages } from '@/server/context'
 import { jsonError, requireUser } from '@/server/http'
 import { ServiceError } from '@/server/services'
 import { readImageWithFallback } from '@/server/storage'
@@ -39,8 +39,9 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     const img = store.getCanvasImage(id)
     if (!img || img.userId !== user.id) throw new ServiceError(404, '图片不存在。')
     store.deleteCanvasImage(id)
-    // 只删当前驱动下的对象：local 驱动删本地、s3 驱动删远端（不跨驱动误删）
-    await resolveStorage().remove(img.imageKey)
+    // 两侧都清（#58）：双读下同一个 key 可能本地与远端各有一份，只删一份会留下残留，
+    // 且残留的远端对象会被下次 storage:migrate 当成「缺失」重新上传。
+    await removeFromAllStorages(img.imageKey)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return jsonError(e)

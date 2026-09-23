@@ -50,18 +50,32 @@ try {
 }
 
 async function main() {
+// 只搬 DB 里仍在册的对象（#58）：本地残留的孤儿（行已删）不该被重新上传回桶里
+const liveKeys = new Set(store.listAllImageKeys())
+
 if (dryRun) {
-  const plan = await planMigration(dataDir, remote)
+  const plan = await planMigration(dataDir, remote, liveKeys)
   console.log(
     `[motif] 待搬迁 ${plan.pending.length} 个对象（共扫描到 ${plan.total} 个，远端已存在 ${plan.skipped.length} 个将跳过）`
   )
   for (const key of plan.pending) console.log(`  ${key}`)
+  if (plan.orphaned.length) {
+    console.log(`[motif] 另有 ${plan.orphaned.length} 个对象已不在数据库中（不搬迁，可自行清理）：`)
+    for (const key of plan.orphaned) console.log(`  ${key}`)
+  }
   console.log('[motif] --dry-run：未上传任何对象。')
   process.exit(0)
 }
 
-const r = await runMigration(dataDir, remote, (done, total, key) => {
-  console.log(`[motif] ${done}/${total} ${key}`)
-})
-console.log(`[motif] 搬迁完成：本次上传 ${r.uploaded} 个，跳过已存在 ${r.skipped} 个。`)
+const r = await runMigration(
+  dataDir,
+  remote,
+  (done, total, key) => {
+    console.log(`[motif] ${done}/${total} ${key}`)
+  },
+  liveKeys
+)
+console.log(
+  `[motif] 搬迁完成：本次上传 ${r.uploaded} 个，跳过已存在 ${r.skipped} 个，跳过已删除 ${r.orphaned} 个。`
+)
 }
