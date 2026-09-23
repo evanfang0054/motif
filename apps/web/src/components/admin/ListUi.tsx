@@ -34,7 +34,9 @@ export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: numbe
 export function ListEmptyContent({ text }: { text: string }) {
   return (
     <EmptyState className="flex h-full w-full flex-col items-center justify-center gap-3 py-8 text-center">
-      <InlineText type="body-sm" className="admin-muted">{text}</InlineText>
+      {/* ⚠️ `align="center"` 不能省：外层靠 `text-center` 居中，而 `Typography` 自己在元素上带
+          `text-align: start`。空态文案在窄屏会折行，缺了它第二行起就是左对齐。 */}
+      <InlineText type="body-sm" align="center" className="admin-muted">{text}</InlineText>
     </EmptyState>
   )
 }

@@ -41,7 +41,9 @@ function PayPanel() {
         <BrandMark />
         <b>Motif 模拟收银台</b>
       </div>
-      <Typography type="body-sm" className="mt-3" style={{ color: 'var(--muted)' }}>
+      {/* ⚠️ `align="center"` 不能省：外层 Card 靠内联 `textAlign: 'center'` 居中，而 `Typography`
+          自己在元素上带 `text-align: start` —— 元素自己的声明盖掉祖先的继承值，去掉就变左对齐。 */}
+      <Typography type="body-sm" align="center" className="mt-3" style={{ color: 'var(--muted)' }}>
         订单号：{orderId || '（缺失）'}
         <br />
         这是本地部署使用的模拟支付页面，不会产生真实扣款。

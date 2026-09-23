@@ -400,18 +400,21 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               </div>
             ) : items.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>
+                {/* ⚠️ 下面这些 `align="center"` 不能省：本容器靠 `text-center` 居中，而 `Typography` 自己在
+                    元素上带 `text-align: start`。单行时看不出差别（子元素按 fit-content 居中），
+                    一旦折行（失败原因那几条经常很长）第二行起就是左对齐。 */}
                 {emptyKind === 'fetching' ? (
                   <>
                     {/* 上游还在抓：内容形状同样可预判（卡片网格）。⚠️ 这里不能限高（原来的 h-40 装不下三张卡），
                         也不能让 grid 按 fit-content 收缩 —— 否则骨架塌成一条缝（见 EntryGridSkeleton 的说明）。 */}
                     <EntryGridSkeleton count={3} />
-                    <InlineText color="muted" type="body-sm">正在抓取提示词库…</InlineText>
+                    <InlineText color="muted" type="body-sm" align="center">正在抓取提示词库…</InlineText>
                   </>
                 ) : emptyKind === 'failed' ? (
                   <>
-                    <InlineText color="muted" type="body-sm">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
+                    <InlineText color="muted" type="body-sm" align="center">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
                     {failures.map((f) => (
-                      <InlineText type="body-xs" key={f.sourceId}>
+                      <InlineText type="body-xs" key={f.sourceId} align="center">
                         {f.sourceName}：{f.error}
                       </InlineText>
                     ))}
@@ -420,9 +423,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                     </Button>
                   </>
                 ) : emptyKind === 'filtered' ? (
-                  <InlineText color="muted" type="body-sm">没有匹配的提示词，换个关键词或标签试试</InlineText>
+                  <InlineText color="muted" type="body-sm" align="center">没有匹配的提示词，换个关键词或标签试试</InlineText>
                 ) : (
-                  <InlineText color="muted" type="body-sm">提示词库还没有内容</InlineText>
+                  <InlineText color="muted" type="body-sm" align="center">提示词库还没有内容</InlineText>
                 )}
               </div>
             ) : (
