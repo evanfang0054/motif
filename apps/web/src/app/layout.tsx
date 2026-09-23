@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { ToastProvider } from '@/components/ui/ToastProvider'
+import { ThemeWatcher } from '@/components/ThemeWatcher'
+import { THEME_INIT_SCRIPT } from '@/lib/theme'
 
 export const metadata: Metadata = {
   title: 'Motif · AI 商业图片批量生成工作台',
@@ -12,7 +14,7 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
-const THEME_INIT = `(function(){try{var m=localStorage.getItem('motif-theme')||'light';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.dataset.theme='dark';else delete document.documentElement.dataset.theme}catch(e){}})()`
+const THEME_INIT = THEME_INIT_SCRIPT
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -27,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full antialiased">
         {/* 首帧主题解析：默认浅色；读取 localStorage 三态，防闪烁 */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        {/* 运行期主题跟随（系统明暗实时变化）：必须挂在**常驻层** —— 见 ThemeWatcher 的说明。
+            放在这里而不是工作台的顶栏里，是因为落地页 / 管理后台同样需要「跟随系统」生效。 */}
+        <ThemeWatcher />
         <ToastProvider />
         {children}
       </body>

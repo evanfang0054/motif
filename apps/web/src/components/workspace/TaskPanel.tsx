@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
-import { ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
+import { ArrowRotateRight, ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
+import { useMediaQuery } from '@/lib/use-media-query'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
 import {
   COUNT_MAX,
@@ -50,10 +51,25 @@ interface Props {
   onGenerate: () => void
   onCancel: () => void
   onNewTask: () => void
+  /** 失败横幅里的「重试」：用失败那一轮的提示词 / 张数 / 尺寸 / 参考图重新提交（#73-1.5） */
+  onRetryLast: () => void
 }
 
 /** 提示词输入框的自适应高度上限：再高就把「参数」区挤出视野了 */
 const PROMPT_MAX_H = 320
+/**
+ * 矮视口（≤720px）下的自适应上限（#73-1.6）。
+ * 为什么不能只靠 CSS 的 `min-height`：输入框高度是**内联 height**（见下方自适应 effect），
+ * 而 min-height 压不住更大的内联 height —— 空框的 scrollHeight（≈96px）会把输入区顶到粘性底栏之下。
+ * 故这里按视口高度把上限一起收一档，配合 CSS 侧的 `min-height` 变体（TaskPanel 的 className）。
+ *
+ * ⚠️ 断点取 **720px** 而不是 issue 里那两个点（700 正常 / ≤650 裁切）中的 650：
+ * 651–699px 这一段同样会裁（面板高度不足以容纳空框 + 底栏），650 只是当时实测到的一个样本，
+ * 按它切会把一整段仍然裁切的视口漏在断点之外。抬到 720 才把「700 正常」也纳入矮视口收窄档。
+ */
+const PROMPT_SHORT_MAX_H = 72
+/** 矮视口判据：与 globals.css 里那条 `@media (max-height: 720px)` 必须一致 */
+const SHORT_VIEWPORT_QUERY = '(max-height: 720px)'
 
 /**
  * NumberField 的取值兜底。
@@ -144,12 +160,17 @@ function TaskPanel(p: Props) {
 
   // 提示词框随内容长高（到上限为止）。⚠️ 先把 height 归零再读 scrollHeight，
   // 否则删字时 scrollHeight 会被上一轮的内联高度撑住，框只增不减。
+  // 上限分两档（见 PROMPT_SHORT_MAX_H）：矮视口下必须压低，否则空框也会把输入区顶到底栏之下（#73-1.6）。
+  // ⚠️ 依赖里必须带 `shortViewport`：只看 `p.prompt` 的话，**窗口从高变矮**（内容没变）不会重算，
+  // 内联 height 会停在旧上限、把输入框顶到底栏之下 —— 用 matchMedia 的订阅值当依赖才能跟着重算。
+  const shortViewport = useMediaQuery(SHORT_VIEWPORT_QUERY)
   useEffect(() => {
     const el = promptRef.current
     if (!el) return
+    const cap = shortViewport ? PROMPT_SHORT_MAX_H : PROMPT_MAX_H
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, PROMPT_MAX_H)}px`
-  }, [p.prompt])
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`
+  }, [p.prompt, shortViewport])
 
   // `sizeNote` 的生命周期：**离开自定义尺寸即失效**。切到别的档、或点「新任务」把面板重置回
   // 默认的 `auto`，旧回显（「已吸附到 3:2 · 1536×1024」）都不再对应当前尺寸；不清掉的话
@@ -171,12 +192,20 @@ function TaskPanel(p: Props) {
       </div>
 
       <div className="ws-panel-scroll">
-        {/* 上次生成失败：持久横幅（toast 转瞬即逝，失败必须留在界面上直到下次提交） */}
+        {/* 上次生成失败：持久横幅（toast 转瞬即逝，失败必须留在界面上直到下次提交）。
+            横幅里带**重试入口**（#73-1.5）：失败后原先只能重新手填一遍再提交。 */}
         {p.lastError && !p.busy && (
           <Alert status="danger" role="alert">
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Title>{p.lastError}</Alert.Title>
+              <Alert.Description>
+                可以用失败那一轮的提示词、张数与尺寸直接重试。
+              </Alert.Description>
+              <Button variant="secondary" size="sm" className="mt-2 w-fit" onPress={p.onRetryLast}>
+                <ArrowRotateRight />
+                重试
+              </Button>
             </Alert.Content>
           </Alert>
         )}
@@ -380,17 +409,27 @@ function TaskPanel(p: Props) {
                       if (k) p.onSizeChange(String(k))
                     }}
                   >
+                    {/* ⚠️ `Dropdown.ItemIndicator` 不能省（#73-1.2）：不写它时 HeroUI 只给
+                        `aria-checked=true`，**没有任何视觉标识** —— 亮暗色下都看不出当前选中项。
+                        它是库的公开子组件（官方 `dropdown/with-single-selection` demo 同款用法），
+                        未选中时占位、选中时描出对勾，因此加上它也不会让选项宽度跳动。 */}
                     {SIZE_PRESETS.map((s) => (
                       <Dropdown.Item key={s.key} id={s.key} textValue={`${s.label} ${s.hint}`}>
+                        <Dropdown.ItemIndicator />
                         <Label>{s.label}</Label>
                         <Description>{s.hint}</Description>
                       </Dropdown.Item>
                     ))}
-                    <Dropdown.Item id="auto" textValue="自动 auto">
+                    {/* 副文案一律中文（#73-1.7）：这里原本直出 API 枚举值 `auto`，
+                        全中文界面里唯独这一项是英文。`textValue` 同步成中文，否则读屏 / 输入法
+                        按英文匹配，与看到的文字对不上。 */}
+                    <Dropdown.Item id="auto" textValue="自动 由模型决定">
+                      <Dropdown.ItemIndicator />
                       <Label>自动</Label>
-                      <Description>auto</Description>
+                      <Description>由模型决定</Description>
                     </Dropdown.Item>
                     <Dropdown.Item id="custom" textValue="自定义 输入宽高">
+                      <Dropdown.ItemIndicator />
                       <Label>自定义</Label>
                       <Description>输入宽高</Description>
                     </Dropdown.Item>
@@ -476,11 +515,15 @@ function TaskPanel(p: Props) {
             </div>
           </div>
           <TextField aria-label="提示词" className="w-full" value={p.prompt} onChange={(v) => p.onPromptChange(v)}>
+            {/* 矮视口（≤720px）下把最小高度收一档（#73-1.6）：面板高度不够时，
+                104px 的输入框会被粘性底栏裁掉下半截、placeholder 看起来像坏了。
+                ⚠️ 必须同时改 `min-height`（这里）与内联 `height` 的上限（见上方自适应 effect）：
+                内联 height 会压过 min-height，只改一处等于没改。 */}
             <TextArea
               ref={promptRef}
               placeholder="描述你要生成的图片，或从提示词库挑一条…"
               rows={4}
-              className="w-full min-h-[104px] resize-none"
+              className="w-full min-h-[104px] resize-none [@media(max-height:720px)]:min-h-[72px]"
             />
           </TextField>
           {promptTooLong && (

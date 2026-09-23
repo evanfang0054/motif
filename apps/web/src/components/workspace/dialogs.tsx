@@ -62,8 +62,22 @@ const Modal = WorkspaceModal
 /** 币种符号与金额格式统一走 `lib/format`（概览页、订单页、本弹窗共用一份映射） */
 const fmtPrice = (p: CreditPackage) => formatMoney(p.amountTotal, p.currency)
 
-/** 充值弹窗：套餐列表 + 收银台分流（mock 站内确认；epay/stripe 整页跳网关/Stripe）+ CDK 入口 */
-function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onPaid: (u: User) => void; onRedeem: () => void }) {
+/**
+ * 充值弹窗：套餐列表 + 收银台分流（mock 站内确认；epay/stripe 整页跳网关/Stripe）+ CDK 入口。
+ *
+ * ⚠️ `onPaid` 必须把**本次到账额度**一并回传（#73-1.3）：支付成功后只能拿到 `user`，
+ * 而 `user.credits` 是**充值后的总余额**，拿它当「新充额度」会写出「已充值 153 张总额度中的新额度」
+ * 这种既错又不通的文案。`mockPay` 的响应里本来就有 `paid`（本次订单额度），直接透传。
+ */
+function BillingDialog({
+  onClose,
+  onPaid,
+  onRedeem,
+}: {
+  onClose: () => void
+  onPaid: (u: User, paidCredits: number) => void
+  onRedeem: () => void
+}) {
   const [packages, setPackages] = useState<CreditPackage[]>([])
   const [channel, setChannel] = useState<'mock' | 'epay' | 'stripe'>('mock')
   const [error, setError] = useState<string | null>(null)
@@ -91,7 +105,7 @@ function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onP
       }
       // mock 渠道：站内模拟收银台确认
       const res = await api.mockPay(orderId)
-      onPaid(res.user)
+      onPaid(res.user, res.paid)
     } catch (e) {
       setError(e instanceof Error ? e.message : '支付失败')
       setBusyId(null)
