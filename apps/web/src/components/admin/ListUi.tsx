@@ -10,7 +10,8 @@
  * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
-import { EmptyState, Pagination, Skeleton, Table, Tooltip } from '@heroui/react'
+import { EmptyState, Pagination, Skeleton, Table, Tooltip, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 
 /** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */
 export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
@@ -33,7 +34,7 @@ export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: numbe
 export function ListEmptyContent({ text }: { text: string }) {
   return (
     <EmptyState className="flex h-full w-full flex-col items-center justify-center gap-3 py-8 text-center">
-      <span className="admin-muted text-sm">{text}</span>
+      <InlineText type="body-sm" className="admin-muted">{text}</InlineText>
     </EmptyState>
   )
 }
@@ -45,12 +46,19 @@ export function ListEmptyContent({ text }: { text: string }) {
  * 早先显示的是「共 … 个」—— 诚实但会闪一下；改成与数字等宽的骨架条，位置不跳。
  */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
-  // ⚠️ 外层 span 必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
-  // 若加载时整个换掉、完成后再挂一个新 span，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
+  // ⚠️ 外层必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
+  // 若加载时整个换掉、完成后再挂一个新元素，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
+  // ⚠️ 外层用 `<div>` 而不是 `<span>`：加载态塞的是骨架 `<div>`，`<span>` 里放 `<div>` 是非法嵌套
+  // （span 的内容模型只允许行内内容），会被 React 的嵌套校验告警、也可能造成水合不一致。
+  // 布局不受影响：父级 `.admin-toolbar` 是 flex 容器，flex item 一律块级化，span/div 表现一致。
   return (
-    <span className="admin-muted" role="status">
-      {loading ? <Skeleton className="inline-block h-4 w-16 rounded-medium" /> : `共 ${total} ${unit}`}
-    </span>
+    <div role="status">
+      {loading ? (
+        <Skeleton className="inline-block h-4 w-16 rounded-medium" />
+      ) : (
+        <InlineText type="body-sm" className="admin-muted">共 {total} {unit}</InlineText>
+      )}
+    </div>
   )
 }
 
@@ -61,9 +69,9 @@ export function Pager({ page, pageSize, total, onChange }: { page: number; pageS
   return (
     <Pagination className="admin-pager">
       <Pagination.Summary>
-        <span className="admin-muted" aria-live="polite">
+        <InlineText type="body-sm" className="admin-muted" aria-live="polite">
           第 {page} / {pages} 页
-        </span>
+        </InlineText>
       </Pagination.Summary>
       <Pagination.Content>
         {/* 上一页/下一页用 HeroUI 自带的 PreviousIcon / NextIcon（组件内已内置 chevron，

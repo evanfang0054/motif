@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Button } from '@heroui/react'
+import { Button, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
 import { usePublicConfig } from '@/lib/use-public-config'
@@ -105,19 +106,19 @@ function Landing() {
           <div className="lp-hero-solid" aria-hidden />
           <div className="lp-container lp-hero-grid">
             <div className="lp-hero-copy">
-              <span className="lp-hero-badge">
+              <InlineText type="body-sm" className="lp-hero-badge">
                 <Sparkles aria-hidden />
                 Motif · AI 商业图片批量工作台
-              </span>
-              <h1 className="lp-hero-title">
+              </InlineText>
+              <Typography type="h1" className="lp-hero-title">
                 一张参考图，
                 <br />
                 成套产出商业图片
-              </h1>
-              <p className="lp-hero-sub">
+              </Typography>
+              <Typography type="body" className="lp-hero-sub">
                 把你的参考图交给模板，Motif 负责成套出图：商品主图、人像写真、旅拍大片一次到位。
                 生成在云端排队进行，不占用本地算力；历史任务随时回看、继续迭代。
-              </p>
+              </Typography>
               <div className="lp-actions">
                 {/* 文案映射：立即开始 → 开始生成 */}
                 <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
@@ -131,9 +132,9 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></span>
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</span>
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</span>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
               </div>
             </div>
           </div>
@@ -141,19 +142,19 @@ function Landing() {
 
         <section id="showcase" className="lp-band lp-band-showcase">
           <div className="lp-container">
-            <h2 className="lp-section-title">一次任务，一套可用素材</h2>
-            <p className="lp-section-sub">从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。</p>
+            <Typography type="h2" className="lp-section-title">一次任务，一套可用素材</Typography>
+            <Typography type="body" className="lp-section-sub">从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。</Typography>
             <div className="lp-showcase-grid" style={{ marginTop: 26 }}>
               <div className="lp-demo-card">
-                <h3 style={{ fontSize: 16, fontWeight: 700 }}>示例 · 香薰蜡烛上新</h3>
-                <p className="mt-2 text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                <Typography type="h3" style={{ fontSize: 16, fontWeight: 700 }}>示例 · 香薰蜡烛上新</Typography>
+                <Typography type="body-sm" className="mt-2" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                   以蜡烛实拍图为主体，产出电商详情页素材：白底主图、餐桌场景与材质特写，
                   保持同一支蜡烛的形态与香色氛围。
-                </p>
+                </Typography>
                 <div className="mt-3">
-                  <div className="lp-step"><span className="lp-step-dot" /><span>已解析参考图主体与光线特征</span></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><span>已套用「电商商品全套图」模板</span></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><span>4 张图片进入云端队列生成</span></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已解析参考图主体与光线特征</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已套用「电商商品全套图」模板</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">4 张图片进入云端队列生成</InlineText></div>
                 </div>
               </div>
               <div className="lp-shot">
@@ -180,24 +181,24 @@ function Landing() {
 
         <section id="features" className="lp-band lp-band-features">
           <div className="lp-container">
-            <h2 className="lp-section-title">为什么选 Motif</h2>
-            <p className="lp-section-sub">从参考图到成套素材的完整工作流。</p>
+            <Typography type="h2" className="lp-section-title">为什么选 Motif</Typography>
+            <Typography type="body" className="lp-section-sub">从参考图到成套素材的完整工作流。</Typography>
             <div className="lp-feature-grid">
               <div className="lp-feature">
-                <h3>参考图驱动</h3>
-                <p>上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。</p>
+                <Typography type="h3">参考图驱动</Typography>
+                <Typography type="body">上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。</Typography>
               </div>
               <div className="lp-feature">
-                <h3>成套批量出图</h3>
-                <p>一次任务产出多张、多角度、多场景素材，主图、场景图与特写一次配齐。</p>
+                <Typography type="h3">成套批量出图</Typography>
+                <Typography type="body">一次任务产出多张、多角度、多场景素材，主图、场景图与特写一次配齐。</Typography>
               </div>
               <div className="lp-feature">
-                <h3>云端队列生成</h3>
-                <p>任务在服务端排队执行，关掉页面也不中断，回来直接取图。</p>
+                <Typography type="h3">云端队列生成</Typography>
+                <Typography type="body">任务在服务端排队执行，关掉页面也不中断，回来直接取图。</Typography>
               </div>
               <div className="lp-feature">
-                <h3>历史沉淀迭代</h3>
-                <p>每轮生成自动存档，可以换提示词、换风格在原有基础上继续打磨。</p>
+                <Typography type="h3">历史沉淀迭代</Typography>
+                <Typography type="body">每轮生成自动存档，可以换提示词、换风格在原有基础上继续打磨。</Typography>
               </div>
             </div>
           </div>
@@ -213,19 +214,19 @@ function Landing() {
               width={96}
               height={96}
             />
-            <h2 className="lp-section-title">准备好开始了吗？</h2>
-            <p className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></p>
+            <Typography type="h2" className="lp-section-title">准备好开始了吗？</Typography>
+            <Typography type="body" className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></Typography>
             <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
           </div>
         </section>
       </main>
 
       <footer className="lp-footer">
-        <span className="lp-brand" style={{ fontSize: 14 }}>
+        <InlineText color="muted" type="body" className="lp-brand" style={{ fontSize: 14 }}>
           <BrandMark size={22} />
           Motif
-        </span>
-        <span>© 2026 Motif · AI 商业图片批量生成工作台</span>
+        </InlineText>
+        <InlineText color="muted" type="body-sm">© 2026 Motif · AI 商业图片批量生成工作台</InlineText>
       </footer>
 
       {authOpen && (

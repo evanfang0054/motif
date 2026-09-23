@@ -2,7 +2,7 @@
 import { formatDateTime, formatMoney } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { SearchField, Select, ListBox, Table } from '@heroui/react'
+import { ListBox, SearchField, Select, Table, Typography } from '@heroui/react'
 import { api, type AdminOrder } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 
@@ -42,10 +42,10 @@ export default function AdminOrdersPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">订单</h1>
-      <p className="admin-muted">
+      <Typography type="h1" className="admin-title">订单</Typography>
+      <Typography type="body" className="admin-muted">
         订单为只读记录。当前唯一支付路径是模拟收银台，「已支付」不等于真实收款。
-      </p>
+      </Typography>
 
       <div className="admin-toolbar">
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；

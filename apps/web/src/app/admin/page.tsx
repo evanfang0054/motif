@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ProgressBar, ProgressCircle, Skeleton } from '@heroui/react'
+import { ProgressBar, ProgressCircle, Skeleton, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
 import { formatMoney } from '@/lib/format'
@@ -42,7 +43,7 @@ export default function AdminHomePage() {
   if (err) {
     return (
       <section className="admin-panel">
-        <h1 className="admin-title">概览</h1>
+        <Typography type="h1" className="admin-title">概览</Typography>
         <div className="admin-alert-err" role="alert">{err}</div>
       </section>
     )
@@ -50,7 +51,7 @@ export default function AdminHomePage() {
   if (!data) {
     return (
       <section className="admin-panel">
-        <h1 className="admin-title">概览</h1>
+        <Typography type="h1" className="admin-title">概览</Typography>
         <OverviewSkeleton />
       </section>
     )
@@ -70,7 +71,7 @@ export default function AdminHomePage() {
   return (
     <>
     <section className="admin-panel">
-      <h1 className="admin-title">概览</h1>
+      <Typography type="h1" className="admin-title">概览</Typography>
 
       <div className="admin-cards">
         <div className="admin-card" id="ov-users">
@@ -96,16 +97,16 @@ export default function AdminHomePage() {
                   <ProgressCircle.FillCircle />
                 </ProgressCircle.Track>
               </ProgressCircle>
-              <span className="admin-ring-text">{pct(data.generations.successRate)}</span>
+              <InlineText type="body-xs" className="admin-ring-text">{pct(data.generations.successRate)}</InlineText>
             </div>
-            <span className="admin-card-sub">分母为已结束轮次 {data.generations.terminal}</span>
+            <InlineText type="body-xs" className="admin-card-sub">分母为已结束轮次 {data.generations.terminal}</InlineText>
           </div>
           {data.generations.topErrors.length > 0 ? (
             <ul className="admin-card-list">
               {data.generations.topErrors.map((e) => (
                 <li key={e.error}>
-                  <span className="admin-mono">{e.error}</span>
-                  <span>{e.count}</span>
+                  <InlineText type="body-sm" className="admin-mono">{e.error}</InlineText>
+                  <InlineText type="body-sm">{e.count}</InlineText>
                 </li>
               ))}
             </ul>
@@ -134,31 +135,31 @@ export default function AdminHomePage() {
           {cdkTotal > 0 ? (
             <>
               <div className="admin-bar-row">
-                <span className="admin-bar-label">未兑换</span>
+                <InlineText type="body-sm" className="admin-bar-label">未兑换</InlineText>
                 <ProgressBar aria-label="未兑换" value={data.cdks.unredeemed} maxValue={cdkTotal} className="admin-bar">
                   <ProgressBar.Track>
                     <ProgressBar.Fill />
                   </ProgressBar.Track>
                 </ProgressBar>
-                <span className="admin-bar-value">{data.cdks.unredeemed}</span>
+                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.unredeemed}</InlineText>
               </div>
               <div className="admin-bar-row">
-                <span className="admin-bar-label">已兑换</span>
+                <InlineText type="body-sm" className="admin-bar-label">已兑换</InlineText>
                 <ProgressBar aria-label="已兑换" value={data.cdks.redeemed} maxValue={cdkTotal} className="admin-bar">
                   <ProgressBar.Track>
                     <ProgressBar.Fill />
                   </ProgressBar.Track>
                 </ProgressBar>
-                <span className="admin-bar-value">{data.cdks.redeemed}</span>
+                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.redeemed}</InlineText>
               </div>
               <div className="admin-bar-row">
-                <span className="admin-bar-label">已作废</span>
+                <InlineText type="body-sm" className="admin-bar-label">已作废</InlineText>
                 <ProgressBar aria-label="已作废" value={data.cdks.revoked} maxValue={cdkTotal} className="admin-bar">
                   <ProgressBar.Track>
                     <ProgressBar.Fill />
                   </ProgressBar.Track>
                 </ProgressBar>
-                <span className="admin-bar-value">{data.cdks.revoked}</span>
+                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.revoked}</InlineText>
               </div>
             </>
           ) : (
@@ -175,7 +176,7 @@ export default function AdminHomePage() {
     </section>
 
       <section className="admin-panel admin-ledger">
-        <h2 className="admin-title">额度账目</h2>
+        <Typography type="h2" className="admin-title">额度账目</Typography>
         <div className={ledgerDiff === 0 ? 'admin-ledger-ok' : 'admin-ledger-bad'} role="status">
           {/* ✓ / ⚠ 原为符号冒充图标（2026-09-21 换图标库）；句子本身是状态文案，保留文字 */}
           {ledgerDiff === 0 ? (
@@ -191,18 +192,18 @@ export default function AdminHomePage() {
           )}
         </div>
         {onlyOpening && (
-          <p className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</p>
+          <Typography type="body" className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</Typography>
         )}
         <div className="admin-source-heading">来源构成</div>
         {c.bySource.map((s) => {
           const w = Math.round((Math.abs(s.net) / srcMax) * 100)
           return (
             <div className="admin-source-row" key={s.source}>
-              <span className="admin-source-label">{SOURCE_LABEL[s.source] ?? s.source}</span>
-              <span className="admin-source-track">
+              <InlineText type="body-sm" className="admin-source-label">{SOURCE_LABEL[s.source] ?? s.source}</InlineText>
+              <InlineText type="body-sm" className="admin-source-track">
                 <span className={`admin-source-fill ${s.net < 0 ? 'is-neg' : 'is-pos'}`} style={{ width: `${w}%` }} />
-              </span>
-              <span className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</span>
+              </InlineText>
+              <InlineText type="body-xs" className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</InlineText>
             </div>
           )
         })}
