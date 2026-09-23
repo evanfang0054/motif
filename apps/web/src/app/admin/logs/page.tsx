@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Drawer, NumberField, SearchField, Select, ListBox, Table } from '@heroui/react'
+import { Button, Drawer, ListBox, NumberField, SearchField, Select, Table, Typography } from '@heroui/react'
 import { Eye } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminLogRow } from '@/lib/client'
@@ -79,8 +79,8 @@ export default function AdminLogsPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">生成日志</h1>
-      <p className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</p>
+      <Typography type="h1" className="admin-title">生成日志</Typography>
+      <Typography type="body" className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</Typography>
 
       <div className="admin-toolbar">
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值

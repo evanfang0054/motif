@@ -8,6 +8,7 @@ import { getRuntime } from '@/server/context'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { ADMIN_NAV } from './nav'
 import './admin.css'
+import { InlineText } from '@/components/ui/typography'
 
 /**
  * 管理面服务端守卫：未登录、被禁用、角色不足一律 notFound()。
@@ -39,12 +40,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <ArrowLeft className="me-1 inline align-[-0.125em]" aria-hidden />
             返回工作台
           </Link>
-          <span className="admin-brand">Motif 管理后台</span>
+          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">Motif 管理后台</InlineText>
         </div>
-        <span className="admin-identity">
+        <InlineText type="body-sm" className="admin-identity">
           {user.name}
           {showRole ? `（${roleLabel}）` : ''}
-        </span>
+        </InlineText>
       </header>
       <div className="admin-body">
         <AdminSidebar items={items} />

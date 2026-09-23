@@ -21,7 +21,8 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import {
   Archive,
   ArrowDownToLine,
@@ -1035,7 +1036,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             onPointerDown={(e) => e.stopPropagation()}
           >
             {/* 「已选 N 张」保留文字：它承载数字，换成图标会丢掉唯一的信息源 */}
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>已选 {selectedImages.length} 张</span>
+            <InlineText type="body-sm" style={{ fontSize: 12, color: 'var(--muted)' }}>已选 {selectedImages.length} 张</InlineText>
             <span className="canvas-tool-divider" />
             <IconButton
               size="sm"
@@ -1114,17 +1115,17 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
         {/* ① 画布状态读数（原画布左上角的 pill）。「N 张图片」是纯读数；
             「本地草稿」是数据来源警示；「已选 N」带一个清空按钮 */}
         <div className="canvas-status">
-          <span className="canvas-status-count">{images.length} 张图片</span>
+          <InlineText type="body-sm" className="canvas-status-count">{images.length} 张图片</InlineText>
           {source === 'local' && (
             <>
               <span className="canvas-status-divider" />
-              <span data-testid="canvas-local-draft">本地草稿</span>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">本地草稿</InlineText>
             </>
           )}
           {selected.length > 0 && (
             <>
               <span className="canvas-status-divider" />
-              <span>已选 {selected.length}</span>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已选 {selected.length}</InlineText>
               <IconButton size="sm" variant="ghost" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
                 <CircleXmark />
               </IconButton>

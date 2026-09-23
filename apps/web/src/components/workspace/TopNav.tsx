@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Avatar, Button, Popover, Tooltip } from '@heroui/react'
+import { Avatar, Button, Popover, Tooltip, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { ChevronDown, Palette, Person, Power, Shield, Wallet } from '@gravity-ui/icons'
 import { anchorRender } from '@/components/ui/anchor-button'
 import { BrandMark } from '@/components/BrandMark'
@@ -57,10 +58,10 @@ function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {/* 品牌标识（不可点）：已登录时 `/` 渲染的就是工作台本身，做成链接等于整页刷新，
             故与落地页页脚的品牌同构，只做展示 */}
-        <span className="lp-brand shrink-0">
+        <InlineText type="body" className="lp-brand shrink-0">
           <BrandMark size={26} />
           Motif
-        </span>
+        </InlineText>
       </div>
 
       <div className="flex items-center gap-2">
@@ -145,7 +146,7 @@ function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
                     点任意一段即收起（点击冒泡捕获）。 */}
                 <div className="flex h-8 items-center gap-1.5 px-2.5" onClick={closeMenu}>
                   <Palette />
-                  <span className="flex-1 text-sm">外观</span>
+                  <InlineText type="body-sm" className="flex-1">外观</InlineText>
                   <ThemeToggle />
                 </div>
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Input, Label, Link, TextField, TextArea } from '@heroui/react'
+import { Alert, Button, Input, Label, Link, TextArea, TextField, Typography } from '@heroui/react'
 import { Modal as HeroModal } from '@heroui/react'
 import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
@@ -101,7 +101,7 @@ function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onP
 
   return (
     <Modal title="充值额度" onClose={onClose}>
-      <p className="text-sm" style={{ color: 'var(--muted)' }}>{payNote}</p>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{payNote}</Typography>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {packages.map((pkg) => (
           <Button
@@ -158,7 +158,7 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
 
   return (
     <Modal title="CDK 兑换" onClose={onClose}>
-      <p className="text-sm" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</p>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</Typography>
       <form onSubmit={submit} className="mt-3 flex gap-2">
         <TextField aria-label="CDK" className="min-w-0 flex-1" value={code} onChange={setCode}>
           <Input placeholder="输入 CDK" />
@@ -187,7 +187,7 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
 
   return (
     <Modal title="邀请好友（获得额度）" onClose={onClose}>
-      <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+      <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
         {cfg ? (
           <>
             好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励{' '}
@@ -198,7 +198,7 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
           <>好友通过你的链接注册成功后，你会获得额度奖励。</>
         )}
         当前已邀请 <b>{user.invitedCount}</b> 人，你的邀请码：<b>{user.inviteCode}</b>
-      </p>
+      </Typography>
       <div className="mt-3 flex gap-2">
         <TextField aria-label="邀请链接" className="min-w-0 flex-1" value={link}>
           <Input readOnly onFocus={(e) => e.target.select()} />
@@ -320,7 +320,7 @@ function ProfileDialog({
 
   return (
     <Modal title="个人资料" onClose={onClose}>
-      <p className="text-xs" style={{ color: 'var(--muted)' }}>{user.email}</p>
+      <Typography type="body-xs" style={{ color: 'var(--muted)' }}>{user.email}</Typography>
 
       <form onSubmit={saveProfile} className="mt-3">
         <div className="flex items-end gap-2">

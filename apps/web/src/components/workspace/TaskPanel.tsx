@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField } from '@heroui/react'
+import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
@@ -68,10 +69,10 @@ function StatusBadge({ status }: { status: string }) {
       completed: 'var(--status-completed)',
     } as Record<string, string>)[status] ?? 'var(--status-idle)'
   return (
-    <span className="ws-badge">
+    <InlineText type="body-xs" className="ws-badge">
       <span className="ws-status-dot" style={{ background: color }} />
       {label}
-    </span>
+    </InlineText>
   )
 }
 
@@ -136,10 +137,10 @@ function TaskPanel(p: Props) {
               提示浮层打不开，用户既看不到「几／几」也不知道为什么点不动 —— 段标题永远可见，且下面还有一行
               文字直说原因（见下方 atReferenceCap 分支） */}
           <div className="mb-2 flex items-center justify-between">
-            <span className="ws-panel-label">参考图</span>
-            <span className="text-xs" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
+            <InlineText type="body-sm" className="ws-panel-label">参考图</InlineText>
+            <InlineText type="body-xs" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
               {p.referenceCount} / {MAX_REFERENCE_IMAGES}
-            </span>
+            </InlineText>
           </div>
           <div className="grid grid-cols-4 gap-2">
             {/* 上传入口就是网格的第一格：空态时它是唯一的格子，一眼知道「从这里加图」 */}
@@ -189,9 +190,9 @@ function TaskPanel(p: Props) {
                       <Xmark />
                     </IconButton>
                   </div>
-                  <span className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={`${label} ${c.name}`}>
+                  <InlineText type="body-xs" className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={`${label} ${c.name}`}>
                     {label}
-                  </span>
+                  </InlineText>
                 </div>
               )
             })}
@@ -229,13 +230,13 @@ function TaskPanel(p: Props) {
                     <Xmark />
                   </IconButton>
                 </div>
-                <span className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={s.name}>
+                <InlineText type="body-xs" className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={s.name}>
                   {s.name}
-                </span>
+                </InlineText>
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>
+          <Typography type="body-xs" className="mt-2" style={{ color: 'var(--muted)' }}>
             {atReferenceCap
               ? `已达上限 ${MAX_REFERENCE_IMAGES} 张，移除一张后可继续上传`
               : hasReferenceRows
@@ -246,7 +247,7 @@ function TaskPanel(p: Props) {
                     .filter(Boolean)
                     .join('；')
                 : '支持 PNG / JPG / WebP，单张 ≤10MB'}
-          </p>
+          </Typography>
         </div>
 
         {/* ── 参数 ──────────────────────────────────────────── */}
@@ -331,7 +332,7 @@ function TaskPanel(p: Props) {
                   <NumberField.IncrementButton />
                 </NumberField.Group>
               </NumberField>
-              <span>像素（256–2048）</span>
+              <InlineText type="body-sm">像素（256–2048）</InlineText>
             </div>
           )}
         </div>
@@ -340,7 +341,7 @@ function TaskPanel(p: Props) {
         <div className="ws-panel-section">
           {/* 唯一的提示词入口：系统自带的 8 套模板提示词也都在库里（用户裁决 2026-09-21 并入） */}
           <div className="mb-2 flex items-center justify-between">
-            <span className="ws-panel-label">提示词</span>
+            <InlineText type="body-sm" className="ws-panel-label">提示词</InlineText>
             <div className="flex items-center gap-1">
               <IconButton
                 variant="secondary"

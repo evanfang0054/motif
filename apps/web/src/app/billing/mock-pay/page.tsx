@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Alert, Button, Card } from '@heroui/react'
+import { Alert, Button, Card, Typography } from '@heroui/react'
 import { api } from '@/lib/client'
 import { BrandMark } from '@/components/BrandMark'
 import { anchorRender } from '@/components/ui/anchor-button'
@@ -41,11 +41,11 @@ function PayPanel() {
         <BrandMark />
         <b>Motif 模拟收银台</b>
       </div>
-      <p className="mt-3 text-sm" style={{ color: 'var(--muted)' }}>
+      <Typography type="body-sm" className="mt-3" style={{ color: 'var(--muted)' }}>
         订单号：{orderId || '（缺失）'}
         <br />
         这是本地部署使用的模拟支付页面，不会产生真实扣款。
-      </p>
+      </Typography>
       {state === 'done' ? (
         <>
           <Alert status="success" className="mt-4">
