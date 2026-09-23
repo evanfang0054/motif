@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目
 
-Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成套出图）。pnpm monorepo（pnpm@11.20.0，Node ≥20）：`apps/web` 是 Next.js 15 全栈应用（App Router，页面与 API Route Handlers 同进程，端口 3100）；`packages/core`（领域类型/额度规则/状态机）、`packages/db`（SQLite 存储层）、`packages/image-provider`（OpenAI 兼容生图网关）。
+Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成套出图）。pnpm monorepo（pnpm@11.20.0，Node ≥20）：`apps/web` 是 Next.js 16 全栈应用（App Router，Turbopack，页面与 API Route Handlers 同进程，端口 3100）；`packages/core`（领域类型/额度规则/状态机）、`packages/db`（SQLite 存储层）、`packages/image-provider`（OpenAI 兼容生图网关）。
 
 ## 设计系统
 
@@ -38,7 +38,7 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - 本地联调注册需 `MOTIF_EXPOSE_DEV_CODE=1`（验证码随接口直出）；生产环境严禁开启。它在管理后台「危险区」里也能改（需二次确认 + 留痕）。
 - 额度按张扣费，生成失败/取消必须退额（额度守恒是验收项）；改动计费、队列或 worker（`apps/web/src/server/worker.ts`）时必须保持守恒。
 - 原生依赖 better-sqlite3 / sharp 首次安装需编译（已通过 pnpm-workspace.yaml `allowBuilds` 放行；.npmrc 走 npmmirror 二进制镜像）。
-- 端口：dev 3100 · e2e 3210 · acceptance 3220；e2e 脚本自行 `next start`、清空 `.data-e2e` / `.data-accept`，缺 `.next` 时自动先 build。
+- 端口：dev 3100 · e2e 3210 · acceptance 3220；e2e 脚本自行 `next start`、清空 `.data-e2e` / `.data-accept`，缺 `.next/server` 时自动先 build（16 起 dev 产物在 `.next/dev`，用 `.next` 当判据会误判）。
 - CI（main）= `pnpm install --frozen-lockfile` → typecheck → test → build；e2e 不在 CI 中。提交前本地至少通过 typecheck + 单测。
 
 ## HeroUI 使用规范

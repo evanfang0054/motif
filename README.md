@@ -19,7 +19,7 @@
 
 | 层 | 选型 |
 | --- | --- |
-| 前端 | Next.js 15 (App Router) · React 19 · Tailwind CSS 4 · **HeroUI v3**（唯一控件来源，语义令牌桥接 `DESIGN.md`）· 图标 `@gravity-ui/icons` |
+| 前端 | Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · **HeroUI v3**（唯一控件来源，语义令牌桥接 `DESIGN.md`）· 图标 `@gravity-ui/icons` |
 | 服务端 | Next.js Route Handlers（与前端同仓同进程） |
 | 状态 | zustand（画布 store：视口 / 摆放 / 选择 / 撤销栈） |
 | 存储 | SQLite（better-sqlite3, WAL），图片文件存于 `.data/storage/` |

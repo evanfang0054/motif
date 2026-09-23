@@ -5,8 +5,13 @@
 #
 # 用法：bash e2e/run.sh
 #
-# ⚠️ 本脚本直连真实生图网关并消耗额度；且它与 dev 共用 apps/web/.next，运行前请先停掉 dev。
-# 它从不在 CI 里跑，日常门禁是 typecheck + 单测。
+# ⚠️ 本脚本直连真实生图网关并消耗额度；它从不在 CI 里跑，日常门禁是 typecheck + 单测。
+#
+# 跑之前建议先停掉 dev，但这**不是**硬性要求：16 起 dev 产物在 apps/web/.next/dev、
+# 构建产物在 apps/web/.next/*，二者并存，实测 dev 与 `next build`、dev 与 `next start`
+# 均可同时运行，没有互斥 lockfile。之所以仍建议停：本脚本在缺 .next/server 时会自己
+# `pnpm build`，而 build 会重写 .next/*，此时若有别的进程正服务同一份产物会读到半成品；
+# 且 dev 编译会与 e2e 抢 CPU / 内存。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,8 +23,10 @@ export MOTIF_DATA_DIR="${MOTIF_DATA_DIR:-$WEB_DIR/.data-e2e}"
 
 cd "$WEB_DIR"
 
-# 0. 若无构建产物则先构建
-if [ ! -d .next ]; then
+# 0. 若无构建产物则先构建。
+# 判据用 .next/server 而不是 .next：16 里 dev 产物落在 .next/dev，跑过 dev 之后 .next 也存在，
+# 拿 .next 当「已有构建产物」会误判，导致直接 next start 起不来。
+if [ ! -d .next/server ]; then
   echo "[e2e] building..."
   pnpm build
 fi

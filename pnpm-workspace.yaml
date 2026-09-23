@@ -6,3 +6,19 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   sharp: true
+# ⚠️ 本段由 pnpm 自动写入（不是手写的）：pnpm 11 内置供应链保护，minimumReleaseAge 默认 1440 分钟（1 天），
+# loose 模式下会把「未满 1 天却被选中」的包自动记进豁免。next@16.3.6 发布于 2026-09-22，故被列入。
+# 保留它是**必要**的：pnpm install（含 --frozen-lockfile）会按当前 minimumReleaseAge 复核 lockfile 条目，
+# 缺这段豁免会在拉包前直接以 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 失败。
+# 等 next@16.3.6 满 24h 后本段即可安全删除。
+minimumReleaseAgeExclude:
+  - '@next/env@16.3.6'
+  - '@next/swc-darwin-arm64@16.3.6'
+  - '@next/swc-darwin-x64@16.3.6'
+  - '@next/swc-linux-arm64-gnu@16.3.6'
+  - '@next/swc-linux-arm64-musl@16.3.6'
+  - '@next/swc-linux-x64-gnu@16.3.6'
+  - '@next/swc-linux-x64-musl@16.3.6'
+  - '@next/swc-win32-arm64-msvc@16.3.6'
+  - '@next/swc-win32-x64-msvc@16.3.6'
+  - next@16.3.6
