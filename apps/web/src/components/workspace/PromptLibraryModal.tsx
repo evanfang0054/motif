@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { showToast } from '@/components/ui/toast'
@@ -87,12 +88,12 @@ function EntryCard({
             无预览图
           </span>
         )}
-        <span className="block px-3 pt-2">
-          <span className="line-clamp-1 block text-sm font-medium">{entry.title}</span>
-          <span className="mt-1 line-clamp-3 block text-xs leading-5" style={{ color: 'var(--muted)' }}>
+        <InlineText type="body-sm" className="block px-3 pt-2">
+          <InlineText type="body-sm" className="line-clamp-1 block font-medium">{entry.title}</InlineText>
+          <InlineText type="body-xs" className="mt-1 line-clamp-3 block leading-5" style={{ color: 'var(--muted)' }}>
             {entry.description || entry.prompt}
-          </span>
-        </span>
+          </InlineText>
+        </InlineText>
       </button>
       <div className="mt-auto flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-2">
         {onOpenDetail && (
@@ -342,7 +343,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               </div>
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
-                <span>{error}</span>
+                <InlineText type="body-sm">{error}</InlineText>
                 <Button variant="secondary" size="sm" onPress={() => void load(1, 'replace')}>
                   <ArrowRotateRight />
                   重试
@@ -353,24 +354,24 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 {emptyKind === 'fetching' ? (
                   <>
                     <Spinner size="md" />
-                    <span>正在抓取提示词库…</span>
+                    <InlineText type="body-sm">正在抓取提示词库…</InlineText>
                   </>
                 ) : emptyKind === 'failed' ? (
                   <>
-                    <span>提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</span>
+                    <InlineText type="body-sm">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
                     {failures.map((f) => (
-                      <span key={f.sourceId} className="text-xs">
+                      <InlineText type="body-xs" key={f.sourceId} className="">
                         {f.sourceName}：{f.error}
-                      </span>
+                      </InlineText>
                     ))}
                     <Button variant="secondary" size="sm" className="mt-1" isDisabled={retrying} onPress={() => void retry()}>
                       {retrying ? '重试中…' : '重试'}
                     </Button>
                   </>
                 ) : emptyKind === 'filtered' ? (
-                  <span>没有匹配的提示词，换个关键词或标签试试</span>
+                  <InlineText type="body-sm">没有匹配的提示词，换个关键词或标签试试</InlineText>
                 ) : (
-                  <span>提示词库还没有内容</span>
+                  <InlineText type="body-sm">提示词库还没有内容</InlineText>
                 )}
               </div>
             ) : (
@@ -390,10 +391,10 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           </div>
 
           <div className="mt-2 flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
-            <span>
+            <InlineText type="body-sm">
               {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
-              {pending && <span className="ms-2">（正在抓取提示词库…）</span>}
-            </span>
+              {pending && <InlineText type="body-sm" className="ms-2">（正在抓取提示词库…）</InlineText>}
+            </InlineText>
             {loadingMore && <Spinner size="sm" />}
           </div>
         </section>

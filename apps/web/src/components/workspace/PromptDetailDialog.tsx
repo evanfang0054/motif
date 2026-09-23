@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Alert, Button, Chip, Spinner, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { Copy } from '@gravity-ui/icons'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { isAttachableImage, PROMPT_ENTRY_MAX_IMAGES } from '@/lib/prompts'
@@ -77,12 +78,12 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
                   return (
                     <div key={url} className="flex flex-col gap-1">
                       {broken.includes(index) ? (
-                        <span
+                        <InlineText type="body-xs"
                           className="grid aspect-square w-full place-items-center rounded-md text-[10px]"
                           style={{ background: 'var(--canvas-background)', color: 'var(--muted)' }}
                         >
                           加载失败
-                        </span>
+                        </InlineText>
                       ) : (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img

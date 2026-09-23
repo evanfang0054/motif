@@ -10,7 +10,8 @@
  * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
-import { EmptyState, Pagination, Skeleton, Table, Tooltip } from '@heroui/react'
+import { EmptyState, Pagination, Skeleton, Table, Tooltip, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 
 /** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */
 export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
@@ -33,7 +34,7 @@ export function ListLoadingRows({ cols, rows = 3 }: { cols: number; rows?: numbe
 export function ListEmptyContent({ text }: { text: string }) {
   return (
     <EmptyState className="flex h-full w-full flex-col items-center justify-center gap-3 py-8 text-center">
-      <span className="admin-muted text-sm">{text}</span>
+      <InlineText type="body-sm" className="admin-muted">{text}</InlineText>
     </EmptyState>
   )
 }
@@ -41,9 +42,9 @@ export function ListEmptyContent({ text }: { text: string }) {
 /** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知 */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
   return (
-    <span className="admin-muted" role="status">
+    <InlineText type="body-sm" className="admin-muted" role="status">
       共 {loading ? '…' : total} {unit}
-    </span>
+    </InlineText>
   )
 }
 
@@ -54,9 +55,9 @@ export function Pager({ page, pageSize, total, onChange }: { page: number; pageS
   return (
     <Pagination className="admin-pager">
       <Pagination.Summary>
-        <span className="admin-muted" aria-live="polite">
+        <InlineText type="body-sm" className="admin-muted" aria-live="polite">
           第 {page} / {pages} 页
-        </span>
+        </InlineText>
       </Pagination.Summary>
       <Pagination.Content>
         {/* 上一页/下一页用 HeroUI 自带的 PreviousIcon / NextIcon（组件内已内置 chevron，

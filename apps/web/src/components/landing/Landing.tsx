@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Button, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
 import { usePublicConfig } from '@/lib/use-public-config'
@@ -105,10 +106,10 @@ function Landing() {
           <div className="lp-hero-solid" aria-hidden />
           <div className="lp-container lp-hero-grid">
             <div className="lp-hero-copy">
-              <span className="lp-hero-badge">
+              <InlineText type="body-sm" className="lp-hero-badge">
                 <Sparkles aria-hidden />
                 Motif · AI 商业图片批量工作台
-              </span>
+              </InlineText>
               <Typography type="h1" className="lp-hero-title">
                 一张参考图，
                 <br />
@@ -131,9 +132,9 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></span>
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</span>
-                <span><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</span>
+                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
+                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
+                <InlineText type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
               </div>
             </div>
           </div>
@@ -151,9 +152,9 @@ function Landing() {
                   保持同一支蜡烛的形态与香色氛围。
                 </Typography>
                 <div className="mt-3">
-                  <div className="lp-step"><span className="lp-step-dot" /><span>已解析参考图主体与光线特征</span></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><span>已套用「电商商品全套图」模板</span></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><span>4 张图片进入云端队列生成</span></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">已解析参考图主体与光线特征</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">已套用「电商商品全套图」模板</InlineText></div>
+                  <div className="lp-step"><span className="lp-step-dot" /><InlineText type="body-sm">4 张图片进入云端队列生成</InlineText></div>
                 </div>
               </div>
               <div className="lp-shot">
@@ -221,11 +222,11 @@ function Landing() {
       </main>
 
       <footer className="lp-footer">
-        <span className="lp-brand" style={{ fontSize: 14 }}>
+        <InlineText type="body" className="lp-brand" style={{ fontSize: 14 }}>
           <BrandMark size={22} />
           Motif
-        </span>
-        <span>© 2026 Motif · AI 商业图片批量生成工作台</span>
+        </InlineText>
+        <InlineText type="body-sm">© 2026 Motif · AI 商业图片批量生成工作台</InlineText>
       </footer>
 
       {authOpen && (

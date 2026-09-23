@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, Input, Label, ListBox, Select, Switch, Tabs, TextField, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
@@ -258,11 +259,11 @@ export default function AdminSettingsPage() {
           <div className="admin-field" key={item.key}>
             <label htmlFor={`setting-${item.key}`}>
               {item.label}
-              <span className="admin-field-key">
+              <InlineText type="body-xs" className="admin-field-key">
                 {item.key}
-                {item.readOnly && <span className="admin-badge-readonly">只读</span>}
-                {item.source === 'env' && <span className="admin-badge-readonly">来自环境变量</span>}
-              </span>
+                {item.readOnly && <InlineText type="body-xs" className="admin-badge-readonly">只读</InlineText>}
+                {item.source === 'env' && <InlineText type="body-xs" className="admin-badge-readonly">来自环境变量</InlineText>}
+              </InlineText>
             </label>
             {field(item)}
             {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}

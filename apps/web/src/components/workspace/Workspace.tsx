@@ -22,6 +22,7 @@ import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
 import { AlertDialog, Button, Spinner, Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import { showToast } from '@/components/ui/toast'
 import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
 
@@ -788,13 +789,13 @@ function Workspace({ initialUser }: { initialUser: User }) {
               <LayoutSideContentLeft />
             </IconButton>
             {/* 任务名只在 ≥lg 显示：窄屏两条浮动条会挤在一起（见 globals.css 的说明） */}
-            <span
-              className="hidden min-w-0 truncate text-sm lg:inline"
+            <InlineText type="body-sm"
+              className="hidden min-w-0 truncate lg:inline"
               style={{ color: 'var(--muted-strong)' }}
               title={detail?.topic.title ?? '新任务'}
             >
               {detail?.topic.title ?? '新任务'}
-            </span>
+            </InlineText>
             <IconButton variant="secondary" label="新建任务" onPress={() => void createTopic()}>
               <Plus />
             </IconButton>
@@ -843,9 +844,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
               </Button>
             )}
             {/* 摘要只在 ≥md 显示：窄屏放不下（同左条的任务名） */}
-            <span className="hidden whitespace-nowrap text-xs md:inline" style={{ color: 'var(--muted)' }}>
+            <InlineText type="body-xs" className="hidden whitespace-nowrap md:inline" style={{ color: 'var(--muted)' }}>
               {panel.count} 张 · {sizeLabelOf(panel.size)}
-            </span>
+            </InlineText>
           </div>
         )}
       </section>

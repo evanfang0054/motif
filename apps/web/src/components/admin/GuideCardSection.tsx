@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Typography } from '@heroui/react'
+import { InlineText } from '@/components/ui/typography'
 import QRCode from 'qrcode'
 import { ArrowUpRightFromSquare } from '@gravity-ui/icons'
 import type { GuideCard } from '@/lib/guide-cards'
@@ -43,9 +44,9 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
           </ol>
           {qr[c.id] && (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <span className="admin-qr">
+            <InlineText type="body-sm" className="admin-qr">
               <img src={qr[c.id]} alt={`${c.linkLabel} 二维码`} width={160} height={160} />
-            </span>
+            </InlineText>
           )}
           <a className="admin-guide-link" href={c.linkUrl} target="_blank" rel="noreferrer">
             {c.linkLabel} <ArrowUpRightFromSquare className="ms-1 inline align-[-0.125em]" aria-hidden />
