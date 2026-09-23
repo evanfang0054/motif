@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, clampToolbarCenter, fitView, panBy, screenToWorld, toolbarAnchor, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
+import { clampScale, clampToolbarCenter, fitView, panBy, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
 describe('缩放锚点', () => {
@@ -220,22 +220,66 @@ describe('背景图案', () => {
   })
 })
 
+describe('toolbarBand（工具栏可用横向区间）', () => {
+  const HOST = 1200
+  /** 宽屏左侧面板：left:12 / width:280 / 整列（top:12 起、足够高） */
+  const left = (w = 280) => ({ side: 'left' as const, left: 12, top: 12, width: w, height: 800 })
+  const right = (hostWidth = HOST, w = 372) => ({
+    side: 'right' as const,
+    left: hostWidth - 12 - w,
+    top: 12,
+    width: w,
+    height: 800,
+  })
+  const TOOLBAR = { top: 300, height: 42 }
+
+  it('没有面板时就是整个画布', () => {
+    expect(toolbarBand(HOST, [], TOOLBAR)).toEqual({ left: 0, right: HOST })
+  })
+
+  it('两侧面板各扣各的占位', () => {
+    expect(toolbarBand(HOST, [left(), right()], TOOLBAR)).toEqual({ left: 292, right: 1200 - 384 })
+  })
+
+  it('收起的面板（宽或高为 0）不占位', () => {
+    expect(toolbarBand(HOST, [left(0), right(HOST, 0)], TOOLBAR)).toEqual({ left: 0, right: HOST })
+  })
+
+  it('窄屏通栏抽屉整块跳过（#82 复审 S1：只开右抽屉时不能被压成 {0,12}）', () => {
+    // 窄屏 .ws-float-right 是 left:12 / right:12 / width:auto → 宽 ≈ 画布宽 - 24
+    const drawer = { side: 'right' as const, left: 12, top: 400, width: HOST - 24, height: 300 }
+    expect(toolbarBand(HOST, [drawer], TOOLBAR)).toEqual({ left: 0, right: HOST })
+    // 阈值是 60%：略窄于阈值仍按侧边面板算
+    const narrow = { side: 'right' as const, left: 800, top: 12, width: HOST * 0.5, height: 800 }
+    expect(toolbarBand(HOST, [narrow], TOOLBAR)).toEqual({ left: 0, right: 800 })
+  })
+
+  it('与工具栏纵向不重叠的顶部浮动条不参与钳制（#82 复审 S7）', () => {
+    // 收起态浮动条：top:12 / 高 44。工具栏在画布中部（top 300）→ 不该被它挤走
+    const collapsedLeft = { side: 'left' as const, left: 12, top: 12, width: 500, height: 44 }
+    expect(toolbarBand(HOST, [collapsedLeft], TOOLBAR)).toEqual({ left: 0, right: HOST })
+    // 工具栏正好在顶部（top 12..54）→ 这次必须让开
+    expect(toolbarBand(HOST, [collapsedLeft], { top: 12, height: 42 })).toEqual({ left: 512, right: HOST })
+  })
+})
+
 describe('clampToolbarCenter（工具栏横向钳制，#82）', () => {
+  const HOST = 1000
   const BAND = { left: 0, right: 1000 }
 
   it('区间够宽时只在越界时钳住，区间内原样返回', () => {
-    expect(clampToolbarCenter(500, 200, BAND)).toBe(500)
+    expect(clampToolbarCenter(500, 200, BAND, HOST)).toBe(500)
     // 右越界：中心最多到 right - 半宽 - 间隙
-    expect(clampToolbarCenter(990, 200, BAND)).toBe(1000 - 100 - TOOLBAR_EDGE_GAP)
+    expect(clampToolbarCenter(990, 200, BAND, HOST)).toBe(1000 - 100 - TOOLBAR_EDGE_GAP)
     // 左越界：对称
-    expect(clampToolbarCenter(10, 200, BAND)).toBe(0 + 100 + TOOLBAR_EDGE_GAP)
+    expect(clampToolbarCenter(10, 200, BAND, HOST)).toBe(0 + 100 + TOOLBAR_EDGE_GAP)
   })
 
   it('扣掉两侧面板占位后，工具栏整体落在可用区间内（正是 #82 的判据）', () => {
     // 右面板占了 [800, 1000]，可用区间只剩 [0, 800]
     const band = { left: 0, right: 800 }
     const w = 260
-    const center = clampToolbarCenter(900, w, band)
+    const center = clampToolbarCenter(900, w, band, HOST)
     expect(center + w / 2).toBeLessThanOrEqual(800)
     expect(center - w / 2).toBeGreaterThanOrEqual(0)
   })
@@ -243,13 +287,26 @@ describe('clampToolbarCenter（工具栏横向钳制，#82）', () => {
   it('两侧面板都占位时同样成立', () => {
     const band = { left: 280, right: 700 }
     const w = 200
-    const center = clampToolbarCenter(500, w, band)
+    const center = clampToolbarCenter(500, w, band, HOST)
     expect(center - w / 2).toBeGreaterThanOrEqual(280)
     expect(center + w / 2).toBeLessThanOrEqual(700)
   })
 
-  it('可用区间比工具栏还窄时退化为区间中点（宁可压住面板，也不推出画布）', () => {
+  it('可用区间比工具栏还窄时退化为区间中点，且**绝不越出画布**（#82 复审 S1）', () => {
     const band = { left: 0, right: 100 }
-    expect(clampToolbarCenter(500, 400, band)).toBe(50)
+    const w = 400
+    // 裸中点 50 会让工具栏左半（50-200）被裁掉 → 钳进画布后是 half
+    expect(clampToolbarCenter(500, w, band, HOST)).toBe(w / 2 + TOOLBAR_EDGE_GAP)
+    // 退化区间贴着画布右缘（只开右侧通栏抽屉时的旧算法会给出这种 band）：同样不能取裸中点
+    const edge = { left: 0, right: 12 }
+    const c = clampToolbarCenter(6, w, edge, HOST)
+    expect(c).toBe(w / 2 + TOOLBAR_EDGE_GAP)
+    expect(c - w / 2).toBeGreaterThanOrEqual(0)
+    // 中点本身已在画布内时保持中点（不无谓地贴边）
+    expect(clampToolbarCenter(500, 100, { left: 400, right: 600 }, HOST)).toBe(500)
+  })
+
+  it('画布本身比工具栏还窄时居中（左右各裁一点，不做无意义的越界钳制）', () => {
+    expect(clampToolbarCenter(500, 400, { left: 0, right: 100 }, 120)).toBe(200 + TOOLBAR_EDGE_GAP)
   })
 })

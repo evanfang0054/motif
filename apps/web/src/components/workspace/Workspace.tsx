@@ -192,6 +192,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
     [applyDetail]
   )
 
+  /** 失败态里的「重试」：成功路径已在 `refreshDetail` 里复位失败位，这里只需吞掉再次失败 */
+  const retryDetail = useCallback(() => {
+    if (!activeId) return
+    void refreshDetail(activeId).catch(() => {})
+  }, [activeId, refreshDetail])
+
   // 初始化：加载任务列表并选中最近一个
   useEffect(() => {
     let cancelled = false
@@ -709,12 +715,30 @@ function Workspace({ initialUser }: { initialUser: User }) {
       {/* 画布区容器：双击收起生成面板（豁免见 onCanvasDoubleClick）。挂在容器上而不是遮罩上，
           是为了让宽屏（遮罩 display:none）也走同一条路径 —— 两档行为一致，不再分叉。 */}
       <section className="ws-canvas" onDoubleClick={onCanvasDoubleClick}>
+        {/* 后台重取失败但**保住了旧画布**时的非阻断提示（#85-1.2 的另一半）。
+            ⚠️ 只在 `detail !== null` 时渲染：detail 被清空时走下面的失败态（也有「重试」），
+            两处都渲染就会出现两个重试入口。
+            位置：画布顶部居中（`top:64px` 正好落在收起态浮动条之下、两侧面板之间）；
+            `data-canvas-no-zoom` 让双击它不触发「收起生成面板」（该选择器已在豁免名单里）。
+            z-index 与遮罩同层且排在遮罩**之前** —— 窄屏抽屉打开时遮罩会盖住它（那一刻用户在操作
+            抽屉，画布本就是背景），抽屉收起后提示自动回到视野。 */}
+        {detail && detailFailed ? (
+          <div className="ws-stale-hint" data-canvas-no-zoom role="status">
+            <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }}>
+              画布同步失败，显示的是上次加载的内容。
+            </InlineText>
+            <Button size="sm" variant="secondary" onPress={retryDetail}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+
         {/* 四态：等列表/等详情 → Spinner；详情拉取失败 → 失败态 + 重试；有图 → 画布；
             无图（含新手一个任务都没有）→ 新手引导。
-            ⚠️ 失败态必须与空态分开：拉取失败时 `detail` 已被置空，若复用空态引导就会**对有图的任务
-            说「画布现在是空的」**（假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
-            注意 `detail` 在失败时被清掉，所以画布仍会被卸载（内存里的选中与拖拽保不住）——
-            要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
+            ⚠️ 失败态必须与空态分开：拉取失败时若复用空态引导就会**对有图的任务说「画布现在是空的」**
+            （假陈述）。失败态只承诺两件事：不撒谎 + 给一个重试入口。
+            重取失败时**同一任务**的旧 `detail` 会被保留（见下面 catch 里的说明），此时画布照常渲染、
+            由上面的 `.ws-stale-hint` 给非阻断提示；只有「换了任务」才清空、落到本失败态。
             模板入口已收敛到右侧表单。 */}
         {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
           <div className="flex h-full items-center justify-center">
@@ -725,9 +749,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             <Typography type="body-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</Typography>
             <Button
               variant="secondary"
-              onPress={() => {
-                if (activeId) void refreshDetail(activeId).then(() => setDetailFailed(false)).catch(() => {})
-              }}
+              onPress={retryDetail}
             >
               重试
             </Button>

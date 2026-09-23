@@ -59,36 +59,36 @@ import { createCloudDriver, createLocalDriver, createCanvasPersistence, type Can
 import { MiniMap } from './MiniMap'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor } from '@/lib/canvas/viewport'
+import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, type ToolbarPanelRect } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import { showToast } from '@/components/ui/toast'
 
 const CLICK_THRESHOLD = 3
 
 /**
- * 量出浮动工具栏可用的**横向区间**（容器内坐标）：扣掉两侧浮动面板的占位。
+ * 参与「工具栏可用区间」计算的浮动元素：两侧展开的面板 + 两侧收起态的浮动条。
  *
- * 用 `querySelector` 读面板而不是把宽度传下来：面板宽度是 CSS 决定的（左 280 / 右 372，窄屏还是抽屉），
- * 硬编码一份就会在改样式时静默失配；而这里要的正是「它此刻实际占了多宽」。
- * 面板收起时 `getBoundingClientRect()` 宽高为 0，天然被跳过。
+ * 用 `querySelector` 读而不是把宽度传下来：宽度是 CSS 决定的（左 280 / 右 372，窄屏还是抽屉，
+ * 收起条按内容自适应），硬编码一份就会在改样式时静默失配；而这里要的正是「它此刻实际占了多宽」。
  */
-function toolbarBand(el: HTMLElement): { left: number; right: number } {
+const FLOAT_PANEL_SELECTORS: ReadonlyArray<readonly ['left' | 'right', string]> = [
+  ['left', '.ws-float-left'],
+  ['left', '.ws-collapsed-left'],
+  ['right', '.ws-float-right'],
+  ['right', '.ws-collapsed-right'],
+]
+
+/** 量出各浮动元素的**容器内矩形**，交给 `@/lib/canvas/viewport` 的纯函数算可用区间 */
+function measureToolbarBand(el: HTMLElement, toolbarTop: number, toolbarHeight: number): { left: number; right: number } {
   const host = el.getBoundingClientRect()
-  let left = 0
-  let right = host.width
-  const panels: Array<[string, 'left' | 'right']> = [
-    ['.ws-float-left', 'left'],
-    ['.ws-float-right', 'right'],
-  ]
-  for (const [sel, side] of panels) {
+  const panels: ToolbarPanelRect[] = []
+  for (const [side, sel] of FLOAT_PANEL_SELECTORS) {
     const panel = document.querySelector(sel)
     if (!panel) continue
     const r = panel.getBoundingClientRect()
-    if (r.width === 0 || r.height === 0) continue
-    if (side === 'left') left = Math.max(left, r.right - host.left)
-    else right = Math.min(right, r.left - host.left)
+    panels.push({ side, left: r.left - host.left, top: r.top - host.top, width: r.width, height: r.height })
   }
-  return { left, right }
+  return toolbarBand(host.width, panels, { top: toolbarTop, height: toolbarHeight })
 }
 
 /**
@@ -192,7 +192,8 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
   /** 底部工具栏的溢出档位（0 = 全显示）。按实际宽度逐档收敛，见 TOOLBAR_LEVELS 的注释 */
   const [toolbarLevel, setToolbarLevel] = useState(0)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
-  /** 选中浮动工具栏本体（只为量宽度，见 `toolbarW`）；与底部工具栏的 `toolbarRef` 不是同一个 */
+  /** 选中浮动工具栏本体（只为量尺寸，见 `toolbarBox`）；单选与多选是同一个 ref（两者互斥渲染），
+   * 与底部工具栏的 `toolbarRef` 不是同一个 */
   const floatToolbarRef = useRef<HTMLDivElement | null>(null)
 
   // 首屏：cloud 为准；cloud 为空或离线才用本地草稿，并在画布上提示「本地草稿」
@@ -619,35 +620,35 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
 
   /**
-   * 浮动工具栏的宽度（参与横向钳制）。
+   * 浮动工具栏自身的尺寸（参与横向钳制；高度用于判断与面板是否纵向重叠）。
    *
-   * 只在「选中张数变化」时量一次：宽度只随工具栏内容与字体变，不随缩放/平移变，
+   * 只在「选中张数变化」时量一次：尺寸只随工具栏内容与字体变，不随缩放/平移变，
    * 跟着 viewport 量会在每次拖拽里读一次布局（强制重排）。
+   * 单张与多选是两套按钮（多选还带「已选 N 张」），宽度不同 —— 都以张数为键，切换时自然重量。
    */
-  const [toolbarW, setToolbarW] = useState(0)
+  const [toolbarBox, setToolbarBox] = useState({ w: 0, h: 0 })
   useEffect(() => {
-    if (selectedImages.length !== 1) {
-      setToolbarW(0)
-      return
-    }
-    setToolbarW(floatToolbarRef.current?.offsetWidth ?? 0)
+    const el = floatToolbarRef.current
+    setToolbarBox(selectedImages.length > 0 && el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: 0, h: 0 })
   }, [selectedImages.length])
 
   /**
-   * 工具栏位置 = 锚点 + **横向钳制**。
+   * 工具栏位置 = 锚点 + **横向钳制**。单选与多选共用同一条路径。
    *
-   * 钳制的对象是「两侧浮动面板占掉之后剩下的横向区间」（见 `toolbarBand`）：被选图靠画布右缘时，
-   * 工具栏右半原本会伸进生成面板的矩形里，而那半边的按钮就点不动了（#82）。
-   * `toolbarW === 0`（首帧还没量到）时先按原锚点渲染，量到后同一次提交内就会修正。
+   * 钳制的对象是「两侧浮动面板占掉之后剩下的横向区间」（见 `measureToolbarBand`）：被选图靠画布
+   * 右缘时，工具栏右半原本会伸进生成面板的矩形里，而那半边的按钮就点不动了（#82）。
+   * 多选的包围盒更宽、工具栏也更宽，同样会被裁 —— 故两条路径都必须钳。
+   * `toolbarBox.w === 0`（首帧还没量到）时先按原锚点渲染，量到后同一次提交内就会修正。
    */
   const toolbarStyle = useMemo(() => {
-    if (selectedImages.length !== 1) return undefined
-    const anchor = toolbarAnchor([placements[selectedImages[0].id]], viewport)
+    if (selectedImages.length === 0) return undefined
+    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), viewport)
     if (!anchor) return undefined
     const el = containerRef.current
-    if (!el || toolbarW === 0) return anchor
-    return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarW, toolbarBand(el)) }
-  }, [selectedImages, placements, viewport, toolbarW])
+    if (!el || toolbarBox.w === 0) return anchor
+    const band = measureToolbarBand(el, anchor.top, toolbarBox.h)
+    return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarBox.w, band, el.clientWidth) }
+  }, [selectedImages, placements, viewport, toolbarBox])
 
   /**
    * 摆放矩形列表：`Object.values(placements)` 每次渲染都返回**新数组**，直接当 prop 传会击穿
@@ -1086,12 +1087,13 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
           </Toolbar>
         )}
 
-        {/* 多选批量工具栏 */}
+        {/* 多选批量工具栏（与单选共用 `toolbarStyle`，即同样做横向钳制） */}
         {selectedImages.length > 1 && (
           <Toolbar
+            ref={floatToolbarRef}
             aria-label="批量操作"
             className="canvas-toolbar"
-            style={toolbarAnchor(selectedImages.map((i) => placements[i.id]), viewport) ?? undefined}
+            style={toolbarStyle}
             data-canvas-no-zoom
             onPointerDown={(e) => e.stopPropagation()}
           >

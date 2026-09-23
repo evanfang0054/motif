@@ -802,6 +802,29 @@ html[data-theme="dark"] .lp-hero {
   right: 12px;
 }
 
+/* 画布「显示的是旧内容」提示（后台重取失败但保住了画布，见 Workspace 的 `detailFailed`）。
+   位置：顶部居中，`top: 64px` 正好落在收起态浮动条（top:12 + 44）之下、两侧面板之间的中缝里，
+   宽屏/窄屏都不会被面板或浮动条压住。z-index 24 与窄屏遮罩同层，且 DOM 上排在遮罩**之前** ——
+   窄屏抽屉打开时遮罩盖住它（那一刻用户在操作抽屉），抽屉收起后自动回到视野。
+   ⚠️ 不要再加 `pointer-events: none`：里面的「重试」要能点。 */
+.ws-stale-hint {
+  position: absolute;
+  z-index: 24;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-primary) 94%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
+}
+
 /* 面板本体：外层不滚、内层滚、页脚固定（生成按钮吸底常驻）。
    为什么不用 `position: sticky` 做吸底：实测（1190×560 视口）滚动到底时 sticky 元素会停在
    内容的自然位置、比吸底位高 45px，底栏下方露出一条空隙 —— 那是 flex 容器 + 负外边距 +

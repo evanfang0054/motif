@@ -45,7 +45,6 @@ describe('归档条目命名', () => {
       archiveEntryName({ serial: 4, name: 'hero.png', src: '/s/4' }),
     ]
     for (const n of names) {
-      // eslint-disable-next-line no-control-regex
       expect(n, n).toMatch(/^[\x20-\x7e]+$/)
     }
   })
@@ -170,5 +169,13 @@ describe('原名映射（条目名改 ASCII 后的信息保全，#85）', () => 
       images: [placement('cimg_a')], names: { cimg_a: 123 },
     })
     expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(bad)]]))).toMatchObject({ topicId: 'top_1' })
+  })
+
+  it('空映射读出来也是「没有」——与写端对称（否则读成 {}、写回去又消失）', () => {
+    const empty = JSON.stringify({
+      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
+      images: [placement('cimg_a')], names: {},
+    })
+    expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(empty)]])).names).toBeUndefined()
   })
 })

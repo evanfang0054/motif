@@ -80,8 +80,10 @@ export function parseCanvasExport(raw: string): CanvasExportFile {
   }
 }
 
-/** `names` 必须是 id → 字符串的映射；形状不对就当没有 —— 它是**附加信息**，不该让导入失败 */
+/** `names` 必须是**非空**的 id → 字符串映射；形状不对就当没有 —— 它是**附加信息**，不该让导入失败。
+ * 「非空」这条与写端对称（`serializeCanvas` 也不写空映射），否则会出现「读出来是 `{}`、写回去又没了」。 */
 function isNameMap(v: unknown): v is Record<string, string> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false
-  return Object.values(v as Record<string, unknown>).every((x) => typeof x === 'string')
+  const entries = Object.entries(v as Record<string, unknown>)
+  return entries.length > 0 && entries.every(([, x]) => typeof x === 'string')
 }

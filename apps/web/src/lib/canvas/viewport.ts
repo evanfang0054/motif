@@ -119,25 +119,79 @@ export function toolbarAnchor(rects: Rect[], v: Viewport): { left: number; top: 
 export const TOOLBAR_EDGE_GAP = 8
 
 /**
- * 把工具栏的**中心 x** 钳进可用横向区间。
+ * 「通栏抽屉」的宽度比例阈值：面板宽 ≥ 画布宽 × 本值就不算侧边占位。
+ *
+ * 窄屏（≤1023px）两侧面板都变成 `left:12px; right:12px; width:auto` 的底部抽屉（见 globals.css），
+ * 它横跨整个画布、不构成左/右约束。若仍按侧边面板扣它，可用区间会塌成贴着**对侧**的一条窄缝
+ * （只开右抽屉时是 `{0, 12}`），钳制反而把工具栏推到画布外被 `overflow:hidden` 裁掉。
+ */
+export const DRAWER_WIDTH_RATIO = 0.6
+
+/** 面板的**容器内**矩形。由调用方量好（本模块不碰 DOM，见 `CanvasStage.measureToolbarBand`） */
+export interface ToolbarPanelRect {
+  side: 'left' | 'right'
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * 由各面板的容器内矩形推出工具栏可用的**横向区间**（容器内坐标）。
+ *
+ * 纯函数：DOM 侧只负责量 rect。这段逻辑有三种情形（单侧开 / 双侧开 / 窄屏抽屉）且最容易写错，
+ * 单独可测。
+ *
+ * 三条规则：
+ * ① 收起的面板不在 DOM 里（调用方 `querySelector` 就返回 null），宽高为 0 的跳过只是防御；
+ * ② 通栏抽屉整块跳过（见 `DRAWER_WIDTH_RATIO`）；
+ * ③ 与工具栏**纵向不重叠**的面板也跳过。宽屏下两侧面板是 `top:12px; bottom:64px` 的整列，
+ *    纵向必然重叠、这条不生效；它真正管的是顶部那两条**收起态浮动条**（高 44、只在顶部）——
+ *    不判纵向就会拿它去钳画布**底部**的工具栏，白白把工具栏挤到半边去。
+ */
+export function toolbarBand(
+  hostWidth: number,
+  panels: readonly ToolbarPanelRect[],
+  toolbar: { top: number; height: number }
+): { left: number; right: number } {
+  let left = 0
+  let right = hostWidth
+  for (const p of panels) {
+    if (p.width <= 0 || p.height <= 0) continue
+    if (hostWidth > 0 && p.width >= hostWidth * DRAWER_WIDTH_RATIO) continue
+    if (p.top >= toolbar.top + toolbar.height || p.top + p.height <= toolbar.top) continue
+    if (p.side === 'left') left = Math.max(left, p.left + p.width)
+    else right = Math.min(right, p.left)
+  }
+  return { left, right }
+}
+
+/**
+ * 把工具栏的**中心 x** 钳进可用横向区间，并保证结果落在画布内。
  *
  * 为什么需要：工具栏锚在被选图的顶部居中，图靠画布右缘时它的右半会伸进右侧生成面板的矩形里；
  * 面板 z-index 更高，于是「删除所选图片」被盖住 —— 点下去没有任何反应（#82，实测
  * `elementFromPoint` 命中的是面板里的文本）。抬 z-index 能让它可点，但会变成「工具栏压在面板上」；
  * 所以两条一起做：钳住位置（默认不重叠）＋ 抬高层级（真重叠时也可点）。
  *
- * `band` 是**可用区间**（容器内坐标），已扣掉两侧面板的占位；区间比工具栏还窄时退化为区间中点 ——
- * 宁可让它压住面板，也不能把它推出画布（推出去就彻底点不到了）。
+ * `band` 是**可用区间**（容器内坐标），已扣掉两侧面板的占位。
+ * ⚠️ 区间比工具栏还窄时**不能裸取区间中点**：区间本身可能整条贴在画布边上，中点落在画布外，
+ * 工具栏一半被 `overflow:hidden` 裁掉 —— 那就彻底点不到了。退化时改为「区间中点再钳进画布」：
+ * 宁可压住面板，也不能推出画布。画布本身比工具栏还窄时只能钉在 half（左右各裁一点，居中）。
  */
 export function clampToolbarCenter(
   center: number,
   toolbarWidth: number,
   band: { left: number; right: number },
+  hostWidth: number,
   gap = TOOLBAR_EDGE_GAP
 ): number {
   const half = toolbarWidth / 2 + gap
   const min = band.left + half
   const max = band.right - half
-  if (min > max) return (band.left + band.right) / 2
+  if (min > max) {
+    const mid = (band.left + band.right) / 2
+    return Math.min(Math.max(mid, half), Math.max(half, hostWidth - half))
+  }
   return Math.min(Math.max(center, min), max)
 }
