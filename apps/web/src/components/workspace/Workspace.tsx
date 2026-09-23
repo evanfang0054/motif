@@ -26,6 +26,7 @@ import { AlertDialog, Button, Spinner, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { showToast } from '@/components/ui/toast'
 import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
+import { planRetryFromMessage } from '@/lib/retry'
 
 export interface PanelState {
   prompt: string
@@ -460,51 +461,126 @@ function Workspace({ initialUser }: { initialUser: User }) {
     return `上次生成失败：${active.error ?? '未知原因'}`
   }, [detail])
 
-  const submitGenerate = useCallback(async () => {
-    // 提示词超限（>4000 字）在前端先行阻断：服务端也会 400，但用户不该等到提交才知道（#83-1.3）
-    const promptErr = validatePrompt(panel.prompt)
-    if (promptErr) {
-      showToast({ tone: 'danger', message: promptErr, timeoutMs: 4000 })
-      return
-    }
-    try {
-      // 保证在明确的活动任务下提交（没有则自动创建），避免依赖服务端对空 topicId 的隐式处理
-      const tid = await ensureTopic()
-      const sentRefIds = [...panel.referenceIds]
-      const res = await api.generate({
-        prompt: panel.prompt,
-        count: panel.count,
-        size: panel.size === 'custom' ? `${panel.customW}x${panel.customH}` : panel.size,
-        enhance: publicCfg?.llmEnhanceEnabled ?? false,
-        topicId: tid,
-        referenceCanvasImageIds: sentRefIds,
-      } satisfies GenerateImagesInput)
-      applyUser(res.user)
-      setActiveId(res.topic.id)
-      // 已提交的暂存参考被服务端转正为画布图：从面板暂存区移除（画布 @ 引用的 cimg_ 保留）
-      setPanel((p) => ({
-        ...p,
-        staged: p.staged.filter((s) => !sentRefIds.includes(s.id)),
-        referenceIds: p.referenceIds.filter((id) => !sentRefIds.includes(id)),
-      }))
-      await refreshTopics()
-      await refreshDetail(res.topic.id)
-      showToast({ tone: 'info', message: '任务已加入队列，后台生成中。' })
-    } catch (e) {
-      // 会话失效：明确告知「登录已过期」，并把画布上的提示条也点亮（#83-1.6）
-      if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
-        setSessionExpired(true)
-        showToast({ tone: 'danger', message: '登录已过期，请重新登录', timeoutMs: 4000 })
+  /**
+   * 提交生成的**公共路径**：表单提交与「失败重试」都走它。
+   *
+   * 为什么抽出来：重试要用**失败那一轮**的参数提交，而那一刻 `panel` state 还没（也不该）同步过去 ——
+   * 两条路径各写一份提交逻辑，等于把计费、暂存转正、回执这些容易出错的地方抄两遍。
+   * 调用方传入完整参数，本函数只负责「提交 + 落地 + 报错」。
+   *
+   * ⚠️ `submittingRef` 防连击：提交是**扣费**动作，而「重试」比「生成」更容易被连点
+   * （点了之后画面不会立刻变化，用户会以为没反应）。同一时刻只允许一次在途提交。
+   */
+  const submittingRef = useRef(false)
+  const submitWith = useCallback(
+    async (v: {
+      prompt: string
+      count: number
+      /** 面板级尺寸：预设 key / 'auto' / 'custom' */
+      size: string
+      customW: number
+      customH: number
+      referenceIds: string[]
+    }) => {
+      // 提示词超限（>4000 字）在前端先行阻断：服务端也会 400，但用户不该等到提交才知道（#83-1.3）
+      const promptErr = validatePrompt(v.prompt)
+      if (promptErr) {
+        showToast({ tone: 'danger', message: promptErr, timeoutMs: 4000 })
         return
       }
-      const msg = e instanceof ApiError ? e.message : '提交失败，请重试。'
-      showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
-      // 额度不足：光提示不够，直接把充值入口送到用户面前
-      if (msg.includes('额度不足')) {
-        setDialog('billing')
+      if (submittingRef.current) return
+      submittingRef.current = true
+      try {
+        // 保证在明确的活动任务下提交（没有则自动创建），避免依赖服务端对空 topicId 的隐式处理
+        const tid = await ensureTopic()
+        const sentRefIds = [...v.referenceIds]
+        const res = await api.generate({
+          prompt: v.prompt,
+          count: v.count,
+          size: v.size === 'custom' ? `${v.customW}x${v.customH}` : v.size,
+          enhance: publicCfg?.llmEnhanceEnabled ?? false,
+          topicId: tid,
+          referenceCanvasImageIds: sentRefIds,
+        } satisfies GenerateImagesInput)
+        applyUser(res.user)
+        setActiveId(res.topic.id)
+        // 已提交的暂存参考被服务端转正为画布图：从面板暂存区移除（画布 @ 引用的 cimg_ 保留）
+        setPanel((p) => ({
+          ...p,
+          staged: p.staged.filter((s) => !sentRefIds.includes(s.id)),
+          referenceIds: p.referenceIds.filter((id) => !sentRefIds.includes(id)),
+        }))
+        await refreshTopics()
+        await refreshDetail(res.topic.id)
+        showToast({ tone: 'info', message: '任务已加入队列，后台生成中。' })
+      } catch (e) {
+        // 会话失效：明确告知「登录已过期」，并把画布上的提示条也点亮（#83-1.6）
+        if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
+          setSessionExpired(true)
+          showToast({ tone: 'danger', message: '登录已过期，请重新登录', timeoutMs: 4000 })
+          return
+        }
+        const msg = e instanceof ApiError ? e.message : '提交失败，请重试。'
+        showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
+        // 额度不足：光提示不够，直接把充值入口送到用户面前
+        if (msg.includes('额度不足')) {
+          setDialog('billing')
+        }
+      } finally {
+        submittingRef.current = false
       }
-    }
-  }, [panel, activeId, ensureTopic, refreshTopics, refreshDetail])
+    },
+    [ensureTopic, refreshTopics, refreshDetail, publicCfg?.llmEnhanceEnabled]
+  )
+
+  const submitGenerate = useCallback(
+    () =>
+      submitWith({
+        prompt: panel.prompt,
+        count: panel.count,
+        size: panel.size,
+        customW: panel.customW,
+        customH: panel.customH,
+        referenceIds: panel.referenceIds,
+      }),
+    [submitWith, panel]
+  )
+
+  /**
+   * 失败轮次（当前活跃消息且已失败）。失败卡片进画布（#73-1.5）与重试入口共用这一个判据 ——
+   * 两处各判一次，将来改一处就会出现「画布上有卡片、点重试却说没有可重试的轮次」。
+   */
+  const failedRound = useMemo(() => {
+    if (!detail) return null
+    const msg = activeMessage(detail)
+    return msg && msg.status === 'failed' ? msg : null
+  }, [detail])
+
+  /**
+   * 重试失败轮次：把该轮的提示词 / 张数 / 尺寸 / 参考图还原后**直接重新提交**。
+   *
+   * 为什么是「重试」而不是只预填：「以它为参考再生成」那条路径刻意只预填（CONTEXT 的 _Avoid_），
+   * 而失败重试的诉求就是免掉「重新手动填写提交」这一步（issue #73-1.5 原文）。
+   * 还原口径全在纯函数 `planRetryFromMessage` 里（可单测）。
+   */
+  const retryLastFailed = useCallback(() => {
+    if (!detail || !failedRound) return
+    const plan = planRetryFromMessage({
+      message: failedRound,
+      canvasImageIds: detail.canvasImages.map((i) => i.id),
+    })
+    // 先把表单还原成失败那轮的样子（用户看得到将要重跑什么），再用同一份参数提交
+    setPanel((p) => ({
+      ...p,
+      prompt: plan.prompt,
+      count: plan.count,
+      size: plan.size,
+      customW: plan.customW,
+      customH: plan.customH,
+      referenceIds: plan.referenceIds,
+    }))
+    void submitWith(plan)
+  }, [detail, failedRound, submitWith])
 
   const cancelRunning = useCallback(async () => {
     if (!detail) return
@@ -791,10 +867,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
   }, [router, user.id])
 
   const onPaid = useCallback(
-    async (user: User) => {
-      applyUser(user)
+    // ⚠️ 文案必须用**本次到账额度**（#73-1.3）：`user.credits` 是充值后的总余额，
+    // 拿它当「新充额度」会写出「已充值 153 张总额度中的新额度」这种既错又不通的句子。
+    async (u: User, paidCredits: number) => {
+      applyUser(u)
       setDialog(null)
-      showToast({ tone: 'success', message: `支付成功，已充值 ${user.credits} 张总额度中的新额度` })
+      showToast({ tone: 'success', message: `支付成功，已到账 ${paidCredits} 张额度` })
     },
     []
   )
@@ -898,6 +976,36 @@ function Workspace({ initialUser }: { initialUser: User }) {
             ) : null}
           </div>
         ) : null}
+        {/* 失败卡片进画布（#73-1.5）。
+            原先失败只在右侧面板留一条横幅 —— 用户的第一视线在画布上，画布却什么都没有；
+            空任务失败时甚至还会落进新手引导说「画布现在是空的」（对一个刚失败的任务是假陈述）。
+            卡片画在**画布区**（`section.ws-canvas` 的绝对定位子元素）而不是 CanvasStage 内部：
+            它不属于画布坐标系（不随平移/缩放移动、不可选中/拖动、不参与归档与整理），
+            且 `CanvasStage` 只在有图时渲染 —— 失败轮次往往一张图都没有，放进去就永远看不到。
+            `data-canvas-no-zoom` 让双击卡片不触发「收起生成面板」（该选择器已在豁免名单里）。 */}
+        {failedRound && !busy ? (
+          <div
+            // ⚠️ 刻意**不用** role="alert"：同一次失败在右侧面板的横幅上已经是一个 live region，
+            // 两处都声明就会把同一句话播报两遍。这里的角色是「画布上的可见卡片 + 重试入口」，
+            // 播报由横幅负责（见 TaskPanel 的失败 Alert）。
+            data-canvas-no-zoom
+            className="absolute left-1/2 top-1/2 z-[26] w-[min(360px,calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-4 shadow-lg"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
+          >
+            <InlineText type="body-sm" className="block font-semibold" style={{ color: 'var(--danger-quiet)' }}>
+              生成失败
+            </InlineText>
+            <InlineText type="body-sm" className="mt-1 block" style={{ color: 'var(--muted-strong)' }}>
+              {failedRound.error ?? '未知原因'}
+            </InlineText>
+            <InlineText type="body-xs" className="mt-1 block" style={{ color: 'var(--muted)' }}>
+              本轮请求 {failedRound.requestedCount} 张，未产出的额度已退回。
+            </InlineText>
+            <Button size="sm" variant="primary" className="mt-3" onPress={() => retryLastFailed()}>
+              重试
+            </Button>
+          </div>
+        ) : null}
         {/* 两侧浮动面板 / 收起后的浮动条：都在**画布区内**绝对定位（顶栏仍是占位的，面板从它下面开始）。
             2026-09-21 用户裁决：面板展开时占据该侧位置；**收起后原位换成一条小浮动条**，
             里面放该侧的关键动作 —— 左：展开按钮 + 任务名 + 新建任务；右：展开按钮 + 生成/取消 + 张数尺寸摘要。
@@ -986,6 +1094,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
               onGenerate={() => void submitGenerate()}
               onCancel={() => void cancelRunning()}
               onNewTask={() => void createTopic()}
+              onRetryLast={() => retryLastFailed()}
             />
           </aside>
         ) : (
@@ -1030,7 +1139,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       {dialog === 'billing' && (
         <BillingDialog
           onClose={() => setDialog(null)}
-          onPaid={(u) => void onPaid(u)}
+          onPaid={(u, paid) => void onPaid(u, paid)}
           onRedeem={() => setDialog('redeem')}
         />
       )}

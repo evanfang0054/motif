@@ -48,7 +48,14 @@ interface Props {
   onCopyPrompt: (entry: PromptLibraryEntry) => void
 }
 
-/** 一条提示词卡片：封面 + 标题 + 正文摘要 + 标签；点整卡即选中。署名统一在 NOTICE，卡片不再露出上游地址与来源名 */
+/**
+ * 一条提示词卡片：封面 + 标题 + 正文摘要 + 标签；点整卡即选中。署名统一在 NOTICE，卡片不再露出上游地址与来源名。
+ *
+ * 封面区**始终垫一层骨架**，图片 load 后才撤掉（#73-1.8）。
+ * 为什么：封面是远程图 + `loading="lazy"`，滚动加载出来的新卡片在图片到达前，封面区就是一块
+ * 没有任何占位动画的空白浅框（首屏有 `EntryGridSkeleton` 兜着，所以只有滚动加载时看着突兀）。
+ * 骨架与 `<img>` 同处一个 `relative` 容器、`aspect-square` 撑高 ⇒ 图片到达时不会跳位。
+ */
 function EntryCard({
   entry,
   coverBroken,
@@ -64,30 +71,42 @@ function EntryCard({
   onOpenDetail: (() => void) | null
 }) {
   const key = `${entry.sourceId}:${entry.id}`
+  /** 封面字节是否已就位（load 或 error 都算「不再需要骨架」） */
+  const [coverLoaded, setCoverLoaded] = useState(false)
+  const hasCover = Boolean(entry.coverUrl) && !coverBroken
   return (
     <div
       className="flex flex-col overflow-hidden rounded-lg border"
       style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
     >
       <button type="button" onClick={onSelect} aria-label={`选用提示词：${entry.title}`} className="block w-full text-start">
-        {entry.coverUrl && !coverBroken ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={entry.coverUrl}
-            alt={entry.title}
-            loading="lazy"
-            className="aspect-square w-full object-cover"
-            onError={() => onBrokenCover(key)}
-          />
-        ) : (
-          <span
-            aria-hidden
-            className="flex aspect-square w-full items-center justify-center text-xs"
-            style={{ color: 'var(--muted)', background: 'var(--canvas-background)' }}
-          >
-            无预览图
-          </span>
-        )}
+        <span className="relative block w-full">
+          {hasCover && !coverLoaded && <Skeleton className="absolute inset-0 rounded-none" />}
+          {hasCover ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={entry.coverUrl}
+              alt={entry.title}
+              loading="lazy"
+              // 未就位时先透明：底下的骨架才是这一格的视觉，图片到了再显出来（不会闪白框）
+              style={{ opacity: coverLoaded ? 1 : 0 }}
+              className="aspect-square w-full object-cover"
+              onLoad={() => setCoverLoaded(true)}
+              onError={() => {
+                onBrokenCover(key)
+                setCoverLoaded(true)
+              }}
+            />
+          ) : (
+            <span
+              aria-hidden
+              className="flex aspect-square w-full items-center justify-center text-xs"
+              style={{ color: 'var(--muted)', background: 'var(--canvas-background)' }}
+            >
+              无预览图
+            </span>
+          )}
+        </span>
         <InlineText type="body-sm" className="block px-3 pt-2">
           <InlineText type="body-sm" className="line-clamp-1 block font-medium">{entry.title}</InlineText>
           <InlineText type="body-xs" className="mt-1 line-clamp-3 block leading-5" style={{ color: 'var(--muted)' }}>
