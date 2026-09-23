@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup } from '@heroui/react'
+import { Alert, Button, Chip, SearchField, Skeleton, Spinner, Tag, TagGroup } from '@heroui/react'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { showToast } from '@/components/ui/toast'
@@ -106,6 +106,41 @@ function EntryCard({
           </Chip>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * 提示词库的骨架卡片：**与真实卡片同形**（封面 aspect-square + 标题 + 两行描述 + 底部标签区），
+ * 尺寸与间距都对齐 `EntryCard`，这样「骨架 → 内容」不会二次跳动。
+ */
+function EntryCardSkeleton() {
+  return (
+    <div
+      className="flex flex-col overflow-hidden rounded-lg border"
+      style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
+    >
+      <Skeleton className="aspect-square w-full rounded-none" />
+      <span className="block px-3 pt-2">
+        <Skeleton className="h-4 w-4/5 rounded-medium" />
+        <Skeleton className="mt-2 h-3 w-full rounded-medium" />
+        <Skeleton className="mt-1.5 h-3 w-2/3 rounded-medium" />
+      </span>
+      <div className="mt-auto flex items-center gap-1.5 px-3 pb-3 pt-2">
+        <Skeleton className="h-6 w-16 rounded-full" />
+        <Skeleton className="h-5 w-10 rounded-full" />
+      </div>
+    </div>
+  )
+}
+
+/** 网格骨架：列数与真实网格一致（`sm:grid-cols-2 lg:grid-cols-3`） */
+function EntryGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <EntryCardSkeleton key={i} />
+      ))}
     </div>
   )
 }
@@ -337,9 +372,8 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
 
           <div onScroll={onScroll} className="mt-3 min-h-0 flex-1 overflow-y-auto pe-1">
             {loading ? (
-              <div className="flex h-40 items-center justify-center">
-                <Spinner size="md" />
-              </div>
+              /* 首屏：内容是**形状可预判**的卡片网格 → 用骨架而不是居中 Spinner，避免「转圈 → 整块卡片」的跳动 */
+              <EntryGridSkeleton />
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
                 <span>{error}</span>
@@ -352,7 +386,8 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               <div className="flex h-40 flex-col items-center justify-center gap-2 px-4 text-center text-sm" style={{ color: 'var(--muted)' }}>
                 {emptyKind === 'fetching' ? (
                   <>
-                    <Spinner size="md" />
+                    {/* 上游还在抓：内容形状同样可预判（卡片网格），骨架比转圈更贴近最终形态 */}
+                    <EntryGridSkeleton count={3} />
                     <span>正在抓取提示词库…</span>
                   </>
                 ) : emptyKind === 'failed' ? (
@@ -391,8 +426,15 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
 
           <div className="mt-2 flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
             <span>
-              {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
-              {pending && <span className="ms-2">（正在抓取提示词库…）</span>}
+              {/* 首屏加载中不显示「共 0 条」：与「真的没有数据」无法区分（同 ListUi 的口径） */}
+              {loading ? (
+                <Skeleton className="inline-block h-3.5 w-14 rounded-medium" />
+              ) : (
+                <>
+                  {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
+                  {pending && <span className="ms-2">（正在抓取提示词库…）</span>}
+                </>
+              )}
             </span>
             {loadingMore && <Spinner size="sm" />}
           </div>

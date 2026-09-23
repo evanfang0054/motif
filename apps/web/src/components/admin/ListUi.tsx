@@ -38,11 +38,17 @@ export function ListEmptyContent({ text }: { text: string }) {
   )
 }
 
-/** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知 */
+/**
+ * 列表工具栏里的计数：**加载中显示骨架条**，而不是「共 0 个」。
+ *
+ * 为什么不能显示 0：加载窗口里「共 0 个」与「真的没有数据」无法区分，会误导运营（本文件头注释同源）。
+ * 早先显示的是「共 … 个」—— 诚实但会闪一下；改成与数字等宽的骨架条，位置不跳。
+ */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
+  if (loading) return <Skeleton className="inline-block h-4 w-16 rounded-medium" />
   return (
     <span className="admin-muted" role="status">
-      共 {loading ? '…' : total} {unit}
+      共 {total} {unit}
     </span>
   )
 }

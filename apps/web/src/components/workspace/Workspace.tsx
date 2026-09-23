@@ -21,7 +21,7 @@ import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialo
 import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
-import { AlertDialog, Button, Spinner } from '@heroui/react'
+import { AlertDialog, Button, Skeleton, Spinner } from '@heroui/react'
 import { showToast } from '@/components/ui/toast'
 import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
 
@@ -58,6 +58,39 @@ const IDLE_PANEL: PanelState = {
 
 /** 任务列表级监看的轮询间隔：只在有任务在跑时用（够快让人察觉，又不至于把接口打成心跳） */
 const TOPIC_LIST_POLL_MS = 5000
+
+/**
+ * 画布等待态的骨架。
+ *
+ * 为什么不是居中 Spinner：这里等的是「任务列表 / 任务详情」，内容形状是可预判的 —— 一整块画布底
+ * 加上几张按位置摆放的图。用 Spinner 的话，真内容到达时是**整块替换**，跳动最明显；骨架铺开之后
+ * 至少底与「图位」先就位。
+ *
+ * 底用 `--canvas-background`（与真画布同底，见 CanvasStage），占位块的圆角/尺寸按真实缩略图量级取。
+ * 位置写死几组百分比：骨架不需要真随机，稳定反而更好（不会每次闪动）。
+ */
+function CanvasSkeleton() {
+  const blocks = [
+    { left: '7%', top: '13%', w: '21%', h: '29%' },
+    { left: '33%', top: '7%', w: '25%', h: '35%' },
+    { left: '63%', top: '17%', w: '21%', h: '29%' },
+    { left: '21%', top: '51%', w: '23%', h: '31%' },
+    { left: '53%', top: '55%', w: '25%', h: '29%' },
+  ]
+  return (
+    <div className="h-full w-full" style={{ background: 'var(--canvas-background)' }} aria-hidden>
+      <div className="relative h-full w-full">
+        {blocks.map((b, i) => (
+          <Skeleton
+            key={i}
+            className="absolute rounded-lg"
+            style={{ left: b.left, top: b.top, width: b.w, height: b.h }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 /** 登录后工作台：顶栏 + 画布 + 右侧任务面板 + 任务抽屉 + 弹层 */
 function Workspace({ initialUser }: { initialUser: User }) {
@@ -681,9 +714,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
             要保住画布得改成「失败时保留旧 detail」，那是另一件事，不在本次改动范围。
             模板入口已收敛到右侧表单。 */}
         {!topicsLoaded || (activeId !== null && detail === null && !detailFailed) ? (
-          <div className="flex h-full items-center justify-center">
-            <Spinner />
-          </div>
+          <CanvasSkeleton />
         ) : detail === null && detailFailed ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
