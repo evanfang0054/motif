@@ -24,12 +24,15 @@ const CODE_RE = /^\d{6}$/
 /**
  * 从 query 参数解析出预填值。
  *
- * @param sp 形如 `{ reset, email, code }` 的取值表（值可能是数组：`?email=a&email=b`）
+ * 取值表由调用方用 `Object.fromEntries(URLSearchParams)` 构造，故同名参数出现多次时
+ * **取最后一个**（`Object.fromEntries` 的既定行为）；这里不做多值处理 ——
+ * 深链由 `buildResetLink` 生成，本来就不会有重复参数。
+ *
+ * @param sp 形如 `{ reset, email, code }` 的取值表（缺项为 `undefined`）
  * @returns 合法时返回预填值；否则 `null`（调用方什么都不做，用户照旧手工输入）
  */
-export function parseResetParams(sp: Record<string, string | string[] | undefined>): ResetPrefill | null {
-  // 同名参数出现多次时取第一个：`?email=a&email=b` 不该让解析结果依赖实现细节
-  const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v[0] ?? '') : (v ?? '')).trim()
+export function parseResetParams(sp: Record<string, string | undefined>): ResetPrefill | null {
+  const one = (v: string | undefined): string => (v ?? '').trim()
 
   if (one(sp.reset) !== '1') return null
   const email = one(sp.email)

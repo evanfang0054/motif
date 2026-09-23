@@ -45,11 +45,11 @@ describe('parseResetParams：什么算合法深链', () => {
     expect(parseResetParams({ ...ok, email: 'a@b' })).toBeNull()
   })
 
-  it('同名参数出现多次时取第一个（不依赖实现细节）', () => {
-    expect(parseResetParams({ reset: '1', email: ['a@b.co', 'c@d.co'], code: ['123456', '654321'] })).toEqual({
-      email: 'a@b.co',
-      code: '123456',
-    })
+  it('同名参数出现多次时取最后一个 —— 这是调用方 Object.fromEntries 的真实行为', () => {
+    // 之前这里断言「取第一个」，但那是数组入参（真实调用点传不进来）—— 断言的是不存在的行为。
+    // 现在按真实边界形状钉：Landing 用 Object.fromEntries(URLSearchParams) 构造取值表。
+    const sp = Object.fromEntries(new URLSearchParams('reset=1&email=a@b.co&code=123456&code=654321'))
+    expect(parseResetParams(sp)).toEqual({ email: 'a@b.co', code: '654321' })
   })
 
   it('空取值表 / undefined 值 → null（不抛错）', () => {

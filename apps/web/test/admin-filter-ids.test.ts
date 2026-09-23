@@ -12,35 +12,82 @@ import { join } from 'node:path'
  *
  * ⚠️ 这条守卫只防「带前缀」这一种已知写法，不能替代 ego 实测 ——
  * 它保证的是「没人把修好的 id 又改回带前缀」，不是「筛选逻辑正确」。
+ *
+ * 已知盲区（刻意接受，不为此把守卫写复杂）：`id={裸变量}`（如 `id={k}` / `id={o.id}`）的取值
+ * 静态判不出来 —— 但**裸变量正是期望形态**，所以不判；只有表达式里混了字符串字面量
+ * （`id={'status-' + k}` 这类拼接）才报，因为那时取值已经不受控。
  */
 const ADMIN_DIR = new URL('../src/app/admin', import.meta.url)
 
-/** 收集 admin 下所有 page.tsx 的绝对路径 */
-function adminPageFiles(): string[] {
+/** 收集 admin 下所有 .tsx —— 不止 page.tsx：筛选控件可能被拆到同目录的组件文件里 */
+function adminTsxFiles(): string[] {
   const out: string[] = []
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name)
       if (e.isDirectory()) walk(p)
-      else if (e.name === 'page.tsx') out.push(p)
+      else if (e.name.endsWith('.tsx')) out.push(p)
     }
   }
   walk(ADMIN_DIR.pathname)
   return out.sort()
 }
 
-/** 抽出所有字面量 id（`id="xxx"`）与模板字面量 id（`id={\`xxx\`}`） */
-function literalIds(src: string): string[] {
-  const out: string[] = []
-  for (const m of src.matchAll(/<ListBox\.Item[^>]*?\bid="([^"]*)"/g)) out.push(m[1])
-  for (const m of src.matchAll(/<ListBox\.Item[^>]*?\bid=\{`([^`]*)`\}/g)) out.push(m[1])
+/** 相对 admin/ 的短路径，只用于报错信息可读 */
+function rel(f: string): string {
+  return f.split('/admin/')[1] ?? f
+}
+
+/** 去掉注释：否则「注释里写了一句 `=== 'all'`」就能让哨兵断言假绿 */
+function stripComments(src: string): string {
+  // 行注释的 `//` 必须处在行首或空白之后 —— 否则 `https://…` 这类字符串会被误切
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/gm, '$1')
+}
+
+type IdKind = 'literal' | 'template' | 'expr'
+
+interface ItemId {
+  /** 字面量取原文；模板字面量取反引号内原文；表达式取源码片段 */
+  raw: string
+  kind: IdKind
+}
+
+/** 抽出所有 `<ListBox.Item>` 的 id 取值形态（三种写法都要认，漏一种就是一个假绿面） */
+function itemIds(src: string): ItemId[] {
+  const out: ItemId[] = []
+  const re = /<ListBox\.Item\b[^>]*?\bid=(?:"([^"]*)"|\{`([^`]*)`\}|\{([^}]*)\})/g
+  for (const m of src.matchAll(re)) {
+    if (m[1] !== undefined) out.push({ raw: m[1], kind: 'literal' })
+    else if (m[2] !== undefined) out.push({ raw: m[2], kind: 'template' })
+    else out.push({ raw: (m[3] ?? '').trim(), kind: 'expr' })
+  }
   return out
 }
 
-describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 防复发）', () => {
-  const files = adminPageFiles()
+/** 能静态判定的部分：模板字面量只取第一个 `${` 之前（`status-${k}` 的静态前缀就是 `status-`） */
+function staticPrefix(id: ItemId): string {
+  if (id.kind === 'literal') return id.raw
+  if (id.kind === 'template') return id.raw.split('${')[0]
+  return ''
+}
 
-  it('能扫到 admin 下的页面（守卫本身没瞎）', () => {
+/** 可疑则返回原因（供断言输出），没问题返回 null */
+function suspectReason(id: ItemId): string | null {
+  const prefix = staticPrefix(id)
+  const prefixed = prefix.match(/^(status|role)-/)
+  if (prefixed) return `id 带 \`${prefixed[0]}\` 前缀，回传值会匹配不上接口白名单`
+  if (id.kind === 'expr' && /['"`]/.test(id.raw)) return `id 是含字面量的拼接表达式（${id.raw}），取值不受控`
+  return null
+}
+
+function countMatches(src: string, re: RegExp): number {
+  return [...src.matchAll(re)].length
+}
+
+describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 防复发）', () => {
+  const files = adminTsxFiles()
+
+  it('能扫到 admin 下的文件（守卫本身没瞎）', () => {
     // 防「路径写错 → 扫到 0 个文件 → 断言恒真」这种假绿
     expect(files.length).toBeGreaterThanOrEqual(5)
     expect(files.some((f) => f.includes('feedback'))).toBe(true)
@@ -49,23 +96,26 @@ describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 �
   it('不存在带 `status-` / `role-` 前缀的 id（前缀会让接口判非法后静默不过滤）', () => {
     const bad: string[] = []
     for (const f of files) {
-      const src = readFileSync(f, 'utf8')
-      for (const id of literalIds(src)) {
-        if (/^(status|role)-/.test(id)) bad.push(`${f.split('/admin/')[1]}: id="${id}"`)
+      for (const id of itemIds(readFileSync(f, 'utf8'))) {
+        const why = suspectReason(id)
+        if (why) bad.push(`${rel(f)}: id=${id.raw} —— ${why}`)
       }
     }
-    expect(bad, `这些 id 带前缀，回传值会匹配不上接口白名单：\n${bad.join('\n')}`).toEqual([])
+    expect(bad, `这些 id 写法有问题：\n${bad.join('\n')}`).toEqual([])
   })
 
-  it('用了 `all` 哨兵的页面，onChange 里必须有 `=== \'all\'` 映射回空串', () => {
-    // 只改 id 忘了映射 → 选「全部」后 state 会变成字面量 'all'，同样匹配不上接口
-    const missing: string[] = []
+  it('用了 `all` 哨兵的下拉，**每一个**都要有 `=== \'all\'` 映射回空串', () => {
+    // 只改 id 忘了映射 → 选「全部」后 state 会变成字面量 'all'，同样匹配不上接口。
+    // 按**个数**比（users 页有两个下拉）：一处映射满足不了两个哨兵。
+    const problems: string[] = []
     for (const f of files) {
       const src = readFileSync(f, 'utf8')
-      if (!literalIds(src).includes('all')) continue
-      if (!src.includes("=== 'all'")) missing.push(f.split('/admin/')[1])
+      const sentinels = itemIds(src).filter((id) => staticPrefix(id) === 'all').length
+      if (sentinels === 0) continue
+      const mapped = countMatches(stripComments(src), /===\s*'all'/g)
+      if (mapped < sentinels) problems.push(`${rel(f)}: ${sentinels} 个 all 哨兵，只有 ${mapped} 处 === 'all'`)
     }
-    expect(missing, `这些页面用了 all 哨兵但没有映射回 ''：${missing.join(', ')}`).toEqual([])
+    expect(problems, `哨兵缺映射（选「全部」会写入字面量 'all'）：\n${problems.join('\n')}`).toEqual([])
   })
 
   it('没有页面仍在用 `(v as XxxFilter) ?? \'\'` 这种「原样写入回传值」的旧写法', () => {
@@ -73,20 +123,39 @@ describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 �
     const legacy: string[] = []
     for (const f of files) {
       const src = readFileSync(f, 'utf8')
-      if (/as (Role|Status)Filter\)\s*\?\?\s*''/.test(src)) legacy.push(f.split('/admin/')[1])
+      if (/as (Role|Status)Filter\)\s*\?\?\s*''/.test(src)) legacy.push(rel(f))
     }
-    expect(legacy, `这些页面仍是旧写法：${legacy.join(', ')}`).toEqual([])
+    expect(legacy, `这些文件仍是旧写法：${legacy.join(', ')}`).toEqual([])
   })
 
-  it('守卫可证伪：喂一段带前缀的样例源码必须能被检出', () => {
+  it('守卫可证伪：字面量前缀写法能被检出', () => {
     const sample = '<ListBox.Item key="status-pending" id="status-pending">待处理</ListBox.Item>'
-    expect(literalIds(sample)).toEqual(['status-pending'])
-    expect(/^(status|role)-/.test(literalIds(sample)[0])).toBe(true)
+    expect(itemIds(sample)).toEqual([{ raw: 'status-pending', kind: 'literal' }])
+    expect(suspectReason(itemIds(sample)[0])).toMatch(/前缀/)
   })
 
-  it('守卫可证伪：模板字面量的前缀写法也能被检出', () => {
+  it('守卫可证伪：模板字面量的前缀写法也能被检出（静态前缀即可判定）', () => {
     const sample = '<ListBox.Item key={`status-${k}`} id={`status-${k}`}>{v}</ListBox.Item>'
-    expect(literalIds(sample)).toEqual(['status-${k}'])
+    expect(itemIds(sample)).toEqual([{ raw: 'status-${k}', kind: 'template' }])
+    expect(suspectReason(itemIds(sample)[0])).toMatch(/前缀/)
+  })
+
+  it('守卫可证伪：表达式里的字符串拼接也能被检出', () => {
+    const sample = `<ListBox.Item key={k} id={'status-' + k}>{v}</ListBox.Item>`
+    expect(itemIds(sample)).toEqual([{ raw: "'status-' + k", kind: 'expr' }])
+    expect(suspectReason(itemIds(sample)[0])).toMatch(/拼接/)
+  })
+
+  it('守卫不误报：裸变量的 id 放行（这正是期望形态）', () => {
+    for (const sample of ['<ListBox.Item key={k} id={k}>{v}</ListBox.Item>', '<ListBox.Item key={x} id={o.id} textValue={o.label}>v</ListBox.Item>']) {
+      expect(itemIds(sample).map(suspectReason)).toEqual([null])
+    }
+  })
+
+  it('守卫可证伪：只在注释里出现的 `=== \'all\'` 不算映射', () => {
+    const sample = "// 这里该写 === 'all' 才对\nconst x = 1"
+    expect(countMatches(sample, /===\s*'all'/g)).toBe(1)
+    expect(countMatches(stripComments(sample), /===\s*'all'/g)).toBe(0)
   })
 })
 

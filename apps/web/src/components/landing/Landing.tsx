@@ -37,6 +37,12 @@ function Landing() {
       setResetPrefill(reset)
       setAuthMode('reset')
       setAuthOpen(true)
+      // 预填值已进 state，立刻把深链自己的三个参数从地址栏与浏览器历史里抹掉：
+      // 验证码不该长期停在 URL 上（截图、转发、共用屏幕都会漏）。
+      // 只删这三个参数、不动别人的；用 replaceState 而非 router.replace —— 页面没变，无需 RSC 往返。
+      for (const k of ['reset', 'email', 'code']) params.delete(k)
+      const rest = params.toString()
+      window.history.replaceState(null, '', rest ? `${window.location.pathname}?${rest}` : window.location.pathname)
       return
     }
     const mode = params.get('mode')
@@ -54,6 +60,15 @@ function Landing() {
   const openAuth = (m: Mode) => {
     setAuthMode(m)
     setAuthOpen(true)
+  }
+
+  /**
+   * 弹窗关闭：顺手清掉深链预填值。
+   * 预填只服务「从邮件点进来的那一次」—— 不清的话，之后切到注册表单会带出一个可能已过期的验证码。
+   */
+  const closeAuth = () => {
+    setAuthOpen(false)
+    setResetPrefill(null)
   }
 
   /** 锚点平滑滚动到色带（section）顶部：配合 scroll-margin-top 让整段模块完整入画 */
@@ -216,7 +231,7 @@ function Landing() {
         <AuthModal
           mode={authMode}
           onModeChange={setAuthMode}
-          onClose={() => setAuthOpen(false)}
+          onClose={closeAuth}
           prefill={resetPrefill ?? undefined}
         />
       )}

@@ -26,13 +26,25 @@ const PURPOSE_TEXT: Record<MailPurpose, string> = {
   'password-reset': '重置 Motif 密码',
 }
 
+/**
+ * HTML 上下文转义（属性与文本都够用）。
+ *
+ * ⚠️ 为什么必须有：直达链接里含管理员可配置的 `SITE_URL`。`new URL()` **不会**拒绝带引号的串
+ * （`https://x.io/?a=" onmouseover=...` 能通过校验并原样落库），所以裸插值进 `href="${link}"`
+ * 会让配置值**突破属性边界**，在发往用户的邮件里注入属性/事件/第二个链接（钓鱼面）。
+ * `&` 必须最先替换，否则会把后面生成的实体二次转义。
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function codeEmailHtml(code: string, purpose: MailPurpose, link?: string): string {
   // 有直达链接时追加一段「点链接即可」的引导；没有就完全不渲染，保持原文案
   const linkBlock = link
     ? `
   <p style="color:#52525b;font-size:14px;margin:20px 0 8px;">也可以直接点下面的链接进入重置页，省去手填邮箱与验证码：</p>
-  <a href="${link}" style="display:inline-block;background:#cc785c;color:#fff;text-decoration:none;font-size:14px;font-weight:600;border-radius:8px;padding:12px 20px;">前往重置密码</a>
-  <p style="color:#9ca3af;font-size:12px;margin-top:8px;word-break:break-all;">若按钮无法点击，请复制此链接到浏览器打开：${link}</p>`
+  <a href="${escapeHtml(link)}" style="display:inline-block;background:#cc785c;color:#fff;text-decoration:none;font-size:14px;font-weight:600;border-radius:8px;padding:12px 20px;">前往重置密码</a>
+  <p style="color:#9ca3af;font-size:12px;margin-top:8px;word-break:break-all;">若按钮无法点击，请复制此链接到浏览器打开：${escapeHtml(link)}</p>`
     : ''
   return `<div style="font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;max-width:520px;margin:0 auto;padding:24px;">
   <h2 style="color:#131311;margin:0 0 8px;">Motif 验证码</h2>

@@ -7,6 +7,7 @@ import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
 import { usePublicConfig } from '@/lib/use-public-config'
+import type { ResetPrefill } from '@/lib/reset-link'
 
 type Mode = 'login' | 'register' | 'reset'
 
@@ -25,7 +26,7 @@ interface AuthModalProps {
    * 找回密码**直达链接**带来的预填值（#21）：邮箱与验证码已由邮件链接给出，用户只需输新密码。
    * 只当 useState 的**初值**用 —— 之后以弹窗内 state 为准，不受父组件重渲染影响。
    */
-  prefill?: { email: string; code: string }
+  prefill?: ResetPrefill
 }
 
 /** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
@@ -141,9 +142,9 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           })
           setNotice('密码已重置，请用新密码登录。')
           onModeChange('login')
-          // 深链落地后清掉 query：验证码不该继续留在地址栏与浏览器历史里
-          //（只在确实带过 reset 参数时才 replace，避免无谓地动历史记录）
-          if (new URLSearchParams(window.location.search).has('reset')) router.replace('/')
+          // 深链 query 的清理不在这里：Landing 在**解析出预填值的那一刻**就抹掉了
+          //（见 Landing 的 URL 入口 effect）—— 放在这里会漏掉「深链 → 切注册 → 注册成功」这条路径
+          //（注册成功后整页换成 Workspace，本弹窗直接卸载，永远走不到这行）。
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '操作失败，请重试。')

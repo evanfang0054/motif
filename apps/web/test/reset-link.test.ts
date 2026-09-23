@@ -46,6 +46,16 @@ describe('buildResetLink：链接拼装口径', () => {
 
 describe('mailer 各渠道把链接渲染进正文', () => {
   const LINK = 'https://motif.example.com/?reset=1&email=a%40b.co&code=123456'
+  /** HTML 上下文里 `&` 必须写成实体，否则会把 query 截断成 `reset=1` */
+  const LINK_HTML = LINK.replace(/&/g, '&amp;')
+
+  /** 记下每次 sendMail 的入参，用来断言发出去的正文长什么样 */
+  function smtpRecorder(sent: Array<Record<string, unknown>>): SmtpMailer {
+    return new SmtpMailer(
+      { host: 'h', port: 465, secure: true, user: 'u', pass: 'p', from: 'f@x.io' },
+      () => ({ sendMail: async (o: Record<string, unknown>) => void sent.push(o) }) as never
+    )
+  }
 
   it('console 渠道把链接打到日志（本地联调不必手拼）', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -54,27 +64,31 @@ describe('mailer 各渠道把链接渲染进正文', () => {
     spy.mockRestore()
   })
 
-  it('SMTP：有链接时 html 与 text 都带上', async () => {
+  it('SMTP：有链接时 html（转义后）与 text（原文）都带上', async () => {
     const sent: Array<Record<string, unknown>> = []
-    const mailer = new SmtpMailer(
-      { host: 'h', port: 465, secure: true, user: 'u', pass: 'p', from: 'f@x.io' },
-      () => ({ sendMail: async (o: Record<string, unknown>) => void sent.push(o) }) as never
-    )
-    await mailer.sendVerificationCode('a@b.co', '123456', 'password-reset', LINK)
-    expect(String(sent[0].html)).toContain(LINK)
+    await smtpRecorder(sent).sendVerificationCode('a@b.co', '123456', 'password-reset', LINK)
+    expect(String(sent[0].html)).toContain(LINK_HTML)
+    // 纯文本部分不是 HTML 上下文，保持原文（用户要能直接复制粘贴）
     expect(String(sent[0].text)).toContain(LINK)
   })
 
   it('SMTP：**没有**链接时正文与改造前一致（不含 href / 不含链接文案）', async () => {
     const sent: Array<Record<string, unknown>> = []
-    const mailer = new SmtpMailer(
-      { host: 'h', port: 465, secure: true, user: 'u', pass: 'p', from: 'f@x.io' },
-      () => ({ sendMail: async (o: Record<string, unknown>) => void sent.push(o) }) as never
-    )
-    await mailer.sendVerificationCode('a@b.co', '123456', 'register')
+    await smtpRecorder(sent).sendVerificationCode('a@b.co', '123456', 'register')
     expect(String(sent[0].html)).not.toContain('href=')
     expect(String(sent[0].html)).not.toContain('前往重置密码')
     expect(String(sent[0].text)).toBe('你正在注册 Motif 账号，验证码 123456，10 分钟内有效。')
+  })
+
+  it('⚠️ 链接里的引号被转义 —— 突破不了 href 属性边界（SITE_URL 是管理员可配的）', async () => {
+    // 反证对象：不转义时 `href="…" onmouseover="…"` 会凭空多出一个属性，在用户邮件里注入事件/第二个链接
+    const nasty = 'https://x.io/?a=" onmouseover="alert(1)'
+    const sent: Array<Record<string, unknown>> = []
+    await smtpRecorder(sent).sendVerificationCode('a@b.co', '123456', 'password-reset', nasty)
+    const html = String(sent[0].html)
+    expect(html).not.toContain('" onmouseover="')
+    expect(html).not.toContain(nasty)
+    expect(html).toContain('&quot;')
   })
 
   it('Resend：body.html 与 body.text 都带上链接', async () => {
@@ -84,7 +98,9 @@ describe('mailer 各渠道把链接渲染进正文', () => {
       return new Response('{}', { status: 200 })
     })
     await m.sendVerificationCode('a@b.co', '123456', 'password-reset', LINK)
-    expect(calls[0].body).toContain(LINK)
+    const body = JSON.parse(calls[0].body) as { html: string; text: string }
+    expect(body.html).toContain(LINK_HTML)
+    expect(body.text).toContain(LINK)
   })
 
   it('SendGrid：content 里同时有 text/plain 与 text/html 两个 part', async () => {
@@ -94,9 +110,10 @@ describe('mailer 各渠道把链接渲染进正文', () => {
       return new Response('{}', { status: 200 })
     })
     await m.sendVerificationCode('a@b.co', '123456', 'password-reset', LINK)
-    const body = JSON.parse(calls[0].body) as { content: Array<{ type: string }> }
+    const body = JSON.parse(calls[0].body) as { content: Array<{ type: string; value: string }> }
     expect(body.content.map((c) => c.type)).toEqual(['text/plain', 'text/html'])
-    expect(calls[0].body).toContain(LINK)
+    expect(body.content.find((c) => c.type === 'text/html')!.value).toContain(LINK_HTML)
+    expect(body.content.find((c) => c.type === 'text/plain')!.value).toContain(LINK)
   })
 })
 
