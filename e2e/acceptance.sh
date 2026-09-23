@@ -15,7 +15,9 @@ export MOTIF_DATA_DIR="${MOTIF_DATA_DIR:-$WEB_DIR/.data-accept}"
 
 cd "$WEB_DIR"
 
-if [ ! -d .next ]; then
+# 判据用 .next/server 而不是 .next：16 里 dev 产物落在 .next/dev，跑过 dev 之后 .next 也存在，
+# 拿 .next 当「已有构建产物」会误判。
+if [ ! -d .next/server ]; then
   echo "[accept] building..."
   pnpm build
 fi

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "NODE_USE_ENV_PROXY=1 next dev -p 3100",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "NODE_USE_ENV_PROXY=1 next start -p 3100",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
