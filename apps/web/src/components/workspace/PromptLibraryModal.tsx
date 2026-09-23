@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
+import { Alert, Button, Chip, SearchField, Skeleton, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
@@ -107,6 +107,54 @@ function EntryCard({
           </Chip>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * 提示词库的骨架卡片：**与真实卡片同形**，尺寸逐项对齐 `EntryCard`，避免「骨架 → 内容」二次跳动。
+ *
+ * 对齐依据（照 `EntryCard` 量）：
+ * - 封面 `aspect-square w-full`
+ * - 标题 `text-sm`（行高 20px）→ `h-5`；描述 **`line-clamp-3`（最多三行）**，`leading-5` → 三条 `h-3` + `mt-1.5`
+ * - 底部行是 `Button size="sm"`（高 32px）与 `Chip` → `h-8` / `h-6`
+ *
+ * ⚠️ 描述画几行必须跟着 `line-clamp-N` 走：少画一行，内容到达时列表高度就会跳一次。
+ */
+function EntryCardSkeleton() {
+  return (
+    <div
+      className="flex flex-col overflow-hidden rounded-lg border"
+      style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
+    >
+      <Skeleton className="aspect-square w-full rounded-none" />
+      <div className="block px-3 pt-2">
+        <Skeleton className="h-5 w-4/5 rounded-medium" />
+        <Skeleton className="mt-1.5 h-3 w-full rounded-medium" />
+        <Skeleton className="mt-1.5 h-3 w-full rounded-medium" />
+        <Skeleton className="mt-1.5 h-3 w-2/3 rounded-medium" />
+      </div>
+      <div className="mt-auto flex items-center gap-1.5 px-3 pb-3 pt-2">
+        <Skeleton className="h-8 w-20 rounded-full" />
+        <Skeleton className="h-6 w-12 rounded-full" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 网格骨架：列数与真实网格一致（`sm:grid-cols-2 lg:grid-cols-3`）。
+ *
+ * ⚠️ `w-full` 不能省：本组件会被放进 `flex flex-col items-center` 的容器里，成为 **flex item** ——
+ * 不加 `w-full` 就按 fit-content 收缩；而网格列是 `minmax(0,1fr)`、骨架宽又是百分比，
+ * 在不确定宽度下会解析成 0 → **整个骨架塌成一条缝、看不见**（实测过）。
+ */
+function EntryGridSkeleton({ count = 6, className = '' }: { count?: number; className?: string }) {
+  return (
+    <div className={`grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-3 ${className}`} aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <EntryCardSkeleton key={i} />
+      ))}
     </div>
   )
 }
@@ -337,10 +385,11 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           </SearchField>
 
           <div onScroll={onScroll} className="mt-3 min-h-0 flex-1 overflow-y-auto pe-1">
-            {loading ? (
-              <div className="flex h-40 items-center justify-center">
-                <Spinner size="md" />
-              </div>
+            {loading && items.length === 0 ? (
+              /* **首屏**才用骨架：内容是形状可预判的卡片网格，骨架比转圈更贴近最终形态。
+                 ⚠️ 不能写成 `loading ?`：上游还在抓时每 2s 轮询一次 `load(1,'replace')` 会把 loading 置回 true，
+                 那样**已经渲染出来的卡片会被整块换成骨架、再换回来**（图片重挂 + 高度抖动），与「避免跳动」正相反。 */
+              <EntryGridSkeleton />
             ) : error ? (
               <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
                 <InlineText color="muted" type="body-sm">{error}</InlineText>
@@ -350,10 +399,12 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 </Button>
               </div>
             ) : items.length === 0 ? (
-              <div className="flex h-40 flex-col items-center justify-center gap-2 px-4 text-center text-sm" style={{ color: 'var(--muted)' }}>
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>
                 {emptyKind === 'fetching' ? (
                   <>
-                    <Spinner size="md" />
+                    {/* 上游还在抓：内容形状同样可预判（卡片网格）。⚠️ 这里不能限高（原来的 h-40 装不下三张卡），
+                        也不能让 grid 按 fit-content 收缩 —— 否则骨架塌成一条缝（见 EntryGridSkeleton 的说明）。 */}
+                    <EntryGridSkeleton count={3} />
                     <InlineText color="muted" type="body-sm">正在抓取提示词库…</InlineText>
                   </>
                 ) : emptyKind === 'failed' ? (
@@ -391,10 +442,17 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           </div>
 
           <div className="mt-2 flex items-center justify-between text-xs" style={{ color: 'var(--muted)' }}>
-            <InlineText color="muted" type="body-xs">
-              {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
-              {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在抓取提示词库…）</InlineText>}
-            </InlineText>
+            <div>
+              {/* 首屏加载中不显示「共 0 条」：与「真的没有数据」无法区分（同 ListUi 的口径） */}
+              {loading ? (
+                <Skeleton className="inline-block h-3.5 w-14 rounded-medium" />
+              ) : (
+                <>
+                  <InlineText color="muted" type="body-xs">{loadingMore ? '正在加载更多…' : `共 ${total} 条`}</InlineText>
+                  {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在抓取提示词库…）</InlineText>}
+                </>
+              )}
+            </div>
             {loadingMore && <Spinner size="sm" />}
           </div>
         </section>

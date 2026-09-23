@@ -39,12 +39,26 @@ export function ListEmptyContent({ text }: { text: string }) {
   )
 }
 
-/** 列表工具栏里的计数：加载中显示省略号而不是 0。role=status 保留读屏感知 */
+/**
+ * 列表工具栏里的计数：**加载中显示骨架条**，而不是「共 0 个」。
+ *
+ * 为什么不能显示 0：加载窗口里「共 0 个」与「真的没有数据」无法区分，会误导运营（本文件头注释同源）。
+ * 早先显示的是「共 … 个」—— 诚实但会闪一下；改成与数字等宽的骨架条，位置不跳。
+ */
 export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
+  // ⚠️ 外层必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
+  // 若加载时整个换掉、完成后再挂一个新元素，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
+  // ⚠️ 外层用 `<div>` 而不是 `<span>`：加载态塞的是骨架 `<div>`，`<span>` 里放 `<div>` 是非法嵌套
+  // （span 的内容模型只允许行内内容），会被 React 的嵌套校验告警、也可能造成水合不一致。
+  // 布局不受影响：父级 `.admin-toolbar` 是 flex 容器，flex item 一律块级化，span/div 表现一致。
   return (
-    <InlineText type="body-sm" className="admin-muted" role="status">
-      共 {loading ? '…' : total} {unit}
-    </InlineText>
+    <div role="status">
+      {loading ? (
+        <Skeleton className="inline-block h-4 w-16 rounded-medium" />
+      ) : (
+        <InlineText type="body-sm" className="admin-muted">共 {total} {unit}</InlineText>
+      )}
+    </div>
   )
 }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ProgressBar, ProgressCircle, Typography } from '@heroui/react'
+import { ProgressBar, ProgressCircle, Skeleton, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
@@ -52,7 +52,7 @@ export default function AdminHomePage() {
     return (
       <section className="admin-panel">
         <Typography type="h1" className="admin-title">概览</Typography>
-        <Typography type="body" className="admin-muted">加载中…</Typography>
+        <OverviewSkeleton />
       </section>
     )
   }
@@ -209,5 +209,33 @@ export default function AdminHomePage() {
         })}
       </section>
     </>
+  )
+}
+
+/**
+ * 概览页的加载骨架：**与真实内容同形** —— 一排统计卡（label 13px / value 26px / sub 12px，见 admin.css）
+ * 加一块面板。比一行「加载中…」更接近最终形态，也避免「一行字 → 整页卡片」的跳动。
+ */
+function OverviewSkeleton() {
+  return (
+    <div aria-hidden>
+      <div className="admin-cards">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div className="admin-card" key={i}>
+            <Skeleton className="h-3 w-16 rounded-medium" />
+            <Skeleton className="mt-2 h-7 w-24 rounded-medium" />
+            <Skeleton className="mt-1.5 h-3 w-28 rounded-medium" />
+          </div>
+        ))}
+      </div>
+      {/* ⚠️ 不套 .admin-panel：概览页的骨架是渲染在**外层 section.admin-panel 里面**的，
+          再套一层会变成「卡中卡」（双边框 + 双阴影）—— admin.css 自己写明要避免。 */}
+      <div style={{ marginTop: 16 }}>
+        <Skeleton className="h-4 w-28 rounded-medium" />
+        {Array.from({ length: 5 }, (_, i) => (
+          <Skeleton className="mt-3 h-3 w-full rounded-medium" key={i} />
+        ))}
+      </div>
+    </div>
   )
 }

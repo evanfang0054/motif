@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, Input, Label, ListBox, Select, Switch, Tabs, TextField, Typography } from '@heroui/react'
+import { Button, Checkbox, Input, Label, ListBox, Select, Skeleton, Switch, Tabs, TextField, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
@@ -322,7 +322,17 @@ export default function AdminSettingsPage() {
       <Typography type="h1" className="admin-title">系统设置</Typography>
       <Typography type="body" className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</Typography>
 
-      {loading && <Typography type="body" className="admin-muted">加载中…</Typography>}
+      {loading && (
+        <div className="mt-3 flex flex-col gap-5" aria-hidden>
+          {Array.from({ length: 4 }, (_, i) => (
+            <div className="flex flex-col gap-2" key={i}>
+              <Skeleton className="h-4 w-32 rounded-medium" />
+              <Skeleton className="h-9 w-full max-w-[420px] rounded-medium" />
+              <Skeleton className="h-3 w-56 rounded-medium" />
+            </div>
+          ))}
+        </div>
+      )}
       {err && (
         <div className="admin-alert-err" role="alert">
           {err}
