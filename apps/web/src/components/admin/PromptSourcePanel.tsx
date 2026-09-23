@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Link, Spinner, Table } from '@heroui/react'
+import { Alert, Button, Link, Spinner, Table, Typography } from '@heroui/react'
 import { ArrowRotateLeft, ArrowRotateRight, ArrowUpRightFromSquare } from '@gravity-ui/icons'
 import { api, type AdminPromptSource } from '@/lib/client'
 import { ListEmptyContent, ListLoadingRows } from './ListUi'
@@ -68,12 +68,12 @@ function PromptSourcePanel() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+      <Typography type="body-xs" className="" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
         提示词库的内容由服务端从上游开源提示词仓库抓取并缓存（成功源 1 小时自动更新一次）。
         抓取失败时用户侧继续展示上次成功的内容；失败源 5 分钟内不会自动重试，
         点「立即刷新」可立刻重试。5 个上游源 + 本地播种的「系统自带」都在这里列着，
         上游源的条目数为 0 表示还没抓到过。
-      </p>
+      </Typography>
 
       {error && (
         <Alert status="danger">

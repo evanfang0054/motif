@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Drawer, Input, SearchField, Select, ListBox, Table, TextField, NumberField } from '@heroui/react'
+import { Drawer, Input, ListBox, NumberField, SearchField, Select, Table, TextField, Typography } from '@heroui/react'
 import type { User } from '@motif/core'
 import { api } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
@@ -127,7 +127,7 @@ export default function AdminUsersPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">用户</h1>
+      <Typography type="h1" className="admin-title">用户</Typography>
 
       <div className="admin-toolbar">
         <SearchField
@@ -262,7 +262,7 @@ export default function AdminUsersPage() {
             <Drawer.Body>
               {adjust && (
                 <>
-                  <p className="admin-muted">当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。</p>
+                  <Typography type="body" className="admin-muted">当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。</Typography>
                   <label className="admin-field">
                     调整张数
                     <NumberField
@@ -309,9 +309,9 @@ export default function AdminUsersPage() {
             <Drawer.Body>
               {reset && (
                 <>
-                  <p className="admin-alert-err" role="alert" style={{ display: 'block' }}>
+                  <Typography type="body" className="admin-alert-err" role="alert" style={{ display: 'block' }}>
                     关闭后不再显示。请立刻通过安全渠道转交，并要求对方登录后立即修改。
-                  </p>
+                  </Typography>
                   <pre className="admin-detail">{reset.password}</pre>
                   <div className="admin-actions">
                     <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(reset.password).catch(() => undefined)}>

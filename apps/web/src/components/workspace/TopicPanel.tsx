@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Input, TextField } from '@heroui/react'
+import { Button, Input, TextField, Typography } from '@heroui/react'
 import { ChevronLeft, Pencil, Plus, TrashBin } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
+import { InlineText } from '@/components/ui/typography'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { Topic } from '@motif/core'
 import { TOPIC_STATUS_LABEL } from '@motif/core'
@@ -42,9 +43,9 @@ function TopicPanel(p: Props) {
   return (
     <div className="ws-panel">
       <div className="ws-panel-head">
-        <span className="ws-panel-label min-w-0 flex-1 truncate" title={p.activeTitle}>
+        <InlineText type="body-xs" className="ws-panel-label min-w-0 flex-1 truncate" title={p.activeTitle}>
           {p.activeTitle}
-        </span>
+        </InlineText>
         <IconButton variant="secondary" size="sm" label="新建任务" onPress={p.onNewTask}>
           <Plus />
         </IconButton>
@@ -55,9 +56,9 @@ function TopicPanel(p: Props) {
 
       <div className="ws-panel-scroll">
         {p.topics.length === 0 && (
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          <Typography type="body-sm" style={{ color: 'var(--muted)' }}>
             还没有任务，点上方「＋」新建一个。
-          </p>
+          </Typography>
         )}
         {p.topics.map((t) => (
           <div key={t.id} className="ws-topic-item" data-active={t.id === p.activeId} onClick={() => p.onSelect(t.id)}>
@@ -100,7 +101,7 @@ function TopicPanel(p: Props) {
             ) : (
               <>
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+                  <InlineText type="body-sm" className="min-w-0 flex-1 truncate">{t.title}</InlineText>
                   {/* ✎ / 🗑 原为文字字形与 emoji（emoji 还随平台变样），2026-09-21 换成图标库 + Tooltip */}
                   <IconButton
                     variant="secondary"
@@ -126,7 +127,7 @@ function TopicPanel(p: Props) {
                     <TrashBin />
                   </IconButton>
                 </div>
-                <span className="ws-badge w-fit">{TOPIC_STATUS_LABEL[t.status] ?? t.status}</span>
+                <InlineText type="body-xs" className="ws-badge w-fit">{TOPIC_STATUS_LABEL[t.status] ?? t.status}</InlineText>
               </>
             )}
           </div>

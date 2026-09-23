@@ -21,7 +21,7 @@ import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialo
 import { PromptLibraryModal } from './PromptLibraryModal'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { PasswordHintBanner } from './PasswordHintBanner'
-import { AlertDialog, Button, Spinner } from '@heroui/react'
+import { AlertDialog, Button, Spinner, Typography } from '@heroui/react'
 import { showToast } from '@/components/ui/toast'
 import { activeMessage, isBusyStatus, planTopicNotices, terminalNotice } from '@/lib/topic-notice'
 
@@ -686,7 +686,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
           </div>
         ) : detail === null && detailFailed ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
-            <p className="text-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</p>
+            <Typography type="body-sm" className="" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</Typography>
             <Button
               variant="secondary"
               onPress={() => {
@@ -928,15 +928,15 @@ function Workspace({ initialUser }: { initialUser: User }) {
               </AlertDialog.Header>
               <AlertDialog.Body>
                 {confirmDelete.kind === 'image' ? (
-                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                  <Typography type="body-sm" className="" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                     {deleteImageConfirmText(confirmDelete.ids.length)}
                     <br />
                     其余图片的编号保持不变，提示词里已写好的编号仍会指向原来的图片。
-                  </p>
+                  </Typography>
                 ) : (
-                  <p className="text-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+                  <Typography type="body-sm" className="" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                     将删除任务「{confirmDelete.title}」及其全部生成记录与图片，删除后无法恢复。
-                  </p>
+                  </Typography>
                 )}
               </AlertDialog.Body>
               <AlertDialog.Footer>

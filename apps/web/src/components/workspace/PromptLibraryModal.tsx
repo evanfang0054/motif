@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup } from '@heroui/react'
+import { Alert, Button, Chip, SearchField, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { showToast } from '@/components/ui/toast'
@@ -306,9 +306,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
 
           <div className="ws-panel-label mb-1.5 mt-4">标签</div>
           {facetTags.length === 0 ? (
-            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+            <Typography type="body-xs" className="" style={{ color: 'var(--muted)' }}>
               暂无标签
-            </p>
+            </Typography>
           ) : (
             <TagGroup
               selectionMode="multiple"

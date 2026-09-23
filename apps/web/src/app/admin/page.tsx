@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ProgressBar, ProgressCircle } from '@heroui/react'
+import { ProgressBar, ProgressCircle, Typography } from '@heroui/react'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
 import { formatMoney } from '@/lib/format'
@@ -42,7 +42,7 @@ export default function AdminHomePage() {
   if (err) {
     return (
       <section className="admin-panel">
-        <h1 className="admin-title">概览</h1>
+        <Typography type="h1" className="admin-title">概览</Typography>
         <div className="admin-alert-err" role="alert">{err}</div>
       </section>
     )
@@ -50,8 +50,8 @@ export default function AdminHomePage() {
   if (!data) {
     return (
       <section className="admin-panel">
-        <h1 className="admin-title">概览</h1>
-        <p className="admin-muted">加载中…</p>
+        <Typography type="h1" className="admin-title">概览</Typography>
+        <Typography type="body" className="admin-muted">加载中…</Typography>
       </section>
     )
   }
@@ -70,7 +70,7 @@ export default function AdminHomePage() {
   return (
     <>
     <section className="admin-panel">
-      <h1 className="admin-title">概览</h1>
+      <Typography type="h1" className="admin-title">概览</Typography>
 
       <div className="admin-cards">
         <div className="admin-card" id="ov-users">
@@ -175,7 +175,7 @@ export default function AdminHomePage() {
     </section>
 
       <section className="admin-panel admin-ledger">
-        <h2 className="admin-title">额度账目</h2>
+        <Typography type="h2" className="admin-title">额度账目</Typography>
         <div className={ledgerDiff === 0 ? 'admin-ledger-ok' : 'admin-ledger-bad'} role="status">
           {/* ✓ / ⚠ 原为符号冒充图标（2026-09-21 换图标库）；句子本身是状态文案，保留文字 */}
           {ledgerDiff === 0 ? (
@@ -191,7 +191,7 @@ export default function AdminHomePage() {
           )}
         </div>
         {onlyOpening && (
-          <p className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</p>
+          <Typography type="body" className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</Typography>
         )}
         <div className="admin-source-heading">来源构成</div>
         {c.bySource.map((s) => {

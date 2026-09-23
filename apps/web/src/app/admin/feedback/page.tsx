@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Select, ListBox, Table } from '@heroui/react'
+import { ListBox, Select, Table, Typography } from '@heroui/react'
 import { api, type AdminFeedbackRow } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
@@ -57,7 +57,7 @@ export default function AdminFeedbackPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">反馈</h1>
+      <Typography type="h1" className="admin-title">反馈</Typography>
 
       <div className="admin-toolbar">
         {/* ⚠️ HeroUI v3 的 Select 建在 React Aria 上，`value` 就是 `ListBox.Item` 的 id ——

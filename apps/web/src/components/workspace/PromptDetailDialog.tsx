@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Alert, Button, Chip, Spinner } from '@heroui/react'
+import { Alert, Button, Chip, Spinner, Typography } from '@heroui/react'
 import { Copy } from '@gravity-ui/icons'
 import type { PromptLibraryEntry } from '@/lib/client'
 import { isAttachableImage, PROMPT_ENTRY_MAX_IMAGES } from '@/lib/prompts'
@@ -150,18 +150,18 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
             </div>
           )}
           {entry.description && (
-            <p className="text-xs leading-6" style={{ color: 'var(--muted)' }}>
+            <Typography type="body-xs" className=" leading-6" style={{ color: 'var(--muted)' }}>
               {entry.description}
-            </p>
+            </Typography>
           )}
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-7">{entry.prompt}</p>
+          <Typography type="body-sm" className="mt-2 whitespace-pre-wrap leading-7">{entry.prompt}</Typography>
         </div>
 
         {hasAttachable && (
-          <p className="shrink-0 text-xs leading-5" style={{ color: 'var(--muted)' }}>
+          <Typography type="body-xs" className="shrink-0 leading-5" style={{ color: 'var(--muted)' }}>
             「用作参考图」会把这张示例图放进本任务的参考图暂存区（点「开始生成」后进入画布）；
             <b>提示词不会被改动</b>。
-          </p>
+          </Typography>
         )}
       </div>
     </WorkspaceModal>

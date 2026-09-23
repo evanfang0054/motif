@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/lib/format'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, NumberField, SearchField, Select, ListBox, Table, TextField } from '@heroui/react'
+import { Button, Input, ListBox, NumberField, SearchField, Select, Table, TextField, Typography } from '@heroui/react'
 import { Copy, FileArrowDown } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { api, type AdminCdk } from '@/lib/client'
@@ -112,7 +112,7 @@ export default function AdminCdksPage() {
 
   return (
     <section className="admin-panel">
-      <h1 className="admin-title">CDK 管理</h1>
+      <Typography type="h1" className="admin-title">CDK 管理</Typography>
 
       <div className="admin-form">
         <label>

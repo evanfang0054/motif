@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Alert, Button, Card } from '@heroui/react'
+import { Alert, Button, Card, Typography } from '@heroui/react'
 import { api, ApiError } from '@/lib/client'
 import { BrandMark } from '@/components/BrandMark'
 import { anchorRender } from '@/components/ui/anchor-button'
@@ -65,9 +65,9 @@ function Panel() {
     <Card className="p-6" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
       <div className="flex items-center justify-center gap-2"><BrandMark /><b>支付结果</b></div>
       {state === 'pending' && (
-        <p className="mt-3 text-sm" role="status" aria-live="polite">
+        <Typography type="body-sm" className="mt-3" role="status" aria-live="polite">
           <span className="pay-pulse" /> 支付处理中，到账后本页自动更新…
-        </p>
+        </Typography>
       )}
       {state === 'paid' && (
         <Alert status="success" className="mt-4">

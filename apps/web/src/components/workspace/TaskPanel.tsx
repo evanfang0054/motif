@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField } from '@heroui/react'
+import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField, Typography } from '@heroui/react'
 import { ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { SIZE_PRESETS, sizeLabelOf } from '@/lib/templates'
@@ -235,7 +235,7 @@ function TaskPanel(p: Props) {
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>
+          <Typography type="body-xs" className="mt-2" style={{ color: 'var(--muted)' }}>
             {atReferenceCap
               ? `已达上限 ${MAX_REFERENCE_IMAGES} 张，移除一张后可继续上传`
               : hasReferenceRows
@@ -246,7 +246,7 @@ function TaskPanel(p: Props) {
                     .filter(Boolean)
                     .join('；')
                 : '支持 PNG / JPG / WebP，单张 ≤10MB'}
-          </p>
+          </Typography>
         </div>
 
         {/* ── 参数 ──────────────────────────────────────────── */}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, Input, Label, Select, ListBox, Switch, Tabs, TextField } from '@heroui/react'
+import { Button, Checkbox, Input, Label, ListBox, Select, Switch, Tabs, TextField, Typography } from '@heroui/react'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
 import { GuideCardSection } from '@/components/admin/GuideCardSection'
@@ -185,7 +185,7 @@ export default function AdminSettingsPage() {
     if (!h) return null
     const switchedOff = switchKey ? !isOn(switchKey) : false
     return (
-      <p className="admin-field-hint" data-slot="config-health">
+      <Typography type="body" className="admin-field-hint" data-slot="config-health">
         {HEALTH_LABEL[group] ?? group}配置：
         {switchedOff ? (
           <>未启用（开关关闭，生成时不会调用）</>
@@ -200,7 +200,7 @@ export default function AdminSettingsPage() {
             未就绪：{h.reason ?? '配置不完整'}
           </>
         )}
-      </p>
+      </Typography>
     )
   }
 
@@ -241,18 +241,18 @@ export default function AdminSettingsPage() {
     return (
       <>
         {group === 'data' && (
-          <p className="admin-muted">
+          <Typography type="body" className="admin-muted">
             这两项决定数据库自身的位置，属于先于数据库存在的引导参数，只能在部署的环境变量里修改。
-          </p>
+          </Typography>
         )}
         {guideCards.length > 0 && <GuideCardSection cards={guideCards} />}
         {/* 只有「开关型 + 静默降级」的两个分区需要就绪行（payment 的就绪提示在危险区 PAYMENT_CHANNEL 旁） */}
         {group === 'llm' && healthLine('llm', 'LLM_ENHANCE_ENABLED')}
         {group === 'storage' && healthLine('storage')}
         {channelDirty && (
-          <p className="admin-field-hint">
+          <Typography type="body" className="admin-field-hint">
             渠道已改为「{dirtyKey}」尚未保存：下方字段与引导卡已按新渠道显示，填好后点「保存」生效。
-          </p>
+          </Typography>
         )}
         {shownItems.map((item) => (
           <div className="admin-field" key={item.key}>
@@ -265,7 +265,7 @@ export default function AdminSettingsPage() {
               </span>
             </label>
             {field(item)}
-            {item.hint && <p className="admin-field-hint">{item.hint}</p>}
+            {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}
           </div>
         ))}
         {group !== 'data' && groupItems.length > 0 && (
@@ -302,7 +302,7 @@ export default function AdminSettingsPage() {
             >
               {testing ? '发送中…' : '发送测试邮件'}
             </Button>
-            <p className="admin-field-hint">先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。</p>
+            <Typography type="body" className="admin-field-hint">先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。</Typography>
             {testResult && (
               <div className={testResult.ok ? 'admin-alert-ok' : 'admin-alert-err'} role="status">
                 {testResult.text}
@@ -318,10 +318,10 @@ export default function AdminSettingsPage() {
 
   return (
     <section className="admin-panel" id="settings-root">
-      <h1 className="admin-title">系统设置</h1>
-      <p className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</p>
+      <Typography type="h1" className="admin-title">系统设置</Typography>
+      <Typography type="body" className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</Typography>
 
-      {loading && <p className="admin-muted">加载中…</p>}
+      {loading && <Typography type="body" className="admin-muted">加载中…</Typography>}
       {err && (
         <div className="admin-alert-err" role="alert">
           {err}
@@ -354,7 +354,7 @@ export default function AdminSettingsPage() {
           ))}
           {dangerItems.length > 0 && (
             <Tabs.Panel id="danger">
-              <p className="admin-muted">以下开关会削弱系统安全基线，变更需二次确认并留痕。</p>
+              <Typography type="body" className="admin-muted">以下开关会削弱系统安全基线，变更需二次确认并留痕。</Typography>
               {dangerItems.map((item) => (
                 <div className="admin-field" key={item.key}>
                   <label htmlFor={`setting-${item.key}`}>
@@ -362,11 +362,11 @@ export default function AdminSettingsPage() {
                     <span className="admin-field-key">{item.key}</span>
                   </label>
                   {field(item)}
-                  {item.hint && <p className="admin-field-hint">{item.hint}</p>}
+                  {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}
                   {item.key === 'PAYMENT_CHANNEL' && (() => {
                     const paymentHealth = health.find((h) => h.group === 'payment')
                     return (
-                      <p className="admin-field-hint">
+                      <Typography type="body" className="admin-field-hint">
                         当前支付配置：
                         {paymentHealth?.ready ? (
                           <>
@@ -386,7 +386,7 @@ export default function AdminSettingsPage() {
                         >
                           前往「支付与套餐」
                         </button>
-                      </p>
+                      </Typography>
                     )
                   })()}
                 </div>
