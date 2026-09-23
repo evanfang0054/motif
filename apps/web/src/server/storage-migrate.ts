@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { storagePathFor } from '@motif/db'
 import { createStorageFromConfig, type Storage } from './storage'
+import { runBounded } from './bounded'
 
 /**
  * 本地 → 远端的一次性搬迁。CLI（`scripts/storage-migrate.mjs`）只是薄壳，
@@ -111,35 +112,44 @@ export function listOrphans(dataDir: string, liveKeys: ReadonlySet<string>): str
 }
 
 /**
- * 回查哪些 key 还在。
+ * 回查哪些 key 还在（有界并发，避免黑洞端点下 2N 次串行探测看起来像卡死）。
  * `exists` 抛错一律按「还在」算 —— **确认不了就不该声称删掉了**，这是删数据场景该有的保守口径。
  */
-async function stillThere(storage: Storage, keys: string[]): Promise<string[]> {
+async function stillThere(storage: Storage, keys: readonly string[]): Promise<string[]> {
   const out: string[] = []
-  for (const key of keys) {
+  await runBounded(keys, VERIFY_CONCURRENCY, async (key) => {
     try {
       if (await storage.exists(key)) out.push(key)
     } catch {
       out.push(key)
     }
-  }
-  return out
+  })
+  // 并发 push 的顺序不确定，排一下让返回值可预期（调用方与测试都按集合语义用）
+  return out.sort()
 }
+
+/** 回查阶段（`exists`）的并发上限 */
+const VERIFY_CONCURRENCY = 8
 
 /**
  * 清掉孤儿对象（#61）：`planMigration` 只算不删，这里才是真正动手的地方。
  *
- * ⚠️ **这是删数据的运维动作**，故比搬迁多两道闸：
- * 1. `assertPruneSafe` 的空库拒绝（见上）；
- * 2. 只有显式传了 `--prune-orphans` 才会被调到（CLI 侧把关，见 `scripts/storage-migrate.mjs`）。
+ * ⚠️ **这是删数据的运维动作**，故比搬迁多两道闸（都在 `assertPruneSafe` 里）：
+ * 1. **空库**：`liveKeys` 为空却扫到本地对象 → 拒绝，`--force-prune` **越不过**；
+ * 2. **孤儿占比过高**：孤儿 ≥10 且占比 >50% → 拒绝，`--force-prune` 可越过。
+ * 此外只有显式传了 `--prune-orphans` 才会被调到（CLI 侧把关）。
  *
  * 孤儿来源是**本地扫描**：`listOrphans` = `listLocalKeys - liveKeys`。所以「只在桶里、本地没有副本」
  * 的对象扫不出来 —— 搬迁是复制不是移动，正常流程下本地是超集，故这个限制只在有人手工删过本地
  * 文件时才会碰到。
  *
  * 删除两侧都试，各自 best-effort（与 `removeFromAllStorages` 同语义）：单侧失败不中断整批。
- * **两侧都回查**并如实回报 —— 早期版本只回查本地，于是「远端一个都没删掉」时会打印
- * 「清理完成」并以 0 退出，等于谎报干净。
+ * **两侧都回查**并如实回报 —— 只回查本地的话，「远端一个都没删掉」也会被当成清理干净。
+ *
+ * ⚠️ 远端**不能只信 `exists`**：桶名配错时 `statObject` 走 HEAD、404 无 body，于是
+ * `NoSuchBucket` 也会被当成 `NotFound` → `exists` 返回 false（见 `storage.ts` 的说明）。
+ * 唯一能区分「桶配错」与「对象不存在」的信号是 `remove` 抛的错，所以 remove 失败的 key
+ * 一律并入 `remainingRemote`，哪怕 exists 说它不在。
  */
 export async function pruneOrphans(
   dataDir: string,
@@ -155,26 +165,34 @@ export async function pruneOrphans(
 
   const orphaned = listOrphans(dataDir, liveKeys)
   const local = createStorageFromConfig({ STORAGE_DRIVER: 'local' }, dataDir)
+  const remoteRemoveFailed = new Set<string>()
   let done = 0
   for (const key of orphaned) {
     try {
       await local.remove(key)
     } catch {
-      // 本地删失败：留着，由下面的 remainingLocal 如实报出来
+      // 本地删失败：`stillThere(local)` 会如实报出来（本地 exists 就是 fs 探测，可信）
     }
     try {
       await remote.remove(key)
     } catch {
-      // 远端可能不可达/无权限 —— 不该因此中断整批，但必须由 remainingRemote 报出来
+      // 远端可能不可达/无权限 —— 不该因此中断整批，但必须记下来（见上方 ⚠️）
+      remoteRemoveFailed.add(key)
     }
     done += 1
     opts.onProgress?.(done, orphaned.length, key)
   }
 
+  const remainingRemote = await stillThere(remote, orphaned)
+  for (const key of orphaned) {
+    if (remoteRemoveFailed.has(key) && !remainingRemote.includes(key)) remainingRemote.push(key)
+  }
+  remainingRemote.sort()
+
   return {
     candidates: orphaned,
     remainingLocal: await stillThere(local, orphaned),
-    remainingRemote: await stillThere(remote, orphaned),
+    remainingRemote,
   }
 }
 
@@ -206,7 +224,11 @@ const ORPHAN_GUARD_RATIO = 0.5
  *
  * 抽成独立函数是为了让 `--prune-orphans --dry-run` 也走同一道闸 —— 否则「连错库」时
  * dry-run 会打出一份「全库对象都是孤儿」的清单，看着像正常输出，去掉 `--dry-run` 就清空了。
- * 返回本地对象总数，省掉调用方再扫一次。
+ * 返回本地对象总数（调用方打日志用）。
+ *
+ * ⚠️ 已知的**有界**局限：本地对象 <10 个时占比闸不生效，所以「库非空但与本存储完全无关
+ * 且本地只有个位数对象」仍会被放行 —— 影响面就是那几个对象，且此时误拒会挡住合法的
+ * 小规模清理，故不做更激进的拦截。
  */
 export function assertPruneSafe(dataDir: string, liveKeys: ReadonlySet<string>, force = false): number {
   const all = listLocalKeys(dataDir)

@@ -4,6 +4,7 @@ import { createImageProviderFromEnv, type ImageProvider } from '@motif/image-pro
 import { MisconfiguredMailer, createMailerFromConfig, type MailerConfig } from './mailer'
 import { ConfigError } from './config-error'
 import { createStorageFromConfig, type Storage } from './storage'
+import { runBounded } from './bounded'
 import { resolveConfigValues } from './settings'
 
 /**
@@ -168,26 +169,6 @@ export async function removeFromAllStorages(key: string, dataDir?: string): Prom
 
 /** 删任务时一次清很多对象的并发上限。见 `removeManyFromAllStorages` 的说明。 */
 export const REMOVE_CONCURRENCY = 8
-
-/**
- * 有界并发地跑一批任务，**全部跑完才 resolve**。
- *
- * 抽出来是为了能被断言「并发度真的有界」—— 直接把 `Promise.all` 铺开会把 N 个请求同时打出去，
- * 而串行又慢。语义上等价于 for-await，只是同时最多 `concurrency` 个在飞。
- * 单项失败由 `task` 自己吞（这里不做错误处理，`Promise.all` 只等完成）。
- */
-export async function runBounded<T>(items: readonly T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
-  let next = 0
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      // JS 单线程：`next++` 在两次 await 之间不会被别的 worker 插进来，天然是取号
-      const item = items[next++]
-      await task(item)
-    }
-  }
-  const n = Math.min(Math.max(1, concurrency), items.length)
-  await Promise.all(Array.from({ length: n }, worker))
-}
 
 /**
  * 清掉一批 key（#61 删任务用）。

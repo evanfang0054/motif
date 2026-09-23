@@ -29,6 +29,12 @@ const prune = process.argv.includes('--prune-orphans')
 /** 越过「孤儿占比过高」闸。空库闸不可越过。 */
 const forcePrune = process.argv.includes('--force-prune')
 
+// 单独给 --force-prune 会被静默忽略、然后去跑搬迁 —— 与用户意图正相反，故直接报错
+if (forcePrune && !prune) {
+  console.error('[motif] --force-prune 只与 --prune-orphans 搭配使用。单独给会被忽略（命令会去跑搬迁），故中止。')
+  process.exit(1)
+}
+
 await bootstrapConfig()
 const { store, dataDir } = getRuntime()
 const values = resolveConfigValues(store, process.env)
@@ -73,10 +79,26 @@ if (prune) {
   // prune 的失败要自己的标签：走到外层那个 catch 会被打上「搬迁失败：…请检查端点/桶/凭据/网络」，
   // 而 prune 根本没在搬东西，那个提示会把人带偏。
   try {
-    // 先过安全闸（空库 / 孤儿占比过高 → 拒绝）：dry-run 也走，免得打出一份看着正常的全量清单
-    assertPruneSafe(dataDir, liveKeys, forcePrune)
-    // 孤儿清单只扫本地：远端不可达时 dry-run 依然能看清单（也不做与清理无关的远端探测）
+    // 孤儿清单只扫本地：远端不可达时也能看清单（也不做与清理无关的远端探测）
     const orphaned = listOrphans(dataDir, liveKeys)
+    // 安全闸（空库 / 孤儿占比过高）。dry-run 也走 —— 否则「连错库」时会打出一份看着正常的
+    // 全量清单。被拦时**仍然把清单打出来**：否则运维连「到底会删什么」都看不到，
+    // 只能无脑加 --force-prune，闸就白设了。
+    let refused = null
+    try {
+      assertPruneSafe(dataDir, liveKeys, forcePrune)
+    } catch (e) {
+      if (!(e instanceof PruneRefusedError)) throw e
+      refused = e.message
+    }
+    if (refused) {
+      console.error(`[motif] ${refused}`)
+      if (orphaned.length) {
+        console.error(`[motif] 被拦下的清单（${orphaned.length} 个，本次不会删）：`)
+        for (const key of orphaned) console.error(`  ${key}`)
+      }
+      process.exit(1)
+    }
     if (dryRun) {
       if (!orphaned.length) {
         console.log('[motif] 没有孤儿对象，无需清理。')
