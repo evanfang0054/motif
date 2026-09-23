@@ -217,7 +217,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
             <HeroModal.CloseTrigger aria-label="关闭" />
           </HeroModal.Header>
           <HeroModal.Body>
-            <Typography type="body-sm" className="" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
+            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
 
             <form onSubmit={submit} className="mt-2">
               {mode === 'register' && (

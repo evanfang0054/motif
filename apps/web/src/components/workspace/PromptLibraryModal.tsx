@@ -307,7 +307,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
 
           <div className="ws-panel-label mb-1.5 mt-4">标签</div>
           {facetTags.length === 0 ? (
-            <Typography type="body-xs" className="" style={{ color: 'var(--muted)' }}>
+            <Typography type="body-xs" style={{ color: 'var(--muted)' }}>
               暂无标签
             </Typography>
           ) : (
@@ -360,7 +360,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                   <>
                     <InlineText color="muted" type="body-sm">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
                     {failures.map((f) => (
-                      <InlineText type="body-xs" key={f.sourceId} className="">
+                      <InlineText type="body-xs" key={f.sourceId}>
                         {f.sourceName}：{f.error}
                       </InlineText>
                     ))}

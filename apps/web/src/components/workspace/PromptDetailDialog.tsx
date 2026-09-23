@@ -151,7 +151,7 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
             </div>
           )}
           {entry.description && (
-            <Typography type="body-xs" className=" leading-6" style={{ color: 'var(--muted)' }}>
+            <Typography type="body-xs" className="leading-6" style={{ color: 'var(--muted)' }}>
               {entry.description}
             </Typography>
           )}

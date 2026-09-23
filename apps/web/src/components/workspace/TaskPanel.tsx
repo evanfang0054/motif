@@ -138,7 +138,7 @@ function TaskPanel(p: Props) {
               文字直说原因（见下方 atReferenceCap 分支） */}
           <div className="mb-2 flex items-center justify-between">
             <InlineText type="body-sm" className="ws-panel-label">参考图</InlineText>
-            <InlineText type="body-xs" className="" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
+            <InlineText type="body-xs" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
               {p.referenceCount} / {MAX_REFERENCE_IMAGES}
             </InlineText>
           </div>

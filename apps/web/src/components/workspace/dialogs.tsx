@@ -101,7 +101,7 @@ function BillingDialog({ onClose, onPaid, onRedeem }: { onClose: () => void; onP
 
   return (
     <Modal title="充值额度" onClose={onClose}>
-      <Typography type="body-sm" className="" style={{ color: 'var(--muted)' }}>{payNote}</Typography>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{payNote}</Typography>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {packages.map((pkg) => (
           <Button
@@ -158,7 +158,7 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
 
   return (
     <Modal title="CDK 兑换" onClose={onClose}>
-      <Typography type="body-sm" className="" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</Typography>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</Typography>
       <form onSubmit={submit} className="mt-3 flex gap-2">
         <TextField aria-label="CDK" className="min-w-0 flex-1" value={code} onChange={setCode}>
           <Input placeholder="输入 CDK" />
@@ -187,7 +187,7 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
 
   return (
     <Modal title="邀请好友（获得额度）" onClose={onClose}>
-      <Typography type="body-sm" className="" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
+      <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
         {cfg ? (
           <>
             好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励{' '}
@@ -320,7 +320,7 @@ function ProfileDialog({
 
   return (
     <Modal title="个人资料" onClose={onClose}>
-      <Typography type="body-xs" className="" style={{ color: 'var(--muted)' }}>{user.email}</Typography>
+      <Typography type="body-xs" style={{ color: 'var(--muted)' }}>{user.email}</Typography>
 
       <form onSubmit={saveProfile} className="mt-3">
         <div className="flex items-end gap-2">
