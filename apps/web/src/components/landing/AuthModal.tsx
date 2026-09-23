@@ -4,15 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Alert, Button, Input, InputGroup, Label, Link, Modal as HeroModal, TextField, Typography } from '@heroui/react'
 import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
+import { PASSWORD_RULE_TEXT } from '@motif/core'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
+import { clientAuthError, isFormFilled, switchAuthFields, type AuthMode } from '@/lib/auth-form'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { ResetPrefill } from '@/lib/reset-link'
 
-type Mode = 'login' | 'register' | 'reset'
+/** 当前视图（三种视图共用同一个弹窗，值由 Landing 持有） */
+type Mode = AuthMode
 
 const RESEND_COOLDOWN = 60
 
+/** 发送验证码前的邮箱形状预检：只判「像不像邮箱」，用于把反馈落在手指附近（提交路径走 core 的 validateEmail） */
 function isEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 }
@@ -118,9 +122,36 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
     }, 1000)
   }, [])
 
+  const switchMode = useCallback(
+    (m: Mode) => {
+      onModeChange(m)
+      setError(null)
+      setNotice(null)
+      setCodeMsg(null)
+      setCooldown(0)
+      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）
+      const next = switchAuthFields({ name, email, code, password, passwordConfirm, inviteCode }, m)
+      setName(next.name)
+      setEmail(next.email)
+      setCode(next.code)
+      setPassword(next.password)
+      setPasswordConfirm(next.passwordConfirm)
+      setInviteCode(next.inviteCode)
+    },
+    [onModeChange, name, email, code, password, passwordConfirm, inviteCode]
+  )
+
   const submit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
+      // 客户端先行校验：空表单 / 格式 / 密码规则 / 两次不一致都在这里就地报错，不发请求。
+      // 命中时只 setError 后 return —— 对话框保持打开，用户能立刻看到原因（#80-1.1）。
+      const localErr = clientAuthError(mode, { name, email, code, password, passwordConfirm })
+      if (localErr) {
+        setNotice(null)
+        setError(localErr)
+        return
+      }
       setError(null)
       setNotice(null)
       setBusy(true)
@@ -129,6 +160,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           await api.login(email, password)
           router.refresh()
         } else if (mode === 'register') {
+          // 服务端错误（验证码无效 / 邮箱已注册…）一律由下面的 catch 落进对话框内的 Alert；
+          // 只有成功才 refresh —— 失败路径既不关窗也不吞错（#80-1.1）。
           await api.register({ name, email, code, password, passwordConfirm, inviteCode: inviteCode || undefined })
           router.refresh()
         } else {
@@ -140,8 +173,10 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
             const d = (await r.json()) as { error?: string }
             if (!r.ok) throw new Error(d.error || '重置失败')
           })
+          // #80-1.2 同类泄漏：重置成功切回登录视图也必须清掉密码类字段（否则登录框会带着刚设置的新密码）。
+          // 但 switchMode 内部会先 setNotice(null)，所以成功提示必须落在它**之后** —— 顺序反了就看不到提示。
+          switchMode('login')
           setNotice('密码已重置，请用新密码登录。')
-          onModeChange('login')
           // 深链 query 的清理不在这里：Landing 在**解析出预填值的那一刻**就抹掉了
           //（见 Landing 的 URL 入口 effect）—— 放在这里会漏掉「深链 → 切注册 → 注册成功」这条路径
           //（注册成功后整页换成 Workspace，本弹窗直接卸载，永远走不到这行）。
@@ -152,7 +187,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, router]
+    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode]
   )
 
   const sendCode = useCallback(async () => {
@@ -183,14 +218,6 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
     }
   }, [mode, email, cooldown, startCooldown])
 
-  const switchMode = useCallback((m: Mode) => {
-    onModeChange(m)
-    setError(null)
-    setNotice(null)
-    setCodeMsg(null)
-    setCooldown(0)
-  }, [])
-
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
   const cfg = usePublicConfig()
   const subtitle =
@@ -206,6 +233,15 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   return (
     <HeroModal.Backdrop
       isOpen
+      /*
+       * 认证弹窗**不允许**点背景关闭（HeroUI 的 Backdrop 默认 isDismissable=true）。
+       * 为什么：矮视口（如 1280×633）下弹窗内容会内部滚动、提交按钮紧贴外框留白，用户「点按钮」极易点空
+       * 而落在遮罩上 —— 默认行为会把整个弹窗静默关掉，已填的邮箱 / 密码 / 验证码全丢且没有任何提示
+       *（#80-1.1 的真因）。宁可让这次点击变成空操作，也不能静默丢掉用户已填的表单。
+       * Esc 仍然可以关闭（**不**设 isKeyboardDismissDisabled）：键盘用户需要一个确定的逃生口，
+       * 且 Esc 是有意为之的操作，不会被误当成「点了提交却没反应」。
+       */
+      isDismissable={false}
       onOpenChange={(open) => {
         if (!open) onClose()
       }}
@@ -219,7 +255,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           <HeroModal.Body>
             <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
 
-            <form onSubmit={submit} className="mt-2">
+            <form id="auth-form" onSubmit={submit} className="mt-2">
               {mode === 'register' && (
                 <TextField className="mt-3.5" value={name} onChange={setName}>
                   <Label>昵称</Label>
@@ -278,6 +314,12 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                   onChange={setPassword}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 />
+                {/* #74-2.1：规则必须在界面上明示，且与注册/改密用的是同一句文案（PASSWORD_RULE_TEXT） */}
+                {mode !== 'login' && (
+                  <Typography type="body-xs" className="mt-1.5" style={{ color: 'var(--muted)' }}>
+                    {PASSWORD_RULE_TEXT}
+                  </Typography>
+                )}
               </div>
 
               {mode === 'register' && (
@@ -302,8 +344,26 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                   </Alert.Content>
                 </Alert>
               )}
+            </form>
+          </HeroModal.Body>
 
-              <Button type="submit" variant="primary" className="mt-4 w-full" isDisabled={busy}>
+          {/*
+           * 主操作按钮与「注册 / 登录 / 忘记密码」切换链接放在 Footer 而不是可滚动的 Body 里（#80-1.1）。
+           * 为什么：矮视口下 Body 会内部滚动，按钮留在 Body 里会被裁到折叠线以下 —— 用户点不到或点空，
+           * 表现为「点了没反应」。Footer 常驻在滚动区之外，三种视图（login / register / reset）都受益。
+           * 按钮与表单分离后靠 `form` 属性关联：`form="auth-form"` 让原生按钮仍是该表单的
+           * default button，所以**回车提交**与 `type="submit"` 的隐式提交行为都不受影响。
+           */}
+          <HeroModal.Footer>
+            <div className="w-full">
+              {/* #74-2.2：必填没填齐就置灰，不再把空表单丢给服务端兜底（登录空提交曾误报「邮箱或密码不正确。」） */}
+              <Button
+                type="submit"
+                form="auth-form"
+                variant="primary"
+                className="w-full"
+                isDisabled={busy || !isFormFilled(mode, { name, email, code, password, passwordConfirm })}
+              >
                 {busy
                   ? '处理中…'
                   : mode === 'login'
@@ -315,19 +375,19 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                         : '注册并领取额度'
                       : '重置密码'}
               </Button>
-            </form>
 
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-              {mode === 'login' ? (
-                <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
-              ) : (
-                <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
-              )}
-              {mode !== 'reset' && (
-                <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
-              )}
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+                {mode === 'login' ? (
+                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
+                ) : (
+                  <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
+                )}
+                {mode !== 'reset' && (
+                  <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
+                )}
+              </div>
             </div>
-          </HeroModal.Body>
+          </HeroModal.Footer>
         </HeroModal.Dialog>
       </HeroModal.Container>
     </HeroModal.Backdrop>

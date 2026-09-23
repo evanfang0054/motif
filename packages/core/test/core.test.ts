@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { MessageStatus } from '../src/types'
 import {
   ACTIVE_MESSAGE_STATUS_VALUES,
+  PASSWORD_RULE_TEXT,
   costFor,
   inviteRewardFor,
   DEFAULT_INVITE_REWARD_CREDITS,
@@ -19,6 +20,7 @@ import {
   validateCount,
   validateEmail,
   validatePassword,
+  validatePasswordConfirm,
   validatePrompt,
   validateSize,
   validateVerificationCode,
@@ -80,9 +82,26 @@ describe('validation', () => {
     expect(validateEmail('bad')).not.toBeNull()
     expect(validateEmail('')).not.toBeNull()
   })
-  it('密码至少 6 位', () => {
-    expect(validatePassword('123456')).toBeNull()
+  it('密码：≥8 位且同时含大小写字母、数字与符号（D14）', () => {
+    expect(validatePassword('Abcd1234!')).toBeNull()
+    // 旧规则只看长度，`123456` 被视为合法；D14 收紧后必须被拒
+    expect(validatePassword('123456')).not.toBeNull()
     expect(validatePassword('12345')).not.toBeNull()
+    // 长度够但缺任一类别都要被拒（四类缺一不可）
+    expect(validatePassword('Abcd123')).not.toBeNull() // 长度 7
+    expect(validatePassword('abcd1234!')).not.toBeNull() // 缺大写
+    expect(validatePassword('ABCD1234!')).not.toBeNull() // 缺小写
+    expect(validatePassword('Abcdefg!')).not.toBeNull() // 缺数字
+    expect(validatePassword('Abcd1234')).not.toBeNull() // 缺符号
+    expect(validatePassword('')).not.toBeNull()
+    // 报错文案就是规则本身：用户看到的必须是完整规则，而不是「改一处报一处」试出来
+    expect(validatePassword('123456')).toBe(PASSWORD_RULE_TEXT)
+  })
+  it('确认密码：只判一致性', () => {
+    expect(validatePasswordConfirm('Abcd1234!', 'Abcd1234!')).toBeNull()
+    expect(validatePasswordConfirm('Abcd1234!', 'Abcd1234?')).toBe('两次输入的密码不一致。')
+    // 空与空「一致」——必填由各自的校验负责，这里不重复判
+    expect(validatePasswordConfirm('', '')).toBeNull()
   })
   it('验证码为 6 位数字', () => {
     expect(validateVerificationCode('012345')).toBeNull()

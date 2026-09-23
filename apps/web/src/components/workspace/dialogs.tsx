@@ -5,7 +5,7 @@ import { Alert, Button, Input, Label, Link, TextArea, TextField, Typography } fr
 import { Modal as HeroModal } from '@heroui/react'
 import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
-import type { CreditPackage, User } from '@motif/core'
+import { PASSWORD_RULE_TEXT, type CreditPackage, type User } from '@motif/core'
 import { api } from '@/lib/client'
 import { formatMoney } from '@/lib/format'
 import { usePublicConfig } from '@/lib/use-public-config'
@@ -168,7 +168,7 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
         </Button>
       </form>
       {error && (
-        <Alert status="danger" className="mt-3">
+        <Alert status="danger" role="alert" className="mt-3">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>{error}</Alert.Title>
@@ -340,9 +340,13 @@ function ProfileDialog({
           <Input />
         </TextField>
         <TextField type="password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} className="mt-3.5">
-          <Label>新密码（至少 6 位）</Label>
+          <Label>新密码</Label>
           <Input />
         </TextField>
+        {/* #74-2.1：改密与注册共用同一条复杂度规则，规则文案也共用同一份常量（界面明示） */}
+        <Typography type="body-xs" className="mt-1.5" style={{ color: 'var(--muted)' }}>
+          {PASSWORD_RULE_TEXT}
+        </Typography>
         <Button className="mt-3 w-full" type="submit" variant="secondary" isDisabled={busy || !oldPassword || !newPassword}>
           修改密码
         </Button>

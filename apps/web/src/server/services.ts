@@ -13,6 +13,7 @@ import {
   validateEmail,
   validateName,
   validatePassword,
+  validatePasswordConfirm,
   validatePrompt,
   validateReferenceCount,
   validateSize,
@@ -128,7 +129,10 @@ export function register(
   ] as const) {
     if (err) throw new ServiceError(400, err)
   }
-  if (input.password !== input.passwordConfirm) throw new ServiceError(400, '两次输入的密码不一致。')
+  // 一致性与复杂度都走 core 的纯函数：客户端先行校验用的是同一份判据与同一句文案，
+  // 避免「前端说没问题、后端却拒」这种只在某一侧改过规则才会出现的分叉。
+  const confirmErr = validatePasswordConfirm(input.password || '', input.passwordConfirm || '')
+  if (confirmErr) throw new ServiceError(400, confirmErr)
   // 先消费验证码再做邮箱查重：避免「邮箱已注册」成为匿名可探测的枚举信号
   if (!store.consumeVerificationCode('register', input.email, input.code)) {
     throw new ServiceError(400, '验证码无效或已过期。')
