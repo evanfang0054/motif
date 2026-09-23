@@ -17,6 +17,7 @@ cd "$WEB_DIR"
 
 # 判据用 .next/server 而不是 .next：16 里 dev 产物落在 .next/dev，跑过 dev 之后 .next 也存在，
 # 拿 .next 当「已有构建产物」会误判。
+# 与 run.sh 同理：跑之前建议先停掉 dev（build 会重写 .next/*），但 16 下 dev 与 build 并不互斥。
 if [ ! -d .next/server ]; then
   echo "[accept] building..."
   pnpm build
