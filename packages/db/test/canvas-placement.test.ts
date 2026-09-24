@@ -232,3 +232,43 @@ describe('insertCanvasImage 带 placement', () => {
     expect(placed.updatedAt).not.toBe('')
   })
 })
+
+describe('messages.slot_plan（#88：槽位计划挂 message 上，零新表）', () => {
+  function makeMessage(slotPlan?: CanvasRect[]) {
+    return store.createMessage({
+      topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
+      requestedCount: 2, enhancePrompt: false, slotPlan,
+    })
+  }
+
+  it('列存在（本用例走新建库路径，列来自 CREATE TABLE；旧库 ALTER 迁移由 store.test.ts 的 makeLegacyDb 覆盖）', () => {
+    expect(columns(join(dir, 't.db'), 'messages')).toContain('slot_plan')
+  })
+
+  it('计划可落库并原样读回', () => {
+    const plan: CanvasRect[] = [
+      { x: 0, y: 0, w: 240, h: 240 },
+      { x: 280, y: 0, w: 160, h: 240 },
+    ]
+    const m = makeMessage(plan)
+    expect(store.getMessage(m.id)!.slotPlan).toEqual(plan)
+  })
+
+  it('缺省 = 空数组（老消息没有骨架，退回现场分配）', () => {
+    expect(makeMessage().slotPlan).toEqual([])
+  })
+
+  it('脏 JSON / 坏形状逐项丢弃，不抛错', () => {
+    const dirty = makeMessage().id
+    const partial = makeMessage().id
+    const db = new Database(join(dir, 't.db'))
+    db.prepare('UPDATE messages SET slot_plan = ? WHERE id = ?').run('{不是 json', dirty)
+    db.prepare('UPDATE messages SET slot_plan = ? WHERE id = ?').run(
+      JSON.stringify([{ x: 1, y: 2, w: 240, h: 240 }, { x: 'a', y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: -1, h: 10 }]),
+      partial
+    )
+    db.close()
+    expect(store.getMessage(dirty)!.slotPlan).toEqual([])
+    expect(store.getMessage(partial)!.slotPlan).toEqual([{ x: 1, y: 2, w: 240, h: 240 }])
+  })
+})

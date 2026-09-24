@@ -10,6 +10,8 @@ import {
   inviteRewardFor,
   isBusyTopicStatus,
   placementRect,
+  planSlotRects,
+  rectsIntersect,
   validateEmail,
   validateName,
   validatePassword,
@@ -19,6 +21,7 @@ import {
   validateSize,
   viewportOrigin,
   type CanvasImage,
+  type CanvasRect,
   type CreditPackage,
   type GenerateImagesInput,
   type GenerateImagesResponse,
@@ -300,6 +303,15 @@ export async function enqueueGeneration(
 
   const size = sizeCheck.value
 
+  // 待生成槽位计划（#88）：入队即算好、随消息下发，前端立刻渲染 N 个骨架。
+  // ⚠️ 必须在 `resolveStagedReferences` **之后**算：转正的参考图此刻已进画布，
+  // `occupied` 必须含它们，否则骨架会与刚转正的参考图重叠。
+  // 与 worker 出图落位共用 `planSlotRects`（内部即 `allocateSlots`）—— 两边同源，
+  // 这是「出图就地填入不跳动」的唯一保证。
+  const planOrigin = viewportOrigin(store.getCanvasMeta(topic.id).viewport)
+  const planOccupied = store.listCanvasPlacements(topic.id).map(placementRect)
+  const slotPlan = planSlotRects(planOccupied, size, input.count, planOrigin)
+
   const message = store.createMessage({
     topicId: topic.id,
     userId: user.id,
@@ -310,6 +322,7 @@ export async function enqueueGeneration(
     // 记「真的增强过」而不是「用户请求了增强」：后者会让事后对账分不清到底调没调 LLM
     enhancePrompt: enhanced,
     referenceIds: validRefs,
+    slotPlan,
   })
   store.syncTopicStatus(topic.id, message.id, basePrompt, 'queued')
 
@@ -373,7 +386,6 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     // 落位上下文：新产出落进「当前视口内的空位槽」。视口以 topics.canvas_meta 为准
     // （服务端唯一能读到的「用户当前看到的区域」），故生成的图不会堆在 (0,0)。
     const placementOrigin = viewportOrigin(store.getCanvasMeta(msg.topicId).viewport)
-    const occupied = store.listCanvasPlacements(msg.topicId).map(placementRect)
     for (let i = alreadyDone; i < msg.requestedCount; i++) {
       // 取消检查：canceling 状态时停止并把剩余张数退回
       const current = store.getMessage(messageId)
@@ -392,8 +404,23 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       // 位置列与图片行在**同一条 INSERT** 落库：不存在「有图无位置」的中间态。
       // ⚠️ 不要拆成「先插图、再 UPDATE 位置」两步。
       const size = displaySize(img.width, img.height)
-      const [slot] = allocateSlots(occupied, [size], placementOrigin)
-      occupied.push(slot)
+      // 落位前**重读**一次占位：生成期间用户可能手拖/导入新图，入队时算好的计划槽会相对现状失效。
+      const occupied = store.listCanvasPlacements(msg.topicId).map(placementRect)
+      // 落位：优先落回**入队时算好的计划槽**（`plan[i]`）—— 与骨架同坐标，故出图就地填入、左上角不动。
+      // 只取计划的 x/y，尺寸用**真实出图**的显示尺寸（出图比例与占位不同时就地平滑过渡）。
+      // 但计划是入队时算的，落位前必须对**真实尺寸**的矩形做一次相交校验，撞上就退回现场分配：
+      //   ① 出图比例 ≠ 请求比例时（请求 800x600 → 计划 240×180，网关返回 800×800 → 实际 240×240，
+      //      高度多 60px）可能压到用户手拖的图；② 生成期间用户拖动/导入会让计划槽失效。
+      // 退让时该骨架本就会消失，故「跳位」代价远小于「压图」。
+      // 老消息 `slotPlan=[]` 时直接走现场分配（行为与改动前一致）。
+      const planned = msg.slotPlan[i]
+      const candidate: CanvasRect | null = planned
+        ? { x: planned.x, y: planned.y, w: size.width, h: size.height }
+        : null
+      const slot: CanvasRect =
+        candidate && !occupied.some((r) => rectsIntersect(r, candidate))
+          ? candidate
+          : allocateSlots(occupied, [size], placementOrigin)[0]
       store.insertCanvasImage({
         topicId: msg.topicId,
         userId: msg.userId,
@@ -407,6 +434,11 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
         height: img.height,
         placement: { x: slot.x, y: slot.y, width: slot.w, height: slot.h },
       })
+      // 每落库一张就 touch 一次 topic（#88）：客户端的 watch 长轮询以 `topics.updated_at` 为变化判据，
+      // 不 touch 的话整批只会在**收尾**被看到一次 —— 骨架与「N 张图片」直到最后才更新，
+      // 「出图就地填入」就退化成「最后一次性出现」。一次生成 ≤12 张、耗时分钟级，
+      // 每张一次轻量 detail 重取不构成风暴（与视口防抖落库刻意不 touch 的取舍相反：那是高频无内容变化）。
+      store.touchTopic(msg.topicId)
     }
 
     const final = store.getMessage(messageId)

@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { enqueueGeneration, executeMessage, type WorkerDeps } from '@/server/services'
 import { startWorker, stopWorker } from '@/server/worker'
+import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { MotifStore } from '@motif/db'
+import { placementRect, rectsIntersect } from '@motif/core'
 import type { GeneratedImage, ImageProvider } from '@motif/image-provider'
 
 let dir: string
@@ -119,6 +121,116 @@ describe('断点续跑（崩溃恢复）', () => {
     expect(store.getMessage(messageId)!.status).toBe('failed')
     expect(store.countGeneratedInMessage(messageId)).toBe(1) // 失败不写图
     expect(store.getUserById(user.id)!.credits).toBe(7) // 6 + 退 1
+  })
+})
+
+describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填入不跳动）', () => {
+  it('入队即生成 N 个计划槽，auto 一律按 1:1 占位（D13）', async () => {
+    const { messageId } = await enqueue(3)
+    const plan = store.getMessage(messageId)!.slotPlan
+    expect(plan).toHaveLength(3)
+    expect(plan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+    expect(plan[1]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
+    expect(plan.every((s) => s.w === 240 && s.h === 240)).toBe(true)
+  })
+
+  it('worker 出图落回计划槽坐标（左上角与骨架完全一致）', async () => {
+    const { messageId, topicId } = await enqueue(3)
+    const plan = store.getMessage(messageId)!.slotPlan
+    const calls: number[] = []
+    await executeMessage(makeDeps(countingProvider(calls)), messageId)
+    const placements = store.listCanvasPlacements(topicId)
+    expect(placements).toHaveLength(3)
+    for (let i = 0; i < 3; i += 1) {
+      expect({ x: placements[i].canvasX, y: placements[i].canvasY }).toEqual({ x: plan[i].x, y: plan[i].y })
+    }
+  })
+
+  it('出图比例与占位不同：只变尺寸、左上角不动，且不压相邻槽', async () => {
+    // 请求 auto（1:1 占位），实际出横图 2:1 —— 平滑过渡到 240×120，坐标钉在计划槽
+    const user = store.createUser({ email: 'wide@b.co', passwordHash: 'h', name: 'w', credits: 4 })
+    const res = await enqueueGeneration(store, countingProvider([]), dir, user, {
+      prompt: '横图', count: 2, size: 'auto', enhance: false, topicId: null, referenceCanvasImageIds: [],
+    })
+    const plan = store.getMessage(res.messageId)!.slotPlan
+    const wide: ImageProvider = {
+      name: 'wide-stub',
+      generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 512 }),
+    }
+    await executeMessage(makeDeps(wide), res.messageId)
+    const placements = store.listCanvasPlacements(res.topic.id)
+    expect({ x: placements[0].canvasX, y: placements[0].canvasY }).toEqual({ x: plan[0].x, y: plan[0].y })
+    expect([placements[0].canvasWidth, placements[0].canvasHeight]).toEqual([240, 120])
+    // 槽步长 280：右缘 240 < 下一槽 x=280，横图不会压到相邻图
+    expect(placements[0].canvasX + placements[0].canvasWidth).toBeLessThanOrEqual(plan[1].x)
+  })
+
+  it('计划槽被生成期间新拖入的图占用 → 落位退回现场分配（不压图）', async () => {
+    // 入队时 plan[0] 还是空的；提交后、出图前用户把一张图拖到 plan[0] 上 —— 计划相对现状失效。
+    // 落位前的相交校验必须发现它并退回 allocateSlots（骨架跳位代价远小于压图）。
+    const { user, messageId, topicId } = await enqueue(2)
+    const plan = store.getMessage(messageId)!.slotPlan
+    const draggedRect = { x: plan[0].x, y: plan[0].y, w: plan[0].w, h: plan[0].h }
+    const dragged = store.insertCanvasImage({
+      topicId, userId: user.id, messageId: null, origin: 'generated', name: '手拖图', imageKey: 'drag',
+      mimeType: 'image/png', bytes: 1, width: 1024, height: 1024,
+      placement: { x: draggedRect.x, y: draggedRect.y, width: draggedRect.w, height: draggedRect.h },
+    })
+    const full: ImageProvider = {
+      name: 'full-stub',
+      generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 1024 }),
+    }
+    await executeMessage(makeDeps(full), messageId)
+
+    const generated = store.listCanvasPlacements(topicId).filter((p) => p.id !== dragged.id)
+    expect(generated).toHaveLength(2)
+    // 两张生成图都不与手拖图相交（否则就是把图压在用户手拖的图上）
+    for (const g of generated) {
+      expect(rectsIntersect(placementRect(g), draggedRect)).toBe(false)
+    }
+    // 第一张已从计划槽 plan[0] 让位（否则就压上手拖图了）
+    expect({ x: generated[0].canvasX, y: generated[0].canvasY }).not.toEqual({ x: plan[0].x, y: plan[0].y })
+  })
+
+  it('取消：退额数 = requestedCount − 已落库张数（与骨架摘除数同源）', async () => {
+    // 12 张里已落 4 张 → 退 8；取消前活跃轮次的骨架也恰好剩 8 个。
+    // ⚠️ 本用例只钉「退额」一侧；「骨架摘除数 == 退额数」这条不变式由下一条用例合证。
+    const { user, messageId, topicId } = await enqueue(12, 20)
+    seedGenerated(messageId, user.id, topicId, 4)
+    store.setMessageStatus(messageId, 'canceling')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getUserById(user.id)!.credits).toBe(16) // 20 − 12 + 退 8
+  })
+
+  it('取消退额数 == 骨架摘除数（#88 硬验收：同一时刻两侧相等）', async () => {
+    // 上一条只钉退额、canvas-skeleton.test.ts 只钉纯函数摘除 —— 这里把两者串起来：
+    // 在同一时刻分别量「实际退额」与「骨架摘除数」，断言相等，才构成完整合证。
+    const { user, messageId, topicId } = await enqueue(12, 20)
+    seedGenerated(messageId, user.id, topicId, 4)
+    const countByMessage = { [messageId]: 4 }
+    const before = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
+    expect(before).toHaveLength(8) // 活跃轮次：骨架数 = 未产出张数 = 12 − 4
+
+    store.setMessageStatus(messageId, 'canceling')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+
+    const after = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
+    expect(after).toHaveLength(0) // 终态不留骨架
+    const removed = before.length - after.length
+    const refunded = store.getUserById(user.id)!.credits - (20 - 12) // 预扣 12 后剩 8 → 退额 = 现值 − 8
+    expect(removed).toBe(8)
+    expect(refunded).toBe(removed) // ← 同一时刻：退额数 == 骨架摘除数
+  })
+
+  it('每落库一张就 touch 一次 topic —— watch 长轮询据此即时刷新，实现「出图就地填入」', async () => {
+    // 不 touch 的话整批只会在收尾被看到一次，骨架与「N 张图片」直到最后才更新
+    const { messageId, topicId } = await enqueue(3)
+    const spy = vi.spyOn(store, 'touchTopic')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(spy.mock.calls.every(([id]) => id === topicId)).toBe(true)
+    spy.mockRestore()
   })
 })
 

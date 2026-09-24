@@ -26,6 +26,7 @@ import {
   type CanvasImage,
   type CanvasImagePlacement,
   type CanvasMeta,
+  type CanvasRect,
   type CreditPackage,
   type CreditSource,
   type Message,
@@ -79,6 +80,30 @@ function safeParseIds(raw: string | null | undefined): string[] {
   try {
     const v = JSON.parse(raw || '[]')
     return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * slot_plan 列为 JSON 矩形数组；容错解析。
+ *
+ * ⚠️ 逐项校验形状（不是只判 `Array.isArray`）：槽位坐标会直接喂给 `left/top/width/height`，
+ * 坏值（`"abc"` / NaN / 负尺寸）会渲染出诡异的占位块，比「没有骨架」更糟。
+ * 单项不合法就丢弃该项 —— 骨架数偏少只是少一个占位，不会让整份计划失效。
+ */
+function safeParseSlotPlan(raw: string | null | undefined): CanvasRect[] {
+  try {
+    const v = JSON.parse(raw || '[]')
+    if (!Array.isArray(v)) return []
+    return v.filter(
+      (r): r is CanvasRect =>
+        !!r &&
+        typeof r === 'object' &&
+        [r.x, r.y, r.w, r.h].every((n) => typeof n === 'number' && Number.isFinite(n)) &&
+        r.w > 0 &&
+        r.h > 0
+    )
   } catch {
     return []
   }
@@ -412,6 +437,7 @@ interface MessageRow {
   requested_count: number
   enhance_prompt: number
   reference_ids: string
+  slot_plan: string
   status: string
   worker_id: string | null
   locked_at: string | null
@@ -480,6 +506,7 @@ function rowToMessage(r: MessageRow): Message {
     requestedCount: r.requested_count,
     enhancePrompt: !!r.enhance_prompt,
     referenceIds: safeParseIds(r.reference_ids),
+    slotPlan: safeParseSlotPlan(r.slot_plan),
     status: r.status as Message['status'],
     workerId: r.worker_id,
     lockedAt: r.locked_at,
@@ -1022,6 +1049,13 @@ export class MotifStore {
     return res.changes
   }
 
+  /**
+   * 顶起任务的 `updated_at`（`listTopics` 按 `ORDER BY updated_at DESC` 排序）。
+   *
+   * ⚠️ **会改变任务列表排序** —— 勿用于高频、无内容变化的场景：视口变更防抖落库即因此走
+   * `setCanvasMeta` 刻意不 touch（否则每次平移都会把任务顶到列表最前，且触发 watchTopic
+   * 长轮询重取整份 detail）。#88 里每落库一张图调一次属于「有内容变化」的正当用法。
+   */
   touchTopic(id: string): void {
     this.db.prepare('UPDATE topics SET updated_at = ? WHERE id = ?').run(nowIso(), id)
   }
@@ -1066,15 +1100,17 @@ export class MotifStore {
     requestedCount: number
     enhancePrompt: boolean
     referenceIds?: string[]
+    /** 待生成槽位计划（#88）：入队时算好、随消息下发；缺省 = 无骨架（退回现场分配） */
+    slotPlan?: CanvasRect[]
   }): Message {
     const id = newMessageId()
     const t = nowIso()
     this.db
       .prepare(
-        `INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, enhance_prompt, reference_ids, status, attempts, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)`
+        `INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, enhance_prompt, reference_ids, slot_plan, status, attempts, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)`
       )
-      .run(id, input.topicId, input.userId, input.prompt, input.finalPrompt, input.size, input.requestedCount, input.enhancePrompt ? 1 : 0, JSON.stringify(input.referenceIds ?? []), t)
+      .run(id, input.topicId, input.userId, input.prompt, input.finalPrompt, input.size, input.requestedCount, input.enhancePrompt ? 1 : 0, JSON.stringify(input.referenceIds ?? []), JSON.stringify(input.slotPlan ?? []), t)
     return this.getMessage(id)!
   }
 

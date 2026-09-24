@@ -75,6 +75,9 @@ export function applySchema(db: Database): void {
       requested_count INTEGER NOT NULL,
       enhance_prompt INTEGER NOT NULL DEFAULT 0,
       reference_ids TEXT NOT NULL DEFAULT '[]',
+      -- 待生成槽位计划（#88）：JSON 数组，第 i 项 ↔ 本轮第 i 张产出。
+      -- 挂 message 上而不是新表 —— 骨架只是「这一轮的预占」，随消息同生同灭。
+      slot_plan TEXT NOT NULL DEFAULT '[]',
       status TEXT NOT NULL DEFAULT 'queued',
       worker_id TEXT,
       locked_at TEXT,
@@ -209,6 +212,12 @@ export function applySchema(db: Database): void {
   // （新库 CREATE 已包含，此处 ALTER 失败可忽略）
   try {
     db.exec("ALTER TABLE messages ADD COLUMN reference_ids TEXT NOT NULL DEFAULT '[]'")
+  } catch {
+    // 列已存在
+  }
+  // 旧库平滑迁移：messages.slot_plan（#88 骨架槽位计划）
+  try {
+    db.exec("ALTER TABLE messages ADD COLUMN slot_plan TEXT NOT NULL DEFAULT '[]'")
   } catch {
     // 列已存在
   }

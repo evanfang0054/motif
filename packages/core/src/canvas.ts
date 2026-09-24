@@ -13,6 +13,8 @@
  * 上游按「节点中心点」定位，这里按「视口左上角起 4 列网格找空位」定位。
  */
 
+import { resolveSize } from './validation'
+
 /** 画布上图片的摆放。⚠️ canvasWidth/canvasHeight 是**画布上的显示尺寸**，
  * 与 CanvasImage.width/height（**原图像素尺寸**）是两回事，命名刻意区分。 */
 export interface CanvasImagePlacement {
@@ -198,7 +200,12 @@ export function centerRectsInViewport(
   return rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
 }
 
-function intersects(a: CanvasRect, b: CanvasRect): boolean {
+/**
+ * 矩形相交（贴边不算）：a 与 b 有正面积重叠。
+ * 与 `apps/web/src/lib/canvas/geometry.ts` 的 `rectsIntersect` 同语义 —— 导出它是因为
+ * worker 落位前要拿它做「计划槽是否已被占用」的校验（服务端只依赖 core，不引客户端几何库）。
+ */
+export function rectsIntersect(a: CanvasRect, b: CanvasRect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
@@ -225,7 +232,7 @@ export function allocateSlots(
       h: size.height,
     }
     i += 1
-    if (taken.some((r) => intersects(r, cand))) continue
+    if (taken.some((r) => rectsIntersect(r, cand))) continue
     taken.push(cand)
     out.push(cand)
   }
@@ -238,4 +245,29 @@ export function allocateSlots(
     }
   }
   return out
+}
+
+// ---------- 生成槽位计划（#88：提交即预占骨架、出图就地填入） ----------
+
+/**
+ * 入队时一次性算好 N 个「待生成槽位」。
+ *
+ * 这是「骨架落位」与「出图落位」**共用同一个 `allocateSlots`** 的唯一入口 ——
+ * 两边各算一份必然漂移，出图瞬间就会「跳一下」。故计划在服务端算一次、随消息下发，
+ * worker 出图时直接落回 `plan[i]`，前端骨架也渲染在同一坐标上。
+ *
+ * 尺寸口径（D13）：请求尺寸 = `auto` 时 `resolveSize` 兜底成 1024×1024（即 1:1），
+ * 再经 `displaySize` 钳进 240×240 —— 于是 **auto 一律按 1:1 占位**；已知比例
+ * （方图 / 竖图 / 横图 / 自定义）按各自比例占位。出图比例与占位不同时由前端做平滑过渡
+ * （见 CanvasStage 的骨架渲染：只变尺寸、不动左上角，故不会压到相邻图）。
+ */
+export function planSlotRects(
+  occupied: CanvasRect[],
+  requestedSize: string,
+  count: number,
+  origin: { x: number; y: number }
+): CanvasRect[] {
+  const px = resolveSize(requestedSize)
+  const size = displaySize(px.width, px.height)
+  return allocateSlots(occupied, Array.from({ length: count }, () => size), origin)
 }
