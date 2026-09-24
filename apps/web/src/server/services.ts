@@ -21,6 +21,7 @@ import {
   validateSize,
   viewportOrigin,
   type CanvasImage,
+  type CanvasImagePlacement,
   type CanvasRect,
   type CreditPackage,
   type GenerateImagesInput,
@@ -307,11 +308,12 @@ export async function enqueueGeneration(
   // 待生成槽位计划（#88）：入队即算好、随消息下发，前端立刻渲染 N 个骨架。
   // ⚠️ 必须在 `resolveStagedReferences` **之后**算：转正的参考图此刻已进画布，
   // `occupied` 必须含它们，否则骨架会与刚转正的参考图重叠。
-  // 与 worker 出图落位共用 `planSlotRects`（内部即 `allocateSlots`）—— 两边同源，
-  // 这是「出图就地填入不跳动」的唯一保证。
+  // 与 worker 出图落位共用 `planSlotRects`（内部即 `allocateSlots` / `planLineageColumn`）——
+  // 两边同源，这是「出图就地填入不跳动」的唯一保证。
   const planOrigin = viewportOrigin(store.getCanvasMeta(topic.id).viewport)
-  const planOccupied = store.listCanvasPlacements(topic.id).map(placementRect)
-  const slotPlan = planSlotRects(planOccupied, size, input.count, planOrigin)
+  const planPlacements = store.listCanvasPlacements(topic.id)
+  const planOccupied = planPlacements.map(placementRect)
+  const slotPlan = planSlotRects(planOccupied, size, input.count, planOrigin, anchorRectOf(planPlacements, validRefs))
 
   const message = store.createMessage({
     topicId: topic.id,
@@ -338,6 +340,27 @@ export async function enqueueGeneration(
 
 function validateCountOf(count: number): string | null {
   if (!Number.isInteger(count) || count < 1 || count > 12) return '张数需在 1–12 之间。'
+  return null
+}
+
+/**
+ * 血缘锚点（用户 2026-09-24 裁决）：本轮参考图里**第一张在画布上有摆放**的图 ——
+ * 新图与骨架都落在它右侧一列（见 `@motif/core` 的 `planLineageColumn`）。
+ *
+ * 为什么是「第一张」：`validRefs` 是 `[...canvasRefIds, ...stagedCanvasIds]`，而「以它为参考再生成」
+ * 产出的 `referenceIds` 里被点的那张就是唯一的画布引用（暂存参考排在后面），@ 引用多张时第一张
+ * 是用户最先选定的那张 —— 两种入口下「第一张」都恰好是用户心里的「对应的图片」。
+ *
+ * 没有任何参考图（纯文生图）、或参考图都不在画布上（理论上不会：画布引用已校验归属、暂存参考
+ * 已在本函数之前转正）时返回 null —— 没有父图可依，调用方维持原网格分配。
+ */
+function anchorRectOf(placements: readonly CanvasImagePlacement[], referenceIds: readonly string[]): CanvasRect | null {
+  if (referenceIds.length === 0) return null
+  const rectById = new Map(placements.map((p) => [p.id, placementRect(p)]))
+  for (const id of referenceIds) {
+    const rect = rectById.get(id)
+    if (rect) return rect
+  }
   return null
 }
 

@@ -138,6 +138,14 @@ export const SLOT_GAP = 40
 export const SLOT_STEP = SLOT_W + SLOT_GAP
 export const SLOT_COLS = 4
 
+/**
+ * 血缘落位的**列间距**（锚点右缘 → 新列左缘）。
+ *
+ * 与「按血缘整理」（`apps/web/src/lib/canvas/lineage.ts` 的树形布局）同源：两处各写一份
+ * 必然漂移，而「生成后的样子 ≈ 点一次整理」正是这次改动的验收口径 —— 值对不上就白改了。
+ */
+export const LINEAGE_COL_GAP = 120
+
 export interface CanvasRect { x: number; y: number; w: number; h: number }
 
 /**
@@ -274,6 +282,9 @@ export function allocateSlots(
  * 两边各算一份必然漂移，出图瞬间就会「跳一下」。故计划在服务端算一次、随消息下发，
  * worker 出图时直接落回 `plan[i]`，前端骨架也渲染在同一坐标上。
  *
+ * 落位原点：给了 `anchor`（本轮有参考图）就按血缘落在锚点右侧一列（见 `planLineageColumn`），
+ * 否则维持「视野左上角起 4 列网格找空位」——**骨架与出图走的是同一条分支**，不会各落一处。
+ *
  * 尺寸口径（D13）：请求尺寸 = `auto` 时 `resolveSize` 兜底成 1024×1024（即 1:1），
  * 再经 `displaySize` 钳进 240×240 —— 于是 **auto 一律按 1:1 占位**；已知比例
  * （方图 / 竖图 / 横图 / 自定义）按各自比例占位。出图比例与占位不同时由前端做平滑过渡
@@ -283,9 +294,60 @@ export function planSlotRects(
   occupied: CanvasRect[],
   requestedSize: string,
   count: number,
-  origin: { x: number; y: number }
+  origin: { x: number; y: number },
+  /**
+   * 血缘锚点：本轮第一张参考图的摆放（见 `services.ts` 的 `anchorRectOf`）。
+   * 给了就落在它**右侧一列**；没给（纯文生图 / 参考图都不在画布上）走原来的空位槽网格。
+   */
+  anchor?: CanvasRect | null
 ): CanvasRect[] {
   const px = resolveSize(requestedSize)
   const size = displaySize(px.width, px.height)
-  return allocateSlots(occupied, Array.from({ length: count }, () => size), origin)
+  const sizes = Array.from({ length: count }, () => size)
+  if (anchor) {
+    const column = planLineageColumn(occupied, sizes, anchor)
+    // 竖条放不下时**不留半截计划**：整体退回网格分配（宁可落在视野里，也不与既有图重叠）
+    if (column) return column
+  }
+  return allocateSlots(occupied, sizes, origin)
+}
+
+/** 竖向找空档的尝试上限：每次至少下移一个「冲突矩形 + 间隙」。
+ * 超限即认定这一竖条被占满（异常形态），返回 null 让调用方退回网格分配 —— 不能无上限循环。 */
+const LINEAGE_MAX_TRIES = 64
+
+/**
+ * 血缘列落位（用户 2026-09-24 裁决）：把本轮的 N 个槽位排到**锚点图右侧的一列**上，
+ * 列顶与锚点顶边对齐；该竖条已被占就整体下移，形成「同代同列、往下续」。
+ *
+ * 为什么是一列而不是原来的 4 列网格：生成是「以某张图续作」，产物就该挨着它，
+ * 而不是从视野左上角另起一片。这也正是「按血缘整理」里同一轮次的模样。
+ *
+ * 列内步长用**固定的 `SLOT_STEP`**，而不是树形布局的 48 间距：计划槽按**请求尺寸**算，
+ * 出图比例可以不同（请求 1536×1024 → 占位高 160，网关返回 1024×1024 → 实际高 240）。
+ * 固定步长（280 ≥ 240 显示上限 + 40）才保证「实际比占位高」时同列两张也不压图；
+ * 若按占位尺寸累加，横图那一轮会压 32px，落位前的相交校验会把第二张甩回视野左上角 ——
+ * 正是这次要修的现象。代价：刚生成完的列比「按血缘整理」松一点（点一次整理即收紧）。
+ *
+ * 返回 `null` = 这一竖条放不下（连续 `LINEAGE_MAX_TRIES` 次都被占），由调用方退回网格分配。
+ */
+export function planLineageColumn(
+  occupied: readonly CanvasRect[],
+  sizes: readonly { width: number; height: number }[],
+  anchor: CanvasRect
+): CanvasRect[] | null {
+  if (sizes.length === 0) return null
+  const maxW = Math.max(...sizes.map((s) => s.width))
+  const maxH = Math.max(...sizes.map((s) => s.height))
+  const x = anchor.x + anchor.w + LINEAGE_COL_GAP
+  let y = anchor.y
+  for (let tries = 0; tries < LINEAGE_MAX_TRIES; tries += 1) {
+    // 整批的竖向占位：末张底边。用整批判定（而不是逐张）才能一次让过整段冲突区
+    const bottom = y + (sizes.length - 1) * SLOT_STEP + maxH
+    const hits = occupied.filter((r) => r.x < x + maxW && x < r.x + r.w && r.y < bottom && y < r.y + r.h)
+    if (hits.length === 0) return sizes.map((s, i) => ({ x, y: y + i * SLOT_STEP, w: s.width, h: s.height }))
+    // 让过**所有**冲突矩形的底边（不是第一个）：同父的第二次生成因此落在上一批的整段下方
+    y = Math.max(...hits.map((r) => r.y + r.h)) + SLOT_GAP
+  }
+  return null
 }

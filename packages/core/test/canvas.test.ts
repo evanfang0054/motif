@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CANVAS_META,
+  LINEAGE_COL_GAP,
+  SLOT_GAP,
+  SLOT_STEP,
   allocateSlots,
   centerRectsInViewport,
   displaySize,
@@ -8,6 +11,7 @@ import {
   normalizeCanvasMeta,
   parseCanvasMeta,
   placementRect,
+  planLineageColumn,
   planSlotRects,
   rectToPlacement,
   viewportOrigin,
@@ -138,6 +142,92 @@ describe('planSlotRects（#88 骨架槽位计划）', () => {
       stepwise.push(s)
     }
     expect(plan).toEqual(stepwise)
+  })
+})
+
+describe('planLineageColumn（血缘落位：新图/骨架落在参考图右侧一列）', () => {
+  const overlaps = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number }
+  ) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  /** 参考图：左上角 (0,0)、240 见方 */
+  const anchor = { x: 0, y: 0, w: 240, h: 240 }
+  const square = { width: 240, height: 240 }
+  const filled = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ x: anchor.x + anchor.w + LINEAGE_COL_GAP, y: i * SLOT_STEP, w: 240, h: 240 }))
+
+  it('列左缘 = 锚点右缘 + 列间距；列顶与锚点顶边对齐；列内按固定步长往下排', () => {
+    const col = planLineageColumn([], [square, square, square], anchor)
+    expect(col).toEqual([
+      { x: 240 + LINEAGE_COL_GAP, y: 0, w: 240, h: 240 },
+      { x: 240 + LINEAGE_COL_GAP, y: SLOT_STEP, w: 240, h: 240 },
+      { x: 240 + LINEAGE_COL_GAP, y: SLOT_STEP * 2, w: 240, h: 240 },
+    ])
+  })
+
+  it('跟着锚点走（锚点不在原点时绝不回到画布左上角）', () => {
+    const col = planLineageColumn([], [square], { x: 1000, y: 700, w: 160, h: 240 })
+    expect(col).toEqual([{ x: 1000 + 160 + LINEAGE_COL_GAP, y: 700, w: 240, h: 240 }])
+  })
+
+  it('同父第二次生成：整批落在上一批下方（同代同列，不另起一片）', () => {
+    const first = planLineageColumn([], [square, square], anchor)!
+    const second = planLineageColumn(first, [square], anchor)!
+    // 第一批底边 = 280 + 240 = 520 → 第二批顶边 = 520 + SLOT_GAP
+    expect(second).toEqual([{ x: 240 + LINEAGE_COL_GAP, y: SLOT_STEP + 240 + SLOT_GAP, w: 240, h: 240 }])
+    for (const a of first) for (const b of second) expect(overlaps(a, b)).toBe(false)
+  })
+
+  it('列内步长**固定**：请求横图（占位高 160）时，出图更高也不会压到同列下一张', () => {
+    // 请求 1536×1024 → 占位 240×160；网关若返回 1024×1024 → 实际 240×240。
+    // 若按占位高度累加（160 + 40），第二张顶边只有 200 < 240 —— 压 40px，落位前校验会把第二张甩走。
+    const wide = { width: 240, height: 160 }
+    const col = planLineageColumn([], [wide, wide], anchor)!
+    expect(col[1].y - col[0].y).toBe(SLOT_STEP)
+    expect(overlaps({ x: col[0].x, y: col[0].y, w: 240, h: 240 }, col[1])).toBe(false)
+  })
+
+  it('锚点右侧那一竖条被占满 → 返回 null（调用方退回网格分配，不留半截计划）', () => {
+    expect(planLineageColumn(filled(80), [square], anchor)).toBeNull()
+  })
+
+  it('空输入返回 null（不产出「0 个槽」的计划）', () => {
+    expect(planLineageColumn([], [], anchor)).toBeNull()
+  })
+})
+
+describe('planSlotRects 的血缘分支（有锚点走列、无锚点走原网格）', () => {
+  const anchor = { x: 0, y: 0, w: 240, h: 240 }
+
+  it('给了锚点 → 落在锚点右侧一列（骨架与出图同一条分支）', () => {
+    const plan = planSlotRects([], '1024x1024', 2, { x: 999, y: 999 }, anchor)
+    expect(plan).toEqual([
+      { x: 240 + LINEAGE_COL_GAP, y: 0, w: 240, h: 240 },
+      { x: 240 + LINEAGE_COL_GAP, y: SLOT_STEP, w: 240, h: 240 },
+    ])
+  })
+
+  it('锚点为 null / 不传 → 与改动前逐值一致（纯文生图不受影响）', () => {
+    const occupied = [{ x: 0, y: 0, w: 240, h: 240 }]
+    const legacy = allocateSlots(occupied, [displaySize(1024, 1024)], { x: 10, y: 20 })
+    expect(planSlotRects(occupied, '1024x1024', 1, { x: 10, y: 20 }, null)).toEqual(legacy)
+    expect(planSlotRects(occupied, '1024x1024', 1, { x: 10, y: 20 })).toEqual(legacy)
+  })
+
+  it('锚点右侧竖条放不下 → 整体退回网格分配（不退化成空计划）', () => {
+    // 竖条要**足够高**才算「占满」：每次尝试至少让过一个冲突矩形，尝试上限 64 次 ⇒
+    // 2 张的批次每次让过 2 个槽（560），须备 >128 个冲突槽才耗尽预算。
+    const blocked = Array.from({ length: 200 }, (_, i) => ({
+      x: 240 + LINEAGE_COL_GAP,
+      y: i * SLOT_STEP,
+      w: 240,
+      h: 240,
+    }))
+    const plan = planSlotRects(blocked, '1024x1024', 2, { x: 5000, y: 5000 }, anchor)
+    expect(plan).toEqual([
+      { x: 5000, y: 5000, w: 240, h: 240 },
+      { x: 5000 + SLOT_STEP, y: 5000, w: 240, h: 240 },
+    ])
   })
 })
 
