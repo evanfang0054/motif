@@ -357,7 +357,7 @@ describe('血缘落位（新图挨着参考图，不从视野左上角另起一�
     ])
   })
 
-  it('多张参考图 → 锚点取**第一张**（引用顺序 = 用户选定顺序）', async () => {
+  it('多张参考图 → 锚点取引用数组的**首位**（顺序即 `validRefs` 顺序）', async () => {
     const a = seedReference('multi-a@b.co', { x: 400, y: 300 })
     const b = store.insertCanvasImage({
       topicId: a.topicId,
