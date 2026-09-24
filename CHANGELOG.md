@@ -46,6 +46,11 @@
 - Docker 一键部署补齐：运行时镜像补上 `next.config.ts` 与容器内真能跑的两个运维脚本
   `admin.mjs` / `cdk.mjs`（`node /app/scripts/admin.mjs --reset` 即可找回管理员密码）；compose 改为 `.env` 驱动
   （`cp .env.docker.example .env`）；构建上下文排掉与构建无关的重目录
+- **修 compose 的环境变量转发**：此前除 `IMAGE_*` 外的配置项只在 `environment` 里**注释着**列出，
+  等于没转发 —— 那些键（`SITE_URL` / `S3_*` / `SMTP_*` / `MOTIF_EXPOSE_DEV_CODE` …）写进 `.env`
+  也到不了容器。改用 `env_file` 注入：写了才注入、没写的不注入；同时把数据位置
+  （`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`）与运行时参数（`NODE_ENV` / `PORT` / `HOSTNAME`）
+  钉死在 `environment` 里防止被 `.env` 误覆盖，并在模板里写明「值里的字面 `$` 要写 `$$`」
 
 ### 验收
 
