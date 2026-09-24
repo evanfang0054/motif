@@ -2,7 +2,17 @@
 #
 # 用法：
 #   1) cp .env.docker.example .env      # 填 IMAGE_API_BASE_URL / IMAGE_API_KEY
-#   2) docker compose up -d --build     # → http://localhost:3100
+#   2) docker compose up -d             # 拉取预构建镜像 → http://localhost:3100
+#
+# 默认路径**只拉取、不编译**：镜像是 CI 在 tag 发布时构建好的多架构产物（见
+# .github/workflows/docker-publish.yml）。这样目标机不需要任何构建能力 —— Next.js 构建
+# 是全流程唯一的内存密集步骤，在低配机器上会把宿主机拖死（issue #115）。
+#
+# 想钉版本：把下面的 `:latest` 换成具体版本（如 `:v0.6.0`）。
+# 本地改过源码、要就地构建：见 docker-compose.build.yml。
+#
+# ⚠️ 不要把 `build:` 加回本文件。`build:` 与 `image:` 并存时，compose 的语义是
+#    「本地找不到该镜像就编译」—— 全新的目标机上照样会触发编译，等于这个改动白做。
 #
 # 配置入口只有 `.env`（下面用 env_file 注入容器；写了才注入）。
 # 改完 .env 需要 `docker compose up -d` 让容器重建才会生效。
@@ -15,7 +25,8 @@
 #    但首次生图会报错；也可以先起来、登录管理员后在「系统设置 → 生图网关」里填。
 services:
   motif:
-    build: .
+    # 与 .github/workflows/docker-publish.yml 里的 IMAGE 必须逐字一致
+    image: ghcr.io/evanfang0054/motif:latest
     container_name: motif
     ports:
       - "3100:3100"

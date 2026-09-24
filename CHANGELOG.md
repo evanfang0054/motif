@@ -4,6 +4,26 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- **一键部署默认不再在目标机上编译**（#115 / #116）：`docker compose up -d` 改为拉取 GHCR 上
+  由 CI 构建好的多架构镜像（amd64 / arm64），`docker-compose.yml` 只留 `image:`。
+  起因是低配宿主机上编译 Next.js 需要约 2 GiB 可用内存，内存不足时会转入 swap 抖动、
+  **把宿主机拖死约 10 分钟且没有 OOM-kill 记录**
+- 从源码构建降级为可选路径：`docker-compose.build.yml` overlay（产物打本地 tag `motif:local`）；
+  Dockerfile 的 builder 阶段加 `NODE_OPTIONS=--max-old-space-size=1536` 作**安全网**
+  （只兜 V8 堆，不保证不冻 —— Next/Turbopack 还有堆外内存，低配机器请用默认的拉取路径）
+- README 部署章节拆成三条路（拉取 / 源码构建 / 本地开发），补上内存前提、GHCR package 可见性说明，
+  常见问题新增「构建把宿主机拖死」与「拉镜像 unauthorized」两行
+
+### Added
+
+- `.github/workflows/docker-publish.yml`：tag 触发 + 手动补发，多架构矩阵（arm64 走原生
+  `ubuntu-24.04-arm`，不用 QEMU），`imagetools` 合并 manifest，产出 `:<tag>`；
+  **非预发布 tag**（不含 `-`）同时更新 `:latest` —— 预发布不顶掉默认部署路径拉的那个 tag
+
 ## [0.6.0] - 2026-09-24
 
 v0.5.0 以来的第六轮迭代：33 个 PR、132 个提交、152 个文件变更（+13590 / −1362）。

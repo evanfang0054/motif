@@ -14,6 +14,12 @@ ENV npm_config_registry=https://registry.npmmirror.com/ \
     npm_config_fetch_retry_mintimeout=20000 \
     npm_config_fetch_retry_maxtimeout=120000
 
+# 构建内存安全网：`next build` 峰值 1.5–2.5 GiB，内存不足时会把宿主机拖进 swap 抖动、
+# 表现为整机假死（无 OOM-kill 记录，见 issue #115）。给 V8 堆设上限，让超限变成**干净的构建失败**。
+# 只影响本 builder 阶段，运行时镜像不带这个变量。
+# ⚠️ 这是安全网不是保证：Next/Turbopack 还有堆外内存，低配机器请用预构建镜像（默认路径）。
+ENV NODE_OPTIONS=--max-old-space-size=1536
+
 # 先拷贝清单（含 .npmrc 镜像源声明），利用层缓存
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY apps/web/package.json apps/web/package.json
