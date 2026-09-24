@@ -1218,6 +1218,21 @@ export class MotifStore {
   }
 
   /**
+   * 退额口径的**唯一实现**：`请求张数 − 已落库张数`。
+   *
+   * 取消收尾与失败收尾共用同一个口径 —— 两处各写一遍，改口径（比如将来要按「实际出图成本」退）
+   * 时必然只改一处、另一处悄悄漂移。张数读的是本方法内部现取的 `requested_count`（不是调用方
+   * 传进来的快照），保证与 `countGeneratedInMessage` 的取值落在同一时刻。
+   */
+  private refundFor(id: string): number {
+    const row = this.db.prepare('SELECT requested_count FROM messages WHERE id = ?').get(id) as
+      | { requested_count: number }
+      | undefined
+    if (!row) return 0
+    return row.requested_count - this.countGeneratedInMessage(id)
+  }
+
+  /**
    * 取消收尾（原子 CAS + 退额）：把一条仍处于 `canceling` 的消息落定为 `canceled`，
    * 按「请求张数 − 已落库张数」退还剩余额度，并把任务同步回 idle（`syncTopicStatus` 是
    * topic 状态的唯一写入口，这里不裸写）。
@@ -1228,33 +1243,58 @@ export class MotifStore {
    * （`changes === 1`）时**发生 —— 谁先把状态从 canceling 翻走谁退额，另一方 `changes === 0`、
    * 整体退化为 no-op。于是「回收后 worker 再走一次收尾」不会二次退额。
    *
-   * 退额表达式与失败分支（`executeMessage` 的 catch）同源：`requestedCount − 已出图数`；
-   * 全仓只有本函数一处实现「取消退额」，`finishCancel` 只是它的薄封装（防止两份实现漂移）。
+   * **身份守卫（可选，`opts.workerId`）**：只守 `status='canceling'` 不够 —— 单次 `executeMessage`
+   * 跨过 `LEASE_MS`（30min）时，租约可能被回收、消息被**另一进程**重新认领，此时 `canceling` 上留的
+   * 是**那位新执行者**的 `worker_id`（`markMessageCanceling` 只翻状态、保留 `worker_id`）。本进程若
+   * 未抛错、循环正常跑完并读到 `canceling` 就无条件收尾，会按「本进程看到的已出图数」多退额
+   * （对方仍在出图，收尾后还会再插 1 张）。把身份并进 WHERE 后，不匹配 → `changes === 0` → 整体
+   * no-op，收尾权留给真正的执行者。**回收路径刻意不传身份**（只传 `leaseExpiredOnly`）—— 它本来就是
+   * 替「已消失的执行者」收尾，此时没有活着的身份可匹配。
+   *
+   * 退额表达式与失败分支（`executeMessage` 的 catch）同源：`requestedCount − 已出图数`
+   * （唯一实现是 `refundFor`，取消/失败两条收尾共用）；`finishCancel` 只是本函数的薄封装
+   * （防止两份实现漂移）。
    *
    * @param leaseExpiredOnly 只收尾「租约已过期」的消息（租约回收路径传 true：租约过期 =
    *   执行侧确实没了，绝不误伤仍在取消中的活任务）。worker 自己的收尾路径传 false ——
    *   它就是在执行的那一方，租约必然还活着。
    * @param now 租约判据用的时间戳；缺省取当前时刻。回收路径会传入它 SELECT 候选集时的同一个
    *   `now` —— 两次取值时点不同只会把候选集略微放大（无漏判），但复用同一个值能减少理解成本。
+   * @param workerId 调用方（执行者）的 worker id：worker 的两条收尾路径（循环正常收尾 / catch 里的
+   *   取消收尾）都传它；**回收路径不传**（见上）。不传 = 不做身份校验（仅守状态）。
    * @returns 本次是否由自己完成收尾（`finalized === true` 时才真的退了额）
    */
-  finalizeCancel(id: string, opts: { leaseExpiredOnly?: boolean; now?: string } = {}): { finalized: boolean; refund: number } {
+  finalizeCancel(
+    id: string,
+    opts: { leaseExpiredOnly?: boolean; now?: string; workerId?: string } = {}
+  ): { finalized: boolean; refund: number } {
     const tx = this.db.transaction((): { finalized: boolean; refund: number } => {
       const row = this.db
-        .prepare('SELECT user_id, topic_id, requested_count FROM messages WHERE id = ?')
-        .get(id) as { user_id: string; topic_id: string; requested_count: number } | undefined
+        .prepare('SELECT user_id, topic_id FROM messages WHERE id = ?')
+        .get(id) as { user_id: string; topic_id: string } | undefined
       if (!row) return { finalized: false, refund: 0 }
-      // 状态守卫与租约守卫一起进 WHERE：CAS 的判据全部落在同一条语句里，读-判-写之间没有窗口。
-      const leaseGuard = opts.leaseExpiredOnly ? ' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?' : ''
-      const params: string[] = opts.leaseExpiredOnly ? [id, opts.now ?? nowIso()] : [id]
+      // 守卫全部进 WHERE：CAS 的判据落在同一条语句里，读-判-写之间没有窗口。
+      const guards: string[] = []
+      const params: string[] = [id]
+      // 租约守卫：租约过期 = 执行侧确实没了（回收路径专用，绝不误伤仍在取消中的活任务）。
+      if (opts.leaseExpiredOnly) {
+        guards.push(' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?')
+        params.push(opts.now ?? nowIso())
+      }
+      // 身份守卫：canceling 保留 worker_id，它恒等于持有租约的执行者；不等于本进程说明租约已被回收、
+      // 可能被另一进程重新认领 —— 收尾权归那位执行者，本进程不得代它退额（见上方文档）。
+      if (opts.workerId) {
+        guards.push(' AND worker_id = ?')
+        params.push(opts.workerId)
+      }
       const res = this.db
         .prepare(
           `UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
-           WHERE id = ? AND status = 'canceling'${leaseGuard}`
+           WHERE id = ? AND status = 'canceling'${guards.join('')}`
         )
         .run(...params)
       if (res.changes === 0) return { finalized: false, refund: 0 }
-      const refund = row.requested_count - this.countGeneratedInMessage(id)
+      const refund = this.refundFor(id)
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式在取消路径上破掉。
       if (refund > 0) this.addCredits(row.user_id, refund, { source: 'generation_refund', refId: id, note: '取消退额' })
       this.syncTopicStatus(row.topic_id, null, null, 'canceled')
@@ -1293,8 +1333,8 @@ export class MotifStore {
       // 先读 row 再 CAS：row 缺失时返回「未收尾」且**不写任何状态**，返回值语义与副作用一致
       // （同一事务内 CAS 命中后 row 不可能消失，故「已置 failed 却返回 finalized:false」不可达）。
       const row = this.db
-        .prepare('SELECT user_id, topic_id, requested_count FROM messages WHERE id = ?')
-        .get(id) as { user_id: string; topic_id: string; requested_count: number } | undefined
+        .prepare('SELECT user_id, topic_id FROM messages WHERE id = ?')
+        .get(id) as { user_id: string; topic_id: string } | undefined
       if (!row) return { finalized: false, refund: 0 }
       // CAS：状态与执行者身份一起进 WHERE —— 判据全落在同一条语句里，读-判-写之间没有窗口。
       const res = this.db
@@ -1304,7 +1344,8 @@ export class MotifStore {
         )
         .run(id, opts.workerId)
       if (res.changes === 0) return { finalized: false, refund: 0 }
-      const refund = row.requested_count - this.countGeneratedInMessage(id)
+      // 退额口径与取消收尾共用 `refundFor`（改口径时不会只改一处）。
+      const refund = this.refundFor(id)
       this.db.prepare('UPDATE messages SET error = ? WHERE id = ?').run(opts.buildError(refund), id)
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式在失败路径上破掉。
       if (refund > 0) this.addCredits(row.user_id, refund, { source: 'generation_refund', refId: id, note: '生成失败退额' })
@@ -1335,7 +1376,10 @@ export class MotifStore {
       if (!row) return { finalized: false }
       const res = this.db
         .prepare(
-          `UPDATE messages SET status = 'completed', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+          // 显式清 `error`：与旧实现 `setMessageStatus(id, 'completed')`（它总把 error 置 NULL）保持同形。
+          // 当前其实不可达 —— `error` 只在 `finalizeFailure` 里写，而 failed 是终态、不会再有成功收尾 ——
+          // 但留着这一笔，将来若出现「同一条消息被重跑」的形态，就不会把上一轮的失败文案挂在成功的轮次上。
+          `UPDATE messages SET status = 'completed', error = NULL, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
            WHERE id = ? AND status = 'running' AND worker_id = ?`
         )
         .run(id, opts.workerId)

@@ -443,7 +443,13 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
 
     const final = store.getMessage(messageId)
     if (final && (final.status === 'canceling' || final.status === 'canceled')) {
-      finishCancel(store, msg)
+      // ⚠️ 必须带执行者身份（`workerId`）：单次 `executeMessage` 跨过 `LEASE_MS` 时，本进程的租约可能
+      // 已被回收、消息被**另一进程**重新认领（`worker_id` 换人），而 `markMessageCanceling` 只翻状态、
+      // 保留 `worker_id` —— 于是 canceling 上留的是**对方**的 id。本进程的循环若未抛错、正常跑完并读到
+      // canceling 就无条件收尾，会按「本进程看到的已出图数」退额，而对方仍在出图（收尾后还会再插 1 张）
+      // → 这 1 张被多退，且「收尾权归执行者」这条不变式被破坏。带身份后身份不匹配 → CAS 落空 → no-op，
+      // 收尾权留给真正的执行者（与下面 catch 里的取消收尾同构）。
+      finishCancel(store, msg, { workerId: deps.workerId })
     } else {
       // 成功收尾也走 store 的原子 CAS（`finalizeSuccess`）：守卫「状态 running + 执行者身份匹配」，
       // 命中才落 completed + 清租约 + 把任务同步回 idle。
@@ -453,7 +459,6 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     }
   } catch (e) {
     const raw = e instanceof Error ? e.message : String(e)
-    console.error('[motif] 生成失败:', raw)
     // ⚠️ 先看当前状态再决定走哪条收尾路径。
     //
     // 「取消中 + provider 抛错」是生产可达的交错：worker 认领后正在 provider.generate，用户取消
@@ -471,9 +476,15 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     // 落到下面的 `finalizeFailure` 即可：身份不匹配 → CAS 落空 → 退化为 no-op。
     const current = store.getMessage(messageId)
     if (current && current.status === 'canceling' && current.workerId === deps.workerId) {
-      finishCancel(store, msg)
+      // 「用户取消」不是「生成失败」：这条路径按 info 记「取消收尾」，避免排障时把正常取消误读成故障
+      // （原始错误仍带在日志里，便于定位是哪次 generate 抛的错）。
+      console.info('[motif] 取消收尾（生成期间被用户取消）:', raw)
+      // 身份守卫同时**下沉进** `finalizeCancel`（`opts.workerId`）：即便这里的「状态 + 身份」预检将来被
+      // 改动绕过，store 层的 CAS 仍会挡住「身份已换人却代它退额」。
+      finishCancel(store, msg, { workerId: deps.workerId })
       return
     }
+    console.error('[motif] 生成失败:', raw)
     // 否则走失败收尾：退额 + 落 failed + 任务回 idle 全部下沉到 store 的原子 CAS（`finalizeFailure`）：
     // 只有把状态从 running（且执行者身份匹配）翻走的那一方退额。这堵掉「单次 provider.generate 跨过
     // 30 分钟租约、被回收重排（甚至被另一进程重新认领）后，本进程迟到的 catch 又退一次」的双退窗口 ——
@@ -503,9 +514,17 @@ export function friendlyGenerateError(raw: string, refund: number): string {
  * 与同一个「谁先把状态从 canceling 翻走谁退额」的原子 CAS，否则两份实现必然漂移、且可能双退。
  * 这里刻意不再自己算 `requestedCount - done`：让 store 在 CAS 命中的同一个事务里现算，
  * 避免调用方传入一个已过期的 `done` 造成退额数漂移。
+ *
+ * @param opts.workerId 执行者身份（worker 的两条收尾路径都传）：并进 `finalizeCancel` 的 CAS，
+ *   身份不匹配则整体 no-op。**不传 = 不做身份校验** —— 只有租约回收路径（`requeueExpiredLeases`）
+ *   会不传，因为它本来就是替「已消失的执行者」收尾。
  */
-export function finishCancel(store: MotifStore, msg: { id: string }): void {
-  store.finalizeCancel(msg.id)
+export function finishCancel(
+  store: MotifStore,
+  msg: { id: string },
+  opts: { workerId?: string } = {}
+): void {
+  store.finalizeCancel(msg.id, { workerId: opts.workerId })
 }
 
 // ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------

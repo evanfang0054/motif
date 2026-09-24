@@ -1162,13 +1162,19 @@ describe('话题状态派生与读取自愈', () => {
     ]
     expect(srcFiles.length).toBeGreaterThan(50) // 防止 glob 写错导致「零文件通过」
 
+    const STORE = 'packages/db/src/store.ts'
     const offenders: string[] = []
     for (const rel of srcFiles) {
       const text = readFileSync(join(root, rel), 'utf8')
       // 1) 除 store.ts 外，任何地方都不许调 setTopicActive
-      if (rel !== 'packages/db/src/store.ts' && text.includes('setTopicActive(')) offenders.push(`${rel}: setTopicActive`)
-      // 2) 任何地方都不许裸写 topics 的 status（settleStaleTopic 也只用 SET status = ?，不带字面量）
-      if (/UPDATE\s+topics\s+SET[^`]*status\s*=\s*'/i.test(text)) offenders.push(`${rel}: 裸写 topics.status`)
+      if (rel !== STORE && text.includes('setTopicActive(')) offenders.push(`${rel}: setTopicActive`)
+      // 2) 除 store.ts 外（存储层是唯一允许写 topics.status 的地方 —— `syncTopicStatus` 与
+      //    `settleStaleTopic` 都在其中，且都用绑定参数），任何地方都不许裸写 topics 的 status。
+      //    判据覆盖**两种形态**：字面量 `= '...'` 与绑定参数 `= ?` —— 只抓字面量的话，
+      //    `UPDATE topics SET status = ?` 这类写法会漏网，断言就与「写入必须落在 store.ts」不等价。
+      if (rel !== STORE && /UPDATE\s+topics\s+SET[^`]*status\s*=\s*['?]/i.test(text)) {
+        offenders.push(`${rel}: 裸写 topics.status`)
+      }
     }
     expect(offenders).toEqual([])
   })
@@ -1177,6 +1183,8 @@ describe('话题状态派生与读取自愈', () => {
     // 与上一条同款，对象换成 `messages.status`。判据（比「白名单方法名」更严、且不会随方法增删
     // 悄悄变宽）：`messages.status` 的**任何**写入都必须落在 `packages/db/src/store.ts` 内 ——
     //   ① 裸 SQL 字面量（`UPDATE messages SET ... status = '...'`）：会绕过 CAS 守卫与流水；
+    //   ①' 绑定参数形态（`UPDATE messages SET ... status = ?`）：同样绕过 CAS 守卫与流水，且旧正则
+    //      要求 `=` 后紧跟 `'`，这类写法根本不会被抓 —— 故字符类写成 `['?]`，两种形态一起覆盖；
     //   ② 公开的无条件写入器 `setMessageStatus(`：它无条件写 + 清 worker_id/lease，正是本批
     //      在 `executeMessage` 成功分支上修掉的那个缺陷的载体（当时它在 apps/web 侧被直接调用）。
     // store.ts 内部的写入方法（finalizeCancel / finalizeFailure / finalizeSuccess / leaseNextMessage /
@@ -1197,7 +1205,7 @@ describe('话题状态派生与读取自愈', () => {
     const offenders: string[] = []
     for (const rel of srcFiles) {
       const text = readFileSync(join(root, rel), 'utf8')
-      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*'/i.test(text)) offenders.push(`${rel}: 裸写 messages.status`)
+      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*['?]/i.test(text)) offenders.push(`${rel}: 裸写 messages.status`)
       if (rel !== STORE && text.includes('setMessageStatus(')) offenders.push(`${rel}: 调用 setMessageStatus`)
     }
     expect(offenders).toEqual([])
