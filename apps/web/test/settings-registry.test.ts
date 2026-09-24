@@ -150,9 +150,10 @@ describe('读取视图（密钥只回掩码）', () => {
 })
 
 describe('额度与奖励分组（credits）', () => {
-  it('四个键存在、kind 与默认值正确、且既非只读也非危险区', () => {
+  it('五个键存在、kind 与默认值正确、且既非只读也非危险区', () => {
     const defs = SETTING_DEFS.filter((d) => d.group === 'credits')
     expect(defs.map((d) => d.key).sort()).toEqual([
+      'CDK_REDEEM_ENABLED',
       'INVITE_REWARD_CREDITS',
       'INVITE_REWARD_ENABLED',
       'INVITE_REWARD_MAX_INVITEES',
@@ -161,6 +162,9 @@ describe('额度与奖励分组（credits）', () => {
     const byKey = Object.fromEntries(defs.map((d) => [d.key, d]))
     expect(byKey.INVITE_REWARD_ENABLED.kind).toBe('boolean')
     expect(byKey.INVITE_REWARD_ENABLED.defaultHint).toBe('false')
+    // CDK 兑换是「不接支付渠道也能发额度」的唯一手段，默认必须是**开**（用户裁决）
+    expect(byKey.CDK_REDEEM_ENABLED.kind).toBe('boolean')
+    expect(byKey.CDK_REDEEM_ENABLED.defaultHint).toBe('true')
     for (const k of ['INVITE_REWARD_CREDITS', 'INVITE_REWARD_MAX_INVITEES', 'SIGNUP_BONUS_CREDITS']) {
       expect(byKey[k].kind).toBe('number')
       expect(byKey[k].defaultHint).toBe('3')
@@ -170,6 +174,16 @@ describe('额度与奖励分组（credits）', () => {
       expect(d.readOnly).toBeFalsy()
       expect(d.danger).toBeFalsy()
     }
+  })
+
+  it('充值开关在支付分组、默认关（默认形态 = 不接支付渠道的自建部署）', () => {
+    const def = SETTING_DEFS.find((d) => d.key === 'BILLING_ENABLED')
+    expect(def).toBeDefined()
+    expect(def!.group).toBe('payment')
+    expect(def!.kind).toBe('boolean')
+    expect(def!.defaultHint).toBe('false')
+    // 不是危险区：关掉充值只少一条收款路径，不削弱安全基线（与 PAYMENT_CHANNEL 不同）
+    expect(def!.danger).toBeFalsy()
   })
 
   it('三个 number 键按 1–65535 整数校验：0 / 负数 / 小数 / 超上限均被拒', () => {

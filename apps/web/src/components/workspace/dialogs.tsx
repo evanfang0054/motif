@@ -83,6 +83,8 @@ function BillingDialog({
   const [channel, setChannel] = useState<'mock' | 'epay' | 'stripe'>('mock')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 兑换开关（默认开）：关掉后连弹窗里的 CDK 入口一起摘掉（后端也已拒绝）
+  const cdkRedeemEnabled = usePublicConfig()?.cdkRedeemEnabled ?? true
 
   useEffect(() => {
     void api
@@ -150,9 +152,13 @@ function BillingDialog({
           </Alert.Content>
         </Alert>
       )}
-      <Link onPress={onRedeem} className="mt-4 block w-fit" style={{ fontSize: 13, color: 'var(--muted)' }}>
-        已有 CDK？前往兑换 <ArrowRight className="ms-1 inline align-[-0.125em]" aria-hidden />
-      </Link>
+      {/* CDK 入口挂在充值弹窗里（充值开着时它是顺路的入口）。关闭兑换开关后这里也要摘掉，
+          否则「后端拒绝 + 前端还给入口」= 点进去必然报错。 */}
+      {cdkRedeemEnabled && (
+        <Link onPress={onRedeem} className="mt-4 block w-fit" style={{ fontSize: 13, color: 'var(--muted)' }}>
+          已有 CDK？前往兑换 <ArrowRight className="ms-1 inline align-[-0.125em]" aria-hidden />
+        </Link>
+      )}
     </Modal>
   )
 }

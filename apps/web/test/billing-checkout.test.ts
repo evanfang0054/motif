@@ -13,6 +13,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-co-'))
   store = new MotifStore(join(dir, 't.db'))
   userId = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' }).id
+  // 充值开关默认**关**（自建部署的默认形态），所以下面每条「能下单」的用例都得先打开它。
+  // 关着的形态由第一条用例单独钉住 —— 那才是默认口径。
+  store.setSetting('BILLING_ENABLED', 'true')
 })
 afterEach(() => {
   store.close()
@@ -20,6 +23,18 @@ afterEach(() => {
 })
 
 describe('startCheckout（mock 渠道）', () => {
+  it('充值开关关闭（默认）→ 403，且不建单', async () => {
+    store.setSetting('BILLING_ENABLED', 'false')
+    await expect(startCheckout(store, {}, userId, 'credits_50')).rejects.toThrow('本站未开放充值。')
+    expect(store.listOrders({ userId })).toHaveLength(0)
+  })
+  it('键**未设置**时也按默认关处理（默认值是三处各写一份，这条钉服务端那一处）', async () => {
+    // beforeEach 把键设成 true 了，这里删掉它，回到「全新部署、库里没这个键」的形态：
+    // 若 services 的 resolveBool 兜底被改成 true，这条会红（前端还按 defaultHint=false 隐藏入口）。
+    store.deleteSettings(['BILLING_ENABLED'])
+    await expect(startCheckout(store, {}, userId, 'credits_50')).rejects.toThrow('本站未开放充值。')
+    expect(store.listOrders({ userId })).toHaveLength(0)
+  })
   it('返回站内收银台链接并创建 mock 渠道 pending 订单', async () => {
     const r = await startCheckout(store, {}, userId, 'credits_50')
     expect(r.checkoutUrl).toContain('/billing/mock-pay?order=')

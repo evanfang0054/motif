@@ -262,6 +262,9 @@ export default function AdminUsersPage() {
                               {/* 改角色与重置密码是 root 独占：admin 登录时连控件都不渲染（服务端也会 403） */}
                               {isRoot && (
                                 <>
+                                  {/* ⚠️ 全站唯一保留的**原生**表单控件（2026-09-24 走查确认）：它在表格行内，
+                                      原生下拉比 HeroUI 的 popover Select 更稳、更省事；且它本就有 UA 边框，
+                                      不属于「输入框缺边框」那一类。要换 HeroUI Select 请单独做（会改交互与可访问性）。 */}
                                   <select value={u.role} disabled={busy} onChange={(e) => void changeRole(u, e.target.value)}>
                                     <option value="user">普通用户</option>
                                     <option value="admin">管理员</option>

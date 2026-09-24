@@ -146,9 +146,13 @@ export default function AdminSettingsPage() {
       )
     }
     if (item.kind === 'boolean') {
+      // 未显式设置时按 `defaultHint` 回显**生效值**（与 enum 分支同一口径）。
+      // 此前只认 `item.value`，于是「默认开启」的键（如 CDK 兑换、本进程 worker）在未设置时
+      // 开关显示为**关**、而实际是开的 —— 管理员照它反着读，会得出相反结论。
+      // 真值判定用 `isTrue`（认 `'1'`），与服务端 resolveBool 同口径。
       return (
         <Switch
-          isSelected={(dirty[item.key] ?? item.value ?? 'false') === 'true'}
+          isSelected={isTrue(dirty[item.key] ?? (item.value || item.defaultHint || 'false'))}
           onChange={(sel) => setField(item.key, sel ? 'true' : 'false')}
           aria-label={item.label}
         >
@@ -217,10 +221,18 @@ export default function AdminSettingsPage() {
     )
   }
 
-  /** 草稿优先的布尔值：与字段渲染同一口径（未保存的改动立即反映到提示行） */
-  function isOn(key: string): boolean {
-    const raw = dirty[key] ?? items.find((i) => i.key === key)?.value
+  /**
+   * 布尔值的「真」判定：`'1'` 也算真 —— 与服务端 `resolveBool` 同一口径。
+   * ⚠️ 两个消费点都必须用它：`isOn`（提示行）与 boolean 字段的 `Switch.isSelected`。
+   * 此前 Switch 只认字面 `'true'`，于是 env 播种成 `'1'` 的键会「显示关、实际开」。
+   */
+  function isTrue(raw: string | null | undefined): boolean {
     return raw === 'true' || raw === '1'
+  }
+
+  /** 草稿优先的布尔值（未保存的改动立即反映到提示行）。与字段渲染的差别：这里**不查 defaultHint** */
+  function isOn(key: string): boolean {
+    return isTrue(dirty[key] ?? items.find((i) => i.key === key)?.value)
   }
 
   /** 渲染一个分区的表单体（外层的分区切换由 Tabs 承担，见组件根部） */

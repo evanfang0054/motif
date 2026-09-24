@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Avatar, Button, Popover, Tooltip, Typography } from '@heroui/react'
+import { Avatar, Button, Chip, Popover, Tooltip, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ChevronDown, Palette, Person, Power, Shield, Wallet } from '@gravity-ui/icons'
 import { anchorRender } from '@/components/ui/anchor-button'
@@ -13,6 +13,11 @@ import { roleAtLeast } from '@motif/core'
 interface Props {
   user: User
   onOpenBilling: () => void
+  onOpenRedeem: () => void
+  /** 充值开关（后台可配，默认关）：关了就只剩兑换这条路 */
+  billingEnabled: boolean
+  /** CDK 兑换开关（后台可配，默认开） */
+  cdkRedeemEnabled: boolean
   onOpenProfile: () => void
   onLogout: () => void
 }
@@ -35,6 +40,10 @@ interface Props {
  * （个人资料 / 管理后台 / 主题外观 / 退出），**充值与余额留在外面** ——
  * 充值是主操作，也是「额度不足」时唯一的出路，藏进下拉等于每次都要多绕一步。
  *
+ * 2026-09-24 加两个后台开关（充值默认关、CDK 兑换默认开）后，这条「留在外面」的裁决更关键：
+ * 关掉充值后余额入口**不能变哑**，否则兑换也一起没了入口 —— 故它的动作按开关退化
+ * （充值 → 兑换 → 不可点的余额徽标），详见组件内 `creditAction`。
+ *
  * 2026-09-21 三次裁决：
  * ① 「余额 N 张」徽标与「充值」按钮**合并成一个入口**（钱包图标 + 张数，点击开充值弹窗）。
  *    此前两者并排，读的是「还有多少」、点的是「去买」两件事挤在一起；合并后一个控件同时表达
@@ -45,13 +54,25 @@ interface Props {
  *    才是菜单该有的样子。
  * ③ 下拉改为**菜单式内边距**（外框 6px、行铺满），行与行不再靠底色区分、改由分隔线分组。
  */
-function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
-  // 管理后台入口仅对管理员与超级管理员可见（普通用户看不到任何管理面线索）
-  const isAdmin = roleAtLeast(user.role, 'admin')
+function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEnabled, onOpenProfile, onLogout }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
-  /** 头像回退：昵称首字符；昵称为空时退到通用人像图标 */
-  const initial = user.name.trim().charAt(0)
+  const isAdmin = roleAtLeast(user.role, 'admin')
+  const initial = user.name.trim().slice(0, 1).toUpperCase()
+
+  /**
+   * 余额入口的动作（2026-09-24 加两个后台开关后）：
+   * - 开放充值 → 开充值弹窗（弹窗里同时挂着 CDK 兑换入口，与改动前一致）
+   * - 只开放兑换 → 开兑换弹窗 —— ⚠️ 不能留成「点了没反应」：关掉充值后，
+   *   这是用户拿到额度的唯一入口
+   * - 两个都关 → `null`，退化成不可点的余额展示（见下面的 Chip 分支）
+   */
+  const creditAction = billingEnabled ? onOpenBilling : cdkRedeemEnabled ? onOpenRedeem : null
+  const creditLabel = billingEnabled
+    ? `余额 ${user.credits} 张，点击充值`
+    : cdkRedeemEnabled
+      ? `余额 ${user.credits} 张，点击兑换`
+      : `余额 ${user.credits} 张`
 
   return (
     <header className="ws-nav">
@@ -65,24 +86,28 @@ function TopNav({ user, onOpenBilling, onOpenProfile, onLogout }: Props) {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* 余额 + 充值合并入口：钱包图标 + 张数，点击直接开充值弹窗。
+        {/* 余额 + 充值/兑换合并入口：钱包图标 + 张数，点击开对应弹窗。
             没有「充值」字样是刻意的（用户裁决：更短）；含义由 Tooltip / aria-label 补上，
             视觉用户 hover 得到提示，读屏用户拿到完整动作名。
             ⚠️ Tooltip 必须**直接包住** Button（同 IconButton 的说明：TooltipTrigger 靠 clone
             直接子元素注入 aria-describedby），写成 `<Tooltip.Trigger><Button/></Tooltip.Trigger>`
-            会多套一层 `div[role=button]`。 */}
-        <Tooltip delay={0}>
-          <Button
-            variant="primary"
-            className="shrink-0"
-            aria-label={`余额 ${user.credits} 张，点击充值`}
-            onPress={onOpenBilling}
-          >
+            会多套一层 `div[role=button]`。
+            ⚠️ 两个开关都关时**不渲染按钮**（`creditAction` 为 null）：一个点了没反应的按钮
+            比不可点的徽标更糟。此时余额仍有展示价值，故用 Chip 保留。 */}
+        {creditAction ? (
+          <Tooltip delay={0}>
+            <Button variant="primary" className="shrink-0" aria-label={creditLabel} onPress={creditAction}>
+              <Wallet />
+              {user.credits} 张
+            </Button>
+            <Tooltip.Content>{billingEnabled ? '充值 / 兑换' : '兑换额度'}</Tooltip.Content>
+          </Tooltip>
+        ) : (
+          <Chip color="accent" className="shrink-0" aria-label={creditLabel}>
             <Wallet />
-            {user.credits} 张
-          </Button>
-          <Tooltip.Content>充值 / 兑换</Tooltip.Content>
-        </Tooltip>
+            <Chip.Label>{user.credits} 张</Chip.Label>
+          </Chip>
+        )}
         <div className="relative">
           <Popover isOpen={menuOpen} onOpenChange={setMenuOpen}>
             {/* Popover.Trigger 渲染的是真实 DOM 包装（Pressable > div[role=button]，popover.js 实证），

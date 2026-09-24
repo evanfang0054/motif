@@ -515,15 +515,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
         }
         const msg = e instanceof ApiError ? e.message : '提交失败，请重试。'
         showToast({ tone: 'danger', message: msg, timeoutMs: 4000 })
-        // 额度不足：光提示不够，直接把充值入口送到用户面前
+        // 额度不足：光提示不够，直接把「拿额度」的入口送到用户面前。
+        // ⚠️ 必须按开关分流（2026-09-24）：充值关着的时候弹充值弹窗等于把用户送进死胡同；
+        // 两个都关就只留提示 —— 此时站内确实没有任何拿额度的办法。
         if (msg.includes('额度不足')) {
-          setDialog('billing')
+          if (publicCfg?.billingEnabled) setDialog('billing')
+          else if (publicCfg?.cdkRedeemEnabled) setDialog('redeem')
         }
       } finally {
         submittingRef.current = false
       }
     },
-    [ensureTopic, refreshTopics, refreshDetail, publicCfg?.llmEnhanceEnabled]
+    [ensureTopic, refreshTopics, refreshDetail, publicCfg?.llmEnhanceEnabled, publicCfg?.billingEnabled, publicCfg?.cdkRedeemEnabled]
   )
 
   const submitGenerate = useCallback(
@@ -911,6 +914,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
       <TopNav
         user={user}
         onOpenBilling={() => setDialog('billing')}
+        onOpenRedeem={() => setDialog('redeem')}
+        billingEnabled={publicCfg?.billingEnabled ?? false}
+        cdkRedeemEnabled={publicCfg?.cdkRedeemEnabled ?? true}
         onOpenProfile={() => setDialog('profile')}
         onLogout={() => void logout()}
       />

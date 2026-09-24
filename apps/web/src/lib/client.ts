@@ -121,6 +121,10 @@ export interface PublicConfig {
   inviteRewardMaxInvitees: number
   signupBonusCredits: number
   llmEnhanceEnabled: boolean
+  /** 是否开放充值（默认关）；前端据此隐藏充值入口 */
+  billingEnabled: boolean
+  /** 是否开放 CDK 兑换（默认开）；前端据此隐藏兑换入口 */
+  cdkRedeemEnabled: boolean
 }
 
 export interface AdminSettingItem {
