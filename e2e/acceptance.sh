@@ -149,9 +149,16 @@ await wait(1)
 await js(String.raw`(() => {
   const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
   if (!m) throw new Error('充值弹窗未打开')
-  // CDK 入口是 HeroUI Link（渲染成 <a>，不是 button），按可见文字定位
-  const link = [...m.querySelectorAll('a, button')].find(x => x.innerText.includes('CDK'))
-  if (!link) throw new Error('CDK 入口未找到')
+  // ⚠️ CDK 入口是 HeroUI Link，**没有 href** ⇒ RAC 把它渲染成 span[role=link]，
+  // **不是** a（也不是 button）：elementType = props.href && !isDisabled ? 'a' : 'span'，
+  // 且 elementType !== 'a' 时才补 role="link"（见 react-aria-components 的 Link / useLink）。
+  // 故按 role 锚，别按标签名 —— 2026-09-24 实测：写 'a, button' 在这里恒空。
+  // ⚠️ 本段在 String.raw 模板里，注释**不能出现反引号**（会提前终止模板）。
+  const links = [...m.querySelectorAll('[role="link"]')]
+  const link = links.find((x) => (x.textContent || '').includes('CDK'))
+  if (!link) throw new Error('CDK 入口未找到（弹窗内 role=link 共 ' + links.length + ' 个）')
+  // element.click() 会走 RAC usePress 的 virtual-click 分支（源码注释即「screen reader 或
+  // element.click() 触发」），等价键盘激活，故无需坐标点击。
   link.click(); return true
 })()`)
 await wait(1)
@@ -212,14 +219,20 @@ await js(String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：基于参考图的生成')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  // RAC NumberField 真正入 DOM 的输入框是 type="text"（带 inputMode）—— react-aria 另建了一个
-  // **游离**（未插入 DOM）的 type="number" 元素做原生 min/max 校验，所以页面上 input[type="number"] 恒为空。
-  // 标签实际文案带范围（「张数（1–12 张）」），按 aria-label 前缀取更稳
-  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
-  num.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
+// 张数用 CDP 插入 + 失焦：RAC NumberField 只在**失焦 / 回车 / 步进器**时提交 onChange，
+// 「设 value + 派 input」驱动不了它（run.sh 里早有同款注释与实测）。曾因此把「2 张」提交成 1 张，
+// C 段等 3 张画布卡一直等到超时。选择器按 aria-label 前缀：标签实际是「张数（1–12 张）」。
+await js(String.raw`(() => { const n = document.querySelector('.ws-panel input[aria-label^="张数"]'); n.focus(); n.select(); return true })()`)
+await cdp('Input.insertText', { text: '2' })
+await wait(0.5)
+await js(String.raw`(() => { document.querySelector('.ws-panel input[aria-label^="张数"]').blur(); return true })()`)
+// 断言张数**真的提交进去了**：blur 才触发 RAC 的 commit；若不生效只会在下游以「等 N 张超时」
+// 的形式暴露（本轮就踩过：提交成 1 张、C 段白等 180s）。在这里立刻失败，报错直指原因。
+await wait(1)
+const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label^="张数"]').value)()`)
+if (countNow !== '2') throw new Error('张数未改为 2，实际: ' + countNow)
 await js(String.raw`(() => {
   // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
   const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
@@ -255,14 +268,23 @@ cliLog(`before: credits=${before} imgs=${beforeImgs}`)
 
 // 提交 2 张（真实网关按张计费，压到最小）
 await js(String.raw`(() => {
-  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
-  num.dispatchEvent(new Event('input', { bubbles: true }))
   const ta = document.querySelector('.ws-panel textarea')
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：取消退额')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
+// 张数用 CDP 插入 + 失焦：RAC NumberField 只在**失焦 / 回车 / 步进器**时提交 onChange，
+// 「设 value + 派 input」驱动不了它（run.sh 里早有同款注释与实测）。曾因此把「2 张」提交成 1 张，
+// C 段等 3 张画布卡一直等到超时。选择器按 aria-label 前缀：标签实际是「张数（1–12 张）」。
+await js(String.raw`(() => { const n = document.querySelector('.ws-panel input[aria-label^="张数"]'); n.focus(); n.select(); return true })()`)
+await cdp('Input.insertText', { text: '2' })
+await wait(0.5)
+await js(String.raw`(() => { document.querySelector('.ws-panel input[aria-label^="张数"]').blur(); return true })()`)
+// 断言张数**真的提交进去了**：blur 才触发 RAC 的 commit；若不生效只会在下游以「等 N 张超时」
+// 的形式暴露（本轮就踩过：提交成 1 张、C 段白等 180s）。在这里立刻失败，报错直指原因。
+await wait(1)
+const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label^="张数"]').value)()`)
+if (countNow !== '2') throw new Error('张数未改为 2，实际: ' + countNow)
 await js(String.raw`(() => {
   // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
   const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
@@ -278,6 +300,9 @@ const cancelClicked = await js(String.raw`(() => {
   return false
 })()`)
 cliLog('cancel clicked=' + cancelClicked)
+// ⚠️ 必须断言：若没点到「取消生成」，本轮走的是**正常完成**路径，而 `after+newImgs==before`
+// 在正常完成下同样成立 —— 那样这条「取消退额守恒」的验收就是在没走取消路径时变绿的（假通过）。
+if (!cancelClicked) throw new Error('未点到「取消生成」—— 本轮未走取消路径，守恒断言不构成「取消退额」验收')
 
 // 等任务回到空闲（真实网关最长约 1–2 分钟）
 let idle = false
@@ -454,6 +479,17 @@ ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
 
+// ⚠️ 先收起左侧任务面板：它是**浮动层**（globals.css：left:12px / width:280px / top:12px / bottom:64px），
+// 会盖住画布左上角；而画布第一张卡恰在那儿（2026-09-24 实测视口 x≈0..240、y≈64..304）。
+// 不收起时 pointerdown 全落在面板上 —— 拖拽 / 点选 / 双击都不生效（实测「拖拽后位置未变化」）。
+// 收起后只剩一条 min-height:44px 的小条，卡即露出。已收起时该按钮不存在，跳过即可。
+await js(String.raw`(() => {
+  const b = document.querySelector('button[aria-label="收起任务面板"]')
+  if (b) b.click()
+  return true
+})()`)
+await wait(1)
+
 // 定位第一张图片卡片的视口中心
 const center = await js(String.raw`(() => {
   const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
@@ -589,11 +625,20 @@ await js(String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：#88 骨架槽位')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '4')
-  num.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
+// 张数用 CDP 插入 + 失焦：RAC NumberField 只在**失焦 / 回车 / 步进器**时提交 onChange，
+// 「设 value + 派 input」驱动不了它（run.sh 里早有同款注释与实测）。曾因此把「2 张」提交成 1 张，
+// C 段等 3 张画布卡一直等到超时。选择器按 aria-label 前缀：标签实际是「张数（1–12 张）」。
+await js(String.raw`(() => { const n = document.querySelector('.ws-panel input[aria-label^="张数"]'); n.focus(); n.select(); return true })()`)
+await cdp('Input.insertText', { text: '4' })
+await wait(0.5)
+await js(String.raw`(() => { document.querySelector('.ws-panel input[aria-label^="张数"]').blur(); return true })()`)
+// 断言张数**真的提交进去了**：blur 才触发 RAC 的 commit；若不生效只会在下游以「等 N 张超时」
+// 的形式暴露（本轮就踩过：提交成 1 张、C 段白等 180s）。在这里立刻失败，报错直指原因。
+await wait(1)
+const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label^="张数"]').value)()`)
+if (countNow !== '4') throw new Error('张数未改为 4，实际: ' + countNow)
 await js(String.raw`(() => {
   // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
   const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))

@@ -266,13 +266,25 @@ for (let i = 0; i < 120; i++) {
 cliLog('CANVAS_IMGS ' + imgs)
 if (imgs < 2) throw new Error('生成图片数量不足: ' + imgs)
 
-// 图片真实可渲染
-const loaded = await js(String.raw`(() => {
-  const els = [...document.querySelectorAll('.canvas-img-card img')]
-  return els.map(el => el.naturalWidth > 0)
-})()`)
-if (!loaded.every(Boolean)) throw new Error('存在未加载完成的图片')
+// 图片真实可渲染。
+// ⚠️ **必须轮询**，不能只查一次：CanvasStage 的图是 `<img loading="lazy">`，
+// 「元素已插入」≠「已解码」—— 第二张常在同一轮里刚落 DOM、还没 load，
+// 单发检查会偶发误报「存在未加载完成的图片」（2026-09-24 实测踩到，图本身是好的）。
+// 超时则把每张的状态打出来，便于区分「没加载」与「真坏」。
+let loaded = []
+for (let i = 0; i < 20; i++) {
+  loaded = await js(String.raw`(() => {
+    const els = [...document.querySelectorAll('.canvas-img-card img')]
+    return els.map(el => ({ ok: el.naturalWidth > 0, complete: el.complete, w: el.naturalWidth }))
+  })()`)
+  if (loaded.length > 0 && loaded.every((x) => x.ok)) break
+  await wait(1)
+}
 cliLog('IMAGES_LOADED ' + JSON.stringify(loaded))
+// 长度守卫：空数组的 every 恒真，会静默放行（虽然上一段已断言 imgs>=2，但别留这个洞）
+if (loaded.length === 0 || !loaded.every((x) => x.ok)) {
+  throw new Error('存在未加载完成的图片（若 complete=false 多为 lazy 未触发，非图片损坏）: ' + JSON.stringify(loaded))
+}
 
 // 额度应扣减为 1
 const credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
