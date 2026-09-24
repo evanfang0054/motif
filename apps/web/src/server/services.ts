@@ -11,6 +11,7 @@ import {
   isBusyTopicStatus,
   placementRect,
   planSlotRects,
+  rectsIntersect,
   validateEmail,
   validateName,
   validatePassword,
@@ -385,7 +386,6 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     // 落位上下文：新产出落进「当前视口内的空位槽」。视口以 topics.canvas_meta 为准
     // （服务端唯一能读到的「用户当前看到的区域」），故生成的图不会堆在 (0,0)。
     const placementOrigin = viewportOrigin(store.getCanvasMeta(msg.topicId).viewport)
-    const occupied = store.listCanvasPlacements(msg.topicId).map(placementRect)
     for (let i = alreadyDone; i < msg.requestedCount; i++) {
       // 取消检查：canceling 状态时停止并把剩余张数退回
       const current = store.getMessage(messageId)
@@ -404,16 +404,23 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
       // 位置列与图片行在**同一条 INSERT** 落库：不存在「有图无位置」的中间态。
       // ⚠️ 不要拆成「先插图、再 UPDATE 位置」两步。
       const size = displaySize(img.width, img.height)
+      // 落位前**重读**一次占位：生成期间用户可能手拖/导入新图，入队时算好的计划槽会相对现状失效。
+      const occupied = store.listCanvasPlacements(msg.topicId).map(placementRect)
       // 落位：优先落回**入队时算好的计划槽**（`plan[i]`）—— 与骨架同坐标，故出图就地填入、左上角不动。
-      // 只取计划的 x/y，尺寸用**真实出图**的显示尺寸：出图比例与占位不同时就地平滑过渡；
-      // 又因 `displaySize` 恒 ≤ 240×240、槽步长 280，无论怎么变都不会压到相邻图。
-      // 计划安全的前提：`occupied` 在整轮生成期间只增不减（任务在跑时不会再入队/转正新图），
-      // 故计划槽始终不与任何既有图相交。老消息 `slotPlan=[]` 时退回现场分配（行为与改动前一致）。
+      // 只取计划的 x/y，尺寸用**真实出图**的显示尺寸（出图比例与占位不同时就地平滑过渡）。
+      // 但计划是入队时算的，落位前必须对**真实尺寸**的矩形做一次相交校验，撞上就退回现场分配：
+      //   ① 出图比例 ≠ 请求比例时（请求 800x600 → 计划 240×180，网关返回 800×800 → 实际 240×240，
+      //      高度多 60px）可能压到用户手拖的图；② 生成期间用户拖动/导入会让计划槽失效。
+      // 退让时该骨架本就会消失，故「跳位」代价远小于「压图」。
+      // 老消息 `slotPlan=[]` 时直接走现场分配（行为与改动前一致）。
       const planned = msg.slotPlan[i]
-      const slot: CanvasRect = planned
+      const candidate: CanvasRect | null = planned
         ? { x: planned.x, y: planned.y, w: size.width, h: size.height }
-        : allocateSlots(occupied, [size], placementOrigin)[0]
-      occupied.push(slot)
+        : null
+      const slot: CanvasRect =
+        candidate && !occupied.some((r) => rectsIntersect(r, candidate))
+          ? candidate
+          : allocateSlots(occupied, [size], placementOrigin)[0]
       store.insertCanvasImage({
         topicId: msg.topicId,
         userId: msg.userId,

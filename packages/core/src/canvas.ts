@@ -200,7 +200,12 @@ export function centerRectsInViewport(
   return rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy }))
 }
 
-function intersects(a: CanvasRect, b: CanvasRect): boolean {
+/**
+ * 矩形相交（贴边不算）：a 与 b 有正面积重叠。
+ * 与 `apps/web/src/lib/canvas/geometry.ts` 的 `rectsIntersect` 同语义 —— 导出它是因为
+ * worker 落位前要拿它做「计划槽是否已被占用」的校验（服务端只依赖 core，不引客户端几何库）。
+ */
+export function rectsIntersect(a: CanvasRect, b: CanvasRect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 }
 
@@ -227,7 +232,7 @@ export function allocateSlots(
       h: size.height,
     }
     i += 1
-    if (taken.some((r) => intersects(r, cand))) continue
+    if (taken.some((r) => rectsIntersect(r, cand))) continue
     taken.push(cand)
     out.push(cand)
   }

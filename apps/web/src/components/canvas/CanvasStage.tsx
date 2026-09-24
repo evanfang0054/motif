@@ -1038,14 +1038,22 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           {/* 待生成骨架槽（#88）：服务端下发的计划槽，与出图落位**同坐标** → 出图就地填入不跳动。
               骨架**不是画布图片**：不进 `placements` / `images`，故不参与选中、框选、删除、灯箱、
               归档导出、「N 张图片」统计与整理布局；`pointer-events: none` 让它不响应手势。
-              过渡口径（D13）：出图落在同一左上角、以淡入换入（见 `.canvas-img-in`），
-              故即使出图比例 ≠ 占位比例也不会「跳位」；尺寸变化被槽距 280 兜住（displaySize ≤240），
-              绝不会压到相邻图 —— 这里**刻意不给骨架加 width/height transition**：
-              骨架挂载期间尺寸恒定，那个 transition 是死代码（会误导后来人以为尺寸在动）。 */}
+              几何口径（D13）**如实说明**：`displaySize ≤ 240×240` + 槽步长 280 只保证**网格相邻槽
+              之间**不重叠，不是「绝不会压到相邻图」。两处残余风险：① 出图比例 ≠ 请求比例时
+              （请求 800×600 → 计划 240×180，网关返回 800×800 → 实际 240×240，高度多 60px）可能压到
+              **用户手拖的图**；② 生成期间用户拖动/导入会让入队时算的计划槽相对现状失效。①由 worker
+              落位前的相交校验兜住（撞上就退回 `allocateSlots`，见 services.ts）—— 此时该骨架会
+              「跳位」到新槽后消失，代价远小于压图；②的骨架占位在落位前仍可能与手拖图短暂重叠，
+              落位后同样跳位。这里**刻意不给骨架加 width/height transition**：骨架挂载期间尺寸恒定，
+              那个 transition 是死代码（会误导后来人以为尺寸在动）。 */}
           {skeletons.map((s) => (
             <figure
               key={`sk-${s.messageId}-${s.index}`}
-              className="canvas-img-card"
+              // 与图片卡片共用 `.canvas-img-card` 只为复用其绝对定位；额外挂 `.canvas-skeleton-card`
+              // 作为**纯标记类**（无任何 CSS）把「骨架」与「图片卡片」区分开 —— 取「第一张图片卡片 /
+              // 数图片张数」的选择器都必须排除它，否则会取到 `pointer-events:none` 的骨架
+              //（拖拽无位移、计数虚高）。见 e2e/acceptance.sh 的 `.canvas-img-card:not(...)`。
+              className="canvas-img-card canvas-skeleton-card"
               style={{
                 left: s.rect.x,
                 top: s.rect.y,

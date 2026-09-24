@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { enqueueGeneration, executeMessage, type WorkerDeps } from '@/server/services'
 import { startWorker, stopWorker } from '@/server/worker'
+import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { MotifStore } from '@motif/db'
+import { placementRect, rectsIntersect } from '@motif/core'
 import type { GeneratedImage, ImageProvider } from '@motif/image-provider'
 
 let dir: string
@@ -163,14 +165,62 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     expect(placements[0].canvasX + placements[0].canvasWidth).toBeLessThanOrEqual(plan[1].x)
   })
 
+  it('计划槽被生成期间新拖入的图占用 → 落位退回现场分配（不压图）', async () => {
+    // 入队时 plan[0] 还是空的；提交后、出图前用户把一张图拖到 plan[0] 上 —— 计划相对现状失效。
+    // 落位前的相交校验必须发现它并退回 allocateSlots（骨架跳位代价远小于压图）。
+    const { user, messageId, topicId } = await enqueue(2)
+    const plan = store.getMessage(messageId)!.slotPlan
+    const draggedRect = { x: plan[0].x, y: plan[0].y, w: plan[0].w, h: plan[0].h }
+    const dragged = store.insertCanvasImage({
+      topicId, userId: user.id, messageId: null, origin: 'generated', name: '手拖图', imageKey: 'drag',
+      mimeType: 'image/png', bytes: 1, width: 1024, height: 1024,
+      placement: { x: draggedRect.x, y: draggedRect.y, width: draggedRect.w, height: draggedRect.h },
+    })
+    const full: ImageProvider = {
+      name: 'full-stub',
+      generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 1024 }),
+    }
+    await executeMessage(makeDeps(full), messageId)
+
+    const generated = store.listCanvasPlacements(topicId).filter((p) => p.id !== dragged.id)
+    expect(generated).toHaveLength(2)
+    // 两张生成图都不与手拖图相交（否则就是把图压在用户手拖的图上）
+    for (const g of generated) {
+      expect(rectsIntersect(placementRect(g), draggedRect)).toBe(false)
+    }
+    // 第一张已从计划槽 plan[0] 让位（否则就压上手拖图了）
+    expect({ x: generated[0].canvasX, y: generated[0].canvasY }).not.toEqual({ x: plan[0].x, y: plan[0].y })
+  })
+
   it('取消：退额数 = requestedCount − 已落库张数（与骨架摘除数同源）', async () => {
-    // 12 张里已落 4 张 → 退 8；取消前活跃轮次的骨架也恰好剩 8 个（见 canvas-skeleton 单测）
+    // 12 张里已落 4 张 → 退 8；取消前活跃轮次的骨架也恰好剩 8 个。
+    // ⚠️ 本用例只钉「退额」一侧；「骨架摘除数 == 退额数」这条不变式由下一条用例合证。
     const { user, messageId, topicId } = await enqueue(12, 20)
     seedGenerated(messageId, user.id, topicId, 4)
     store.setMessageStatus(messageId, 'canceling')
     await executeMessage(makeDeps(countingProvider([])), messageId)
     expect(store.getMessage(messageId)!.status).toBe('canceled')
     expect(store.getUserById(user.id)!.credits).toBe(16) // 20 − 12 + 退 8
+  })
+
+  it('取消退额数 == 骨架摘除数（#88 硬验收：同一时刻两侧相等）', async () => {
+    // 上一条只钉退额、canvas-skeleton.test.ts 只钉纯函数摘除 —— 这里把两者串起来：
+    // 在同一时刻分别量「实际退额」与「骨架摘除数」，断言相等，才构成完整合证。
+    const { user, messageId, topicId } = await enqueue(12, 20)
+    seedGenerated(messageId, user.id, topicId, 4)
+    const countByMessage = { [messageId]: 4 }
+    const before = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
+    expect(before).toHaveLength(8) // 活跃轮次：骨架数 = 未产出张数 = 12 − 4
+
+    store.setMessageStatus(messageId, 'canceling')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+
+    const after = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
+    expect(after).toHaveLength(0) // 终态不留骨架
+    const removed = before.length - after.length
+    const refunded = store.getUserById(user.id)!.credits - (20 - 12) // 预扣 12 后剩 8 → 退额 = 现值 − 8
+    expect(removed).toBe(8)
+    expect(refunded).toBe(removed) // ← 同一时刻：退额数 == 骨架摘除数
   })
 
   it('每落库一张就 touch 一次 topic —— watch 长轮询据此即时刷新，实现「出图就地填入」', async () => {

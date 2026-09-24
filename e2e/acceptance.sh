@@ -371,6 +371,9 @@ EOF
 echo "[accept] E ✅"
 
 # ---------- F：画布交互（拖拽/选中/工具栏/@引用/整理/灯箱/删除）----------
+# ⚠️ 取「图片卡片」的选择器一律写成 `.canvas-img-card:not(.canvas-skeleton-card)`：
+# 骨架槽（#88）也挂 `.canvas-img-card`（只为复用绝对定位），且 DOM 里排在图片之前，
+# 裸 `.canvas-img-card` 会取到 `pointer-events:none` 的骨架（拖拽无位移、计数虚高）。
 echo "[accept] F: canvas interactions"
 ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif acceptance')
@@ -378,7 +381,7 @@ await ensureRealTab()
 
 // 定位第一张图片卡片的视口中心
 const center = await js(String.raw`(() => {
-  const card = document.querySelector('.canvas-img-card')
+  const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
   if (!card) throw new Error('画布上没有图片卡片')
   const r = card.getBoundingClientRect()
   return { cx: Math.round(r.x + r.width / 2), cy: Math.round(r.y + r.height / 2), left: Math.round(r.x), top: Math.round(r.y), w: Math.round(r.width) }
@@ -387,7 +390,7 @@ cliLog('card center: ' + JSON.stringify(center))
 
 // 记录拖拽前的世界坐标（left/top 样式值）
 const posBefore = await js(String.raw`(() => {
-  const card = document.querySelector('.canvas-img-card')
+  const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
   return { left: card.style.left, top: card.style.top }
 })()`)
 
@@ -395,7 +398,7 @@ const posBefore = await js(String.raw`(() => {
 await dragMouse([[center.cx, center.cy], [center.cx + 160, center.cy + 90]], { label: 'drag canvas image' })
 await wait(1)
 const posAfter = await js(String.raw`(() => {
-  const card = document.querySelector('.canvas-img-card')
+  const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
   return { left: card.style.left, top: card.style.top }
 })()`)
 cliLog(`drag: ${JSON.stringify(posBefore)} → ${JSON.stringify(posAfter)}`)
@@ -449,17 +452,17 @@ const arrangeBtn = await js(String.raw`(() => {
 await click(arrangeBtn, { label: 'arrange layout' })
 await wait(1.5)
 const posArranged = await js(String.raw`(() => {
-  const card = document.querySelector('.canvas-img-card')
+  const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
   return { left: card.style.left, top: card.style.top }
 })()`)
 cliLog('arranged: ' + JSON.stringify(posArranged))
 if (posArranged.left === posAfter.left && posArranged.top === posAfter.top) throw new Error('整理布局未吸附网格')
 
 // 删除选中图片 → 画布减少一张
-const countBefore = await js(String.raw`(() => document.querySelectorAll('.canvas-img-card').length)()`)
+const countBefore = await js(String.raw`(() => document.querySelectorAll('.canvas-img-card:not(.canvas-skeleton-card)').length)()`)
 // 重新选中并删除
 const c2 = await js(String.raw`(() => {
-  const card = document.querySelector('.canvas-img-card')
+  const card = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
   const r = card.getBoundingClientRect()
   return { cx: Math.round(r.x + r.width / 2), cy: Math.round(r.y + r.height / 2) }
 })()`)
@@ -485,11 +488,62 @@ await js(String.raw`(() => {
   return true
 })()`)
 await wait(2)
-const countAfter = await js(String.raw`(() => document.querySelectorAll('.canvas-img-card').length)()`)
+const countAfter = await js(String.raw`(() => document.querySelectorAll('.canvas-img-card:not(.canvas-skeleton-card)').length)()`)
 cliLog(`delete: ${countBefore} → ${countAfter}`)
 if (countAfter !== countBefore - 1) throw new Error('删除未生效')
 EOF
 echo "[accept] F ✅"
+
+# ---------- G：#88 骨架槽位（提交即预占：骨架数 == N − 已出图数）----------
+echo "[accept] G: skeleton slots (#88)"
+ego-browser nodejs <<'EOF'
+const task = await useOrCreateTaskSpace('motif acceptance')
+await ensureRealTab()
+
+// 新建任务：骨架判据是「本轮 N − 已出图数」，存量图会干扰计数，故从零画布开始
+await js(String.raw`(() => {
+  const b = document.querySelector('.ws-nav button[aria-label="新任务"]')
+  b.click(); return true
+})()`)
+await wait(2)
+
+// 提交 4 张
+await js(String.raw`(() => {
+  const ta = document.querySelector('.ws-panel textarea')
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：#88 骨架槽位')
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  const num = document.querySelector('.ws-panel input[type="number"]')
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '4')
+  num.dispatchEvent(new Event('input', { bubbles: true }))
+  return true
+})()`)
+await js(String.raw`(() => {
+  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim() === '生成')
+  btn.click(); return true
+})()`)
+
+// 提交后轮询「骨架数 / 已出图数」，在骨架存在的瞬间断言 骨架数 + 已出图数 == N。
+// 骨架是瞬时态（出图快时可能一次都抓不到），故仅在「观察到骨架」时断言；从未观察到则跳过（记日志）。
+// 骨架 = 画布上唯一带 aria-busy="true" 的卡片；图片卡计数用 `.canvas-img-card img`（骨架无 <img>）。
+const N = 4
+let seen = null
+let ok = false
+for (let i = 0; i < 20; i++) {
+  await wait(1)
+  const snap = await js(String.raw`(() => ({
+    sk: document.querySelectorAll('.canvas-img-card[aria-busy="true"]').length,
+    imgs: document.querySelectorAll('.canvas-img-card img').length,
+  }))()`)
+  if (snap.sk > 0) {
+    seen = snap
+    if (snap.sk + snap.imgs === N) { ok = true; break }
+  }
+}
+cliLog('skeleton snapshot=' + JSON.stringify(seen) + ' ok=' + ok)
+if (seen && !ok) throw new Error(`骨架数 + 已出图数 != ${N}: ${JSON.stringify(seen)}`)
+if (!seen) cliLog('⚠️ 未捕获到骨架瞬间（生成过快），本条跳过')
+EOF
+echo "[accept] G ✅"
 
 echo "[accept] 关闭任务空间"
 ego-browser nodejs <<'EOF'
@@ -499,4 +553,4 @@ cliLog('closed: ' + JSON.stringify(r))
 EOF
 
 echo ""
-echo "[accept] 🎉 补充验收全部通过（A–F）"
+echo "[accept] 🎉 补充验收全部通过（A–G）"

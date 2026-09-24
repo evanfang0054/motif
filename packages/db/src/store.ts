@@ -1049,6 +1049,13 @@ export class MotifStore {
     return res.changes
   }
 
+  /**
+   * 顶起任务的 `updated_at`（`listTopics` 按 `ORDER BY updated_at DESC` 排序）。
+   *
+   * ⚠️ **会改变任务列表排序** —— 勿用于高频、无内容变化的场景：视口变更防抖落库即因此走
+   * `setCanvasMeta` 刻意不 touch（否则每次平移都会把任务顶到列表最前，且触发 watchTopic
+   * 长轮询重取整份 detail）。#88 里每落库一张图调一次属于「有内容变化」的正当用法。
+   */
   touchTopic(id: string): void {
     this.db.prepare('UPDATE topics SET updated_at = ? WHERE id = ?').run(nowIso(), id)
   }

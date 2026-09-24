@@ -241,7 +241,7 @@ describe('messages.slot_plan（#88：槽位计划挂 message 上，零新表）'
     })
   }
 
-  it('列存在（含旧库 ALTER 迁移路径）', () => {
+  it('列存在（本用例走新建库路径，列来自 CREATE TABLE；旧库 ALTER 迁移由 store.test.ts 的 makeLegacyDb 覆盖）', () => {
     expect(columns(join(dir, 't.db'), 'messages')).toContain('slot_plan')
   })
 

@@ -397,7 +397,8 @@ describe('三级角色与用户状态', () => {
 })
 
 describe('旧库迁移（真旧 schema → 新 schema）', () => {
-  // 手工建「加列之前」的库，并塞入存量行，用于真正执行 7 条 ALTER 迁移路径
+  // 手工建「加列之前」的库，并塞入存量行，用于真正执行 ALTER 迁移路径
+  // （新建库的列来自 CREATE TABLE，根本走不到 ALTER —— 覆盖 ALTER 只能靠这张旧库）
   function makeLegacyDb(file: string): void {
     const db = new Database(file)
     db.exec(`
@@ -410,12 +411,31 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
       );
       CREATE TABLE cdks (code TEXT PRIMARY KEY, credits INTEGER NOT NULL, redeemed_by TEXT, redeemed_at TEXT, created_at TEXT NOT NULL);
       CREATE TABLE feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
+      -- 旧 topics（尚无 canvas_meta）与旧 messages（尚无 reference_ids / slot_plan）：
+      -- 补上它们，applySchema 的 topics.canvas_meta / messages.reference_ids / messages.slot_plan
+      -- 三条 ALTER 才会真正执行（否则 CREATE TABLE IF NOT EXISTS 会把新列直接建好，ALTER 全被 catch 吞掉）
+      CREATE TABLE topics (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'idle',
+        active_message_id TEXT, active_prompt TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, user_id TEXT NOT NULL, prompt TEXT NOT NULL,
+        final_prompt TEXT NOT NULL, size TEXT NOT NULL, requested_count INTEGER NOT NULL,
+        enhance_prompt INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'queued',
+        worker_id TEXT, locked_at TEXT, lease_token TEXT, lease_expires_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at TEXT NOT NULL
+      );
     `)
     const t = '2026-01-01T00:00:00.000Z'
     db.prepare('INSERT INTO users (id, email, password_hash, name, role, credits, invite_code, invited_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
       .run('usr_legacy', 'legacy@b.co', 'scrypt$s$h', '老用户', 'user', 7, 'LEGACYCODE', 0, t, t)
     db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?,?,?)').run('OLD-CODE', 5, t)
     db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?,?,?)').run('usr_legacy', '老反馈', t)
+    db.prepare('INSERT INTO topics (id, user_id, title, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
+      .run('tp_legacy', 'usr_legacy', '老任务', 'idle', t, t)
+    // 不带 reference_ids / slot_plan 的老消息（两列都由 ALTER 补默认值）
+    db.prepare('INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, status, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run('msg_legacy', 'tp_legacy', 'usr_legacy', '老提示词', '老提示词', '1024x1024', 2, 'completed', t)
     db.close()
   }
 
@@ -423,7 +443,7 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
     const file = join(dir, 'legacy.db')
     makeLegacyDb(file)
 
-    // 构造 store 即触发 applySchema 的 CREATE + 7 条 ALTER
+    // 构造 store 即触发 applySchema 的 CREATE + 各条 ALTER
     const s = new MotifStore(file)
 
     // 既有行不丢、原有字段不变
@@ -450,6 +470,13 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
     expect(fb.status).toBe('pending')
     expect(fb.resolved_at).toBeNull()
     expect(fb.resolved_by).toBeNull()
+
+    // 老消息：messages.slot_plan 由 ALTER 补默认 '[]' → 读回空计划（无骨架，worker 退回现场分配），
+    // 且消息本身仍能读出（缺列/解析失败都不会让消息读不出来 —— #88）
+    const legacyMsg = s.getMessage('msg_legacy')!
+    expect(legacyMsg.slotPlan).toEqual([])
+    expect(legacyMsg.referenceIds).toEqual([])
+    expect(legacyMsg.status).toBe('completed')
 
     // 新表已建
     s.insertAudit({ actorId: 'usr_legacy', action: 'settings.update' })
