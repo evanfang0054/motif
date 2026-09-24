@@ -261,8 +261,9 @@ tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存�
 ```
 
 > 上面的备份命令对应**默认的 local 存储**：数据库、生成图片（`./data/storage/`）、管理员凭据都在
-> `./data` 里。若已把「系统设置 → 图片存储」切到 `s3`，图片在远端桶里，`./data` 只剩库与凭据 ——
-> 桶要另行备份（`mc mirror` / `aws s3 sync` 之类）。
+> `./data` 里。若已把「系统设置 → 图片存储」切到 `s3`，**新图**写进远端桶；未搬迁的老图仍在
+> `./data/storage`（双读，跑完 `pnpm storage:migrate` 才只剩库与凭据）—— 所以桶要另行备份
+> （`mc mirror` / `aws s3 sync` 之类），`./data` 也照常备份。
 
 **HTTPS 部署**：前面挂一层反向代理（Caddy / Nginx / Traefik），并在 `.env` 里设
 `SITE_URL=https://你的域名` 与 `MOTIF_COOKIE_SECURE=1`（会话 Cookie 加 Secure）。
