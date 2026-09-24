@@ -191,6 +191,23 @@ describe('planLineageColumn（血缘落位：新图/骨架落在参考图右侧�
     expect(planLineageColumn(filled(80), [square], anchor)).toBeNull()
   })
 
+  it('冲突判定按**格子**尺寸（240）而非占位尺寸：请求非方图时也不会摆到「实际会压图」的位置', () => {
+    // 落位前的 worker 复核用的是**真实出图**尺寸，而计划按**请求尺寸**占位 —— 两者可以不同
+    // （请求 1536×1024 → 占位 240×160，网关返回 1024×1024 → 实际 240×240）。
+    // 若按占位判：① 横向漏判「实际更宽」、② 纵向漏判「实际更高」，两条都会让 worker 判冲突，
+    // 把图甩回视野左上角（正是这次要修的现象）。这里断言的是**不变式**（真实尺寸也不压邻居），
+    // 不是某个具体坐标。
+    const colX = 240 + LINEAGE_COL_GAP
+    // ① 横向：邻居左缘落在占位条 [colX, colX+160] 之外、格子条 [colX, colX+240] 之内
+    const beside = { x: colX + 160, y: 0, w: 240, h: 240 }
+    const wide = planLineageColumn([beside], [{ width: 160, height: 240 }], anchor)!
+    expect(overlaps({ x: wide[0].x, y: wide[0].y, w: 240, h: 240 }, beside)).toBe(false)
+    // ② 纵向：邻居顶边落在占位底边（160）之下、格子底边（240）之内
+    const below = { x: colX, y: 160, w: 240, h: 240 }
+    const tall = planLineageColumn([below], [{ width: 240, height: 160 }], anchor)!
+    expect(overlaps({ x: tall[0].x, y: tall[0].y, w: 240, h: 240 }, below)).toBe(false)
+  })
+
   it('空输入返回 null（不产出「0 个槽」的计划）', () => {
     expect(planLineageColumn([], [], anchor)).toBeNull()
   })
@@ -212,6 +229,10 @@ describe('planSlotRects 的血缘分支（有锚点走列、无锚点走原网�
     const legacy = allocateSlots(occupied, [displaySize(1024, 1024)], { x: 10, y: 20 })
     expect(planSlotRects(occupied, '1024x1024', 1, { x: 10, y: 20 }, null)).toEqual(legacy)
     expect(planSlotRects(occupied, '1024x1024', 1, { x: 10, y: 20 })).toEqual(legacy)
+  })
+
+  it('count = 0 → 空计划（既不抛，也不产出槽）', () => {
+    expect(planSlotRects([], '1024x1024', 0, { x: 0, y: 0 }, anchor)).toEqual([])
   })
 
   it('锚点右侧竖条放不下 → 整体退回网格分配（不退化成空计划）', () => {

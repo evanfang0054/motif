@@ -9,6 +9,7 @@ import {
   displaySize,
   inviteRewardFor,
   isBusyTopicStatus,
+  isCanvasRect,
   placementRect,
   planSlotRects,
   rectsIntersect,
@@ -344,22 +345,24 @@ function validateCountOf(count: number): string | null {
 }
 
 /**
- * 血缘锚点（用户 2026-09-24 裁决）：本轮参考图里**第一张在画布上有摆放**的图 ——
+ * 血缘锚点（用户 2026-09-24 裁决）：本轮参考图里**第一张形状合法的摆放** ——
  * 新图与骨架都落在它右侧一列（见 `@motif/core` 的 `planLineageColumn`）。
  *
  * 为什么是「第一张」：`validRefs` 是 `[...canvasRefIds, ...stagedCanvasIds]`，而「以它为参考再生成」
- * 产出的 `referenceIds` 里被点的那张就是唯一的画布引用（暂存参考排在后面），@ 引用多张时第一张
- * 是用户最先选定的那张 —— 两种入口下「第一张」都恰好是用户心里的「对应的图片」。
+ * 产出的 `referenceIds` 里被点的那张是唯一的画布引用（暂存参考排在它之后），@ 引用则按
+ * `referenceIds` 的顺序（逐张点击 = 点击顺序；框选批量 = 画布顺序）。批量 @ 的顺序未必等于
+ * 「用户心里想以哪张为父图」，但「取第一张」这条口径本身是用户定的。
  *
- * 没有任何参考图（纯文生图）、或参考图都不在画布上（理论上不会：画布引用已校验归属、暂存参考
- * 已在本函数之前转正）时返回 null —— 没有父图可依，调用方维持原网格分配。
+ * 跳过 w/h ≤ 0 的摆放（判据复用 `isCanvasRect`）：升级库的老行在补位前是 0 尺寸，拿它当锚点
+ * 会算出「0 右缘 + 列间距」这种与它无关的位置 —— 宁可不锚定、退回网格。
+ * 没有任何参考图（纯文生图）时同样返回 null：没有父图可依，调用方维持原网格分配。
  */
 function anchorRectOf(placements: readonly CanvasImagePlacement[], referenceIds: readonly string[]): CanvasRect | null {
   if (referenceIds.length === 0) return null
   const rectById = new Map(placements.map((p) => [p.id, placementRect(p)]))
   for (const id of referenceIds) {
     const rect = rectById.get(id)
-    if (rect) return rect
+    if (rect && isCanvasRect(rect)) return rect
   }
   return null
 }

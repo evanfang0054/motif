@@ -386,6 +386,17 @@ describe('血缘落位（新图挨着参考图，不从视野左上角另起一�
     const res = await enqueueWithRefs(user, topicId, 1, [])
     expect(store.getMessage(res.messageId)!.slotPlan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
   })
+
+  it('参考图是「未补位的老行」（0 尺寸摆放）→ 不拿它当锚点，退回网格', async () => {
+    // 升级库的老行在 `backfillCanvasPlacements` 之前是 canvas_w/h = 0：拿它当锚点会算出
+    // 「0 右缘 + 列间距」这种与它无关的位置，比不锚定更糟。
+    const { user, topicId, refId } = seedReference('legacy@b.co')
+    store.db
+      .prepare("UPDATE canvas_images SET canvas_x = 0, canvas_y = 0, canvas_w = 0, canvas_h = 0, updated_at = '' WHERE id = ?")
+      .run(refId)
+    const res = await enqueueWithRefs(user, topicId, 1, [refId])
+    expect(store.getMessage(res.messageId)!.slotPlan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+  })
 })
 
 describe('worker 启动', () => {

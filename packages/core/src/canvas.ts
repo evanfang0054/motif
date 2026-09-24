@@ -326,8 +326,9 @@ const LINEAGE_MAX_TRIES = 64
  * 列内步长用**固定的 `SLOT_STEP`**，而不是树形布局的 48 间距：计划槽按**请求尺寸**算，
  * 出图比例可以不同（请求 1536×1024 → 占位高 160，网关返回 1024×1024 → 实际高 240）。
  * 固定步长（280 ≥ 240 显示上限 + 40）才保证「实际比占位高」时同列两张也不压图；
- * 若按占位尺寸累加，横图那一轮会压 32px，落位前的相交校验会把第二张甩回视野左上角 ——
- * 正是这次要修的现象。代价：刚生成完的列比「按血缘整理」松一点（点一次整理即收紧）。
+ * 若按占位尺寸累加（160 + 40 = 200），横图那一轮的同列下一张会压 40px，落位前的相交校验
+ * 就会把第二张甩回视野左上角 —— 正是这次要修的现象。
+ * 代价：刚生成完的列比「按血缘整理」松一点（点一次整理即收紧）。
  *
  * 返回 `null` = 这一竖条放不下（连续 `LINEAGE_MAX_TRIES` 次都被占），由调用方退回网格分配。
  */
@@ -337,14 +338,17 @@ export function planLineageColumn(
   anchor: CanvasRect
 ): CanvasRect[] | null {
   if (sizes.length === 0) return null
-  const maxW = Math.max(...sizes.map((s) => s.width))
-  const maxH = Math.max(...sizes.map((s) => s.height))
   const x = anchor.x + anchor.w + LINEAGE_COL_GAP
   let y = anchor.y
   for (let tries = 0; tries < LINEAGE_MAX_TRIES; tries += 1) {
-    // 整批的竖向占位：末张底边。用整批判定（而不是逐张）才能一次让过整段冲突区
-    const bottom = y + (sizes.length - 1) * SLOT_STEP + maxH
-    const hits = occupied.filter((r) => r.x < x + maxW && x < r.x + r.w && r.y < bottom && y < r.y + r.h)
+    // ⚠️ 冲突判定按**格子**（`SLOT_W` = 显示尺寸上限），不按占位尺寸：出图比例可与请求不同
+    // （请求 1536×1024 → 占位 240×160，网关返回 1024×1024 → 实际 240×240）。按占位判会漏掉
+    // 「实际比占位大」的那条边 —— 落位前 worker 拿**真实尺寸**复核就判冲突、把图甩回视野左上角，
+    // 正是这次要修的现象。格子是任何出图尺寸的上界，按它判出来的计划恒不压图。
+    // 代价：非方图请求时判定偏保守（可能让过一个本就放得下的位置），只影响位置高低，不影响正确性。
+    // 竖向同样用格子：末张底边 = 首张顶边 + (n−1) 步长 + 格子高。
+    const bottom = y + (sizes.length - 1) * SLOT_STEP + SLOT_W
+    const hits = occupied.filter((r) => r.x < x + SLOT_W && x < r.x + r.w && r.y < bottom && y < r.y + r.h)
     if (hits.length === 0) return sizes.map((s, i) => ({ x, y: y + i * SLOT_STEP, w: s.width, h: s.height }))
     // 让过**所有**冲突矩形的底边（不是第一个）：同父的第二次生成因此落在上一批的整段下方
     y = Math.max(...hits.map((r) => r.y + r.h)) + SLOT_GAP
