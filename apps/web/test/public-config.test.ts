@@ -70,8 +70,9 @@ describe('公开配置（面向未登录用户的白名单）', () => {
   })
 
   it('两个功能开关的兜底值必须与配置注册表的 defaultHint 一致（前端入口与服务端拒绝不能各说各话）', () => {
-    // 钉的是「三处各写一份」的漂移：SETTING_DEFS 的 defaultHint / readPublicConfig 的兜底 /
-    // services 里 startCheckout、redeem 的 resolveBool 兜底。任一处被单边改掉，这里就红。
+    // 本用例钉的是**注册表 ↔ 公开配置**这两处；服务端那两处（startCheckout / redeem 的 resolveBool
+    // 兜底）由 billing-checkout 与 services 的用例各自钉住 —— 这里不 import services，
+    // 别把这条断言说成「三处全覆盖」（说过一次，被评审当场用「改 services 兜底仍全绿」证伪）。
     const byKey = new Map(SETTING_DEFS.map((d) => [d.key, d]))
     const cfg = readPublicConfig(store, {})
     expect(byKey.get('BILLING_ENABLED')!.defaultHint).toBe(String(cfg.billingEnabled))

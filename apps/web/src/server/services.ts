@@ -764,8 +764,9 @@ const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问�
  * 行为上对存量订单的回调依然友好（但凭据被替换后旧单回调会验签失败，换密钥需留意在途订单）。
  */
 export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
-  // 充值开关（默认关）：只拦**新订单**。回调入账（creditPaidOrder 及三条 notify/webhook/return 路由）
-  // 刻意不受它影响 —— 关开关不能把用户已经付掉的钱吞掉。
+  // 充值开关（默认关）：只拦**新订单**。回调入账（`creditPaidOrder`，只有 notify/epay 与
+  // webhook/stripe 两个调用点）刻意不受它影响 —— 关开关不能把用户已经付掉的钱吞掉。
+  // （return/epay 是 GET 跳转到结果页，不入账，也不该被这条闸影响。）
   if (!resolveBool(store, env, 'BILLING_ENABLED', false)) throw new ServiceError(403, '本站未开放充值。')
   const pkg = resolvePackages(store, env).find((p) => p.id === packageId)
   if (!pkg) throw new ServiceError(400, '套餐不存在。')

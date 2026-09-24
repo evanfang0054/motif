@@ -179,15 +179,17 @@ html[data-theme="dark"] {
  * 2026-09-21 那次只加在 `.ws-panel` 上，结果只有画布右侧面板的输入框有边框。
  *
  * ⚠️ 必须直接覆盖 `--border-width-field` 而不是 `--field-border-width`：
- * 后者在 `:root`（HeroUI 的 @layer theme）就被 `--border-width-field` 消费掉了
- * （自定义属性继承的是**代入后的计算值**，在更外层改源头对后代无效）。
+ * 后者在 HeroUI 的 `@layer theme` 的 `:root` 里就被 `--border-width-field` 消费掉了，
+ * 自定义属性继承的是**代入后的计算值**（0px），在更外层改源头对后代无效。
  *
- * ⚠️ `--field-border-hover` / `-focus` 同理必须一起覆盖：
- * 它们在 HeroUI 主题里用 `--field-border`（transparent）算好了，只改 `--field-border` 的话
- * 悬停/聚焦时边框反而会变透明（等于「一 hover 边框就消失」）。
+ * 三个**颜色**令牌里，`--field-border` 是**必须写**的：HeroUI 默认给的是 `transparent`，
+ * 不写它就只剩「1px 宽、颜色透明」= 看不见边框。`--field-border-hover` / `-focus` 则是
+ * 可省的 —— HeroUI 用 `color-mix(in oklab, var(--field-border, var(--border)) …)` 算，
+ * 不写只是颜色不跟设计系统（`--border-strong` / 珊瑚聚焦色），**不会变透明**。
  *
  * 影响面：`.input` / `.textarea` / `number-field` / `input-group` / `input-otp` /
- * `search-field` / `select` / `autocomplete` / `checkbox` / `radio` 都消费这个令牌 ——
+ * `search-field` / `select` / `autocomplete` / `checkbox` / `radio` / `color-input-group` /
+ * `date-input-group`（共 12 个组件）都消费这个令牌 ——
  * 复选框与单选框会一并从「无边框」变成 1px 细边（统一口径的一部分）。
  */
 :root,

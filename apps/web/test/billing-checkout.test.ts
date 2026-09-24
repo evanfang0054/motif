@@ -28,6 +28,13 @@ describe('startCheckout（mock 渠道）', () => {
     await expect(startCheckout(store, {}, userId, 'credits_50')).rejects.toThrow('本站未开放充值。')
     expect(store.listOrders({ userId })).toHaveLength(0)
   })
+  it('键**未设置**时也按默认关处理（默认值是三处各写一份，这条钉服务端那一处）', async () => {
+    // beforeEach 把键设成 true 了，这里删掉它，回到「全新部署、库里没这个键」的形态：
+    // 若 services 的 resolveBool 兜底被改成 true，这条会红（前端还按 defaultHint=false 隐藏入口）。
+    store.deleteSettings(['BILLING_ENABLED'])
+    await expect(startCheckout(store, {}, userId, 'credits_50')).rejects.toThrow('本站未开放充值。')
+    expect(store.listOrders({ userId })).toHaveLength(0)
+  })
   it('返回站内收银台链接并创建 mock 渠道 pending 订单', async () => {
     const r = await startCheckout(store, {}, userId, 'credits_50')
     expect(r.checkoutUrl).toContain('/billing/mock-pay?order=')
