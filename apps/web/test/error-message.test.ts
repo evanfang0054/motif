@@ -30,10 +30,18 @@ describe('errorMessage：把任意抛出物转成中文可展示文案', () => {
   it('浏览器英文原文（离线时 fetch reject 的那几个）换成中文兜底', () => {
     const failed = errorMessage(new TypeError('Failed to fetch'), '支付失败')
     expect(failed).toBe('支付失败')
-    expect(failed).not.toContain('Failed to fetch')
+    // 原先这里紧跟一条 `expect(failed).not.toContain('Failed to fetch')` —— 它在 `toBe('支付失败')`
+    // 之后恒真（'支付失败' 本就不含那串英文），没有区分力，已换成下面这对**互为对照**的边界断言。
     // Safari 的原文是 `Load failed`
     expect(errorMessage(new TypeError('Load failed'), '支付失败')).toBe('支付失败')
     expect(errorMessage(new Error('NetworkError when attempting to fetch resource.'), '保存失败')).toBe('保存失败')
+  })
+
+  it('中英混排按「含中文即透传」放行（英文尾巴是已知边界，非回归）；纯英文仍被挡', () => {
+    // 判据只看「有没有 CJK」，故中文前缀 + 英文尾巴会整句带出（见 error-message.ts 的边界说明）。
+    // 这条与下一条互为对照：只改「是否含中文」就会让其中一条先红，才真正钉住判据。
+    expect(errorMessage(new Error('示例图抓取失败：fetch failed'), '加入参考图失败')).toBe('示例图抓取失败：fetch failed')
+    expect(errorMessage(new Error('fetch failed'), '加入参考图失败')).toBe('加入参考图失败')
   })
 
   it('ApiError 但文案是框架英文（Unauthorized / Forbidden）时同样不透传', () => {
