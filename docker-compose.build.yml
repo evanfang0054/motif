@@ -1,0 +1,17 @@
+# 从源码构建（可选路径）
+#
+# 默认路径 `docker compose up -d` 只拉取预构建镜像（见 docker-compose.yml）。
+# 本地改过源码、或想跑自己的分支时，用这个 overlay 覆盖成「就地构建」：
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# ⚠️ 构建 Next.js 需要**约 2 GiB 可用内存**（`next build` 峰值 1.5–2.5 GiB）。内存不够时
+#    整机可能被拖死而不是干净失败（见 issue #115）—— 低配机器请用默认的拉取路径。
+#    Dockerfile 的 builder 阶段已设 `NODE_OPTIONS=--max-old-space-size=1536` 作为安全网。
+#
+# ⚠️ 这里刻意把产物命名为 `motif:local`，**不沿用** `ghcr.io/evanfang0054/motif:latest`：
+#    否则本地构建会覆盖同名 `latest`，之后「纯拉取」路径会静默用上本地那份，两条路难以归因。
+services:
+  motif:
+    build: .
+    image: motif:local

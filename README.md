@@ -52,7 +52,8 @@ motif/
 ├── scripts/cdk.mjs            # CDK 发放 CLI
 ├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
 ├── Dockerfile                 # 多阶段构建（builder 构建 + slim 运行时，含运维脚本）
-├── docker-compose.yml         # 一键部署：端口/数据卷/环境变量/健康检查
+├── docker-compose.yml         # 一键部署（默认）：拉取 GHCR 预构建镜像 + 数据卷/环境变量/健康检查
+├── docker-compose.build.yml   # 可选 overlay：把上面那份覆盖成「就地构建」（本地改过源码时用）
 ├── .env.docker.example        # Docker 部署配置模板（cp 成 .env 后填两项必需配置）
 └── e2e/                       # ego-browser 测试：run.sh（主流程 5 轮）+ acceptance.sh（验收 A–G）
 ```
@@ -138,7 +139,8 @@ motif/
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
-- Docker 多阶段构建一键部署（`.env` 驱动、数据卷持久化、健康检查、容器内可跑运维脚本）
+- Docker 一键部署：**默认拉取 GHCR 预构建镜像**（多架构 amd64/arm64，目标机零编译）、`.env` 驱动、
+  数据卷持久化、健康检查、容器内可跑运维脚本；本地改过源码可切 `docker-compose.build.yml` 就地构建
 - **部署形态可配**：图片存储 local/S3 可切换（双读 + 一次性搬迁）、队列 worker 进程内/独立进程、
   提示词增强独立 LLM 配置 —— 三项都在「系统设置」里改，不碰代码（见「部署形态」）
 
@@ -223,18 +225,26 @@ motif/
 ```bash
 git clone https://github.com/evanfang0054/motif.git && cd motif
 cp .env.docker.example .env      # ① 填两项必需配置（生图网关地址 / 令牌）
-docker compose up -d --build     # ② 构建并启动 → http://localhost:3100
+docker compose up -d             # ② 拉取预构建镜像并启动 → http://localhost:3100
 docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # ③ 取管理员初始密码
 ```
 
+- **目标机不需要任何构建能力**：镜像由 CI 在 tag 发布时构建好（多架构 amd64 / arm64），
+  推在 GHCR 上，本机只做 `docker pull`。这样做的原因见 [#115](https://github.com/evanfang0054/motif/issues/115) ——
+  在目标机上编译 Next.js 需要约 2 GiB 可用内存，低配机器会被拖死
 - 首次启动自动完成初始化（建库 → 播种配置 → 启动生成队列 → 建超级管理员），不需要额外初始化步骤；
   同一份凭据也会写入 `./data/admin-credentials.txt`（权限 600）
 - 数据持久化在宿主机 `./data/`，容器重建不丢：SQLite 与管理员凭据始终在里面，
   图片在**默认的 local 存储**下也在里面（切 `s3` 后图片转由对象存储承载）
 - 自带健康检查（每 30s 探一次公开的套餐接口 `/api/billing/packages`），`docker compose ps` 显示 `healthy` 即正常
-- 构建期已把 npm 源指向 npmmirror、原生依赖（better-sqlite3 / sharp）也在构建期装好 ——
-  运行时镜像不带编译器，国内网络无需额外配代理
+- 要**钉版本**（可复现）：把 `docker-compose.yml` 里的 `:latest` 换成具体版本，如
+  `ghcr.io/evanfang0054/motif:v0.6.0`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
 
+> ⚠️ **GHCR package 首次发布后需要手动设为 public**：GitHub 的 container package 默认是**私有**的
+> （即使仓库是 public），匿名 `docker pull` 会 403、报 `unauthorized`。
+> 处理：打开 `https://github.com/users/evanfang0054/packages/container/motif/settings`
+> → Danger Zone → Change visibility → Public。在此之前可以先 `docker login ghcr.io` 再拉。
+>
 > ⚠️ **配置入口只有 `.env`**：compose 用 `env_file` 把它注入容器 —— 写了才注入、没写的不注入
 > （改完要 `docker compose up -d` 重建容器才会生效）。两点注意：
 > - **数据位置与生产标记由 compose 钉死**，写在 `.env` 里无效：`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`
@@ -266,7 +276,7 @@ docker compose exec motif node /app/scripts/cdk.mjs --list          # 查看全�
 **升级 / 备份**
 
 ```bash
-git pull && docker compose up -d --build          # 升级：重建镜像；./data 里的数据不受影响
+docker compose pull && docker compose up -d       # 升级（拉取路径）：拉新镜像并重建容器
 tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存储）下 ./data 就是全部状态
 ```
 
@@ -285,13 +295,35 @@ tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存�
 | 现象 | 原因 / 处理 |
 | --- | --- |
 | 容器起不来 / 打不开 3100 | `docker compose logs motif` 看原因；最常见是宿主 3100 被占用（改 `ports` 左边那个端口） |
+| 拉镜像报 `unauthorized` / `denied` | GHCR package 还是私有：按上文把 `evanfang0054/motif` 的 package 设为 public，或先 `docker login ghcr.io` |
+| **`docker compose up -d --build` 把宿主机拖死（SSH 无响应）** | 在目标机上编译 Next.js 需要约 **2 GiB 可用内存**，内存不足时会转入 swap 抖动而不是干净失败（见 [#115](https://github.com/evanfang0054/motif/issues/115)）。**用默认路径 `docker compose up -d`（只拉取、不编译）**；确实要本地构建就先 `free -m` 确认 available，或在别处构建后 `docker save \| docker load` |
 | 提交后报「网络不可达」或生成失败 | 网关地址或令牌不对（`IMAGE_API_BASE_URL` 要带 `/v1`）。网关跑在宿主机上时别写 `127.0.0.1`（那是容器自己）：Docker Desktop 用 `host.docker.internal`，**Linux 上还要在 `docker-compose.yml` 里加 `extra_hosts: ["host.docker.internal:host-gateway"]`** 才解析得到 |
 | 注册收不到验证码 | 默认 `MOTIF_MAILER=console`，验证码只打进容器日志：`docker compose logs -f motif`。要真发信去「系统设置 → 邮件发信」配 |
 | 改了 `.env` 没反应 | 见上文「配置只在首次启动播种一次」 |
 | 忘记管理员密码 | `docker compose exec motif node /app/scripts/admin.mjs --reset`（绝对路径，容器工作目录是 `/app/apps/web`） |
 | 生成成功但画布图片打不开 | 图片在 `./data/storage/`，确认该目录没被清掉、卷挂载没变 |
 
-### 方式 B：本地开发
+### 方式 B：从源码构建（Docker）
+
+本地改过源码、或想跑自己的分支时走这条；它把默认路径的 `image:` 覆盖成「就地构建」。
+
+```bash
+git clone https://github.com/evanfang0054/motif.git && cd motif
+cp .env.docker.example .env
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+> ⚠️ **构建需要约 2 GiB 可用内存**（`next build` 峰值 1.5–2.5 GiB）。先 `free -m` 看 available；
+> 不够时**不要**靠加 swap 来救 —— 有 swap 反而让内核长时间 reclaim 抖动、把「一次干净的构建失败」
+> 拖成整机假死（[#115](https://github.com/evanfang0054/motif/issues/115)）。
+> Dockerfile 的 builder 阶段已设 `NODE_OPTIONS=--max-old-space-size=1536` 作安全网，但它只兜 V8 堆，
+> 不保证不冻。
+>
+> 构建产物会打成本地 tag `motif:local`（刻意不叫 `ghcr.io/...:latest`，避免与拉取路径混在一起）。
+> 构建期已把 npm 源指向 npmmirror、原生依赖（better-sqlite3 / sharp）也在构建期装好 ——
+> 运行时镜像不带编译器，国内网络无需额外配代理。
+
+### 方式 C：本地开发
 
 ```bash
 cp apps/web/.env.example apps/web/.env   # 填入网关地址与令牌
