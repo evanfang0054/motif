@@ -16,6 +16,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { detectImageMime, type StagedReference, type User } from '@motif/core'
 import type { MotifStore, PromptEntryRow, PromptSourceRow } from '@motif/db'
+import { zhReason } from '@/lib/error-message'
 import { BUILT_IN_PROMPT_ENTRIES, BUILT_IN_PROMPT_SOURCE } from '@/lib/prompt-builtins'
 import { BUILT_IN_PROMPT_SOURCES, PROMPT_FETCH_TIMEOUT_MS, isFetchableSource, type PromptSourceDef } from '@/lib/prompt-sources'
 import {
@@ -212,9 +213,12 @@ function assemble(
     sources: sources
       .filter((s) => s.entryCount > 0)
       .map((s) => ({ id: s.id, name: s.name, homepage: s.homepage, entryCount: s.entryCount })),
+    // ⚠️ `lastError` 是**运维口径**的原文（管理端「上次错误」列要它），但同一条串也会经这里进
+    // 用户可见的提示词库横幅（界面按「源名：原因」拼）—— 故只在用户这一侧过一遍 zhReason 做中文映射，
+    // 库里 / 管理端仍是原文（issue #106）。
     failures: sources
       .filter((s) => s.lastError)
-      .map((s) => ({ sourceId: s.id, sourceName: s.name, error: s.lastError })),
+      .map((s) => ({ sourceId: s.id, sourceName: s.name, error: zhReason(s.lastError, '抓取失败') })),
     pending,
   }
 }
@@ -402,7 +406,12 @@ export async function attachPromptImage(
   } catch (e) {
     if (e instanceof ServiceError) throw e
     if (e instanceof Error && e.name === 'TimeoutError') throw new ServiceError(504, '示例图抓取超时，请稍后再试。')
-    throw new ServiceError(502, `示例图抓取失败：${e instanceof Error ? e.message : String(e)}`)
+    // 底层异常名（undici 的 `fetch failed`、DNS 的 ENOTFOUND…）对用户毫无意义 —— 经 zhReason 收口成中文。
+    // 原始原因不丢：这条路径不落库（没有可写的状态列），故当场记服务端日志，排障口径与
+    // refreshPromptSources 记进 lastError 的那份一致。
+    const raw = e instanceof Error ? e.message : String(e)
+    console.warn('[motif] 示例图抓取失败（用户端已收口为中文）:', raw)
+    throw new ServiceError(502, `示例图抓取失败：${zhReason(raw, '未知错误')}`)
   }
   if (!res.ok) throw new ServiceError(502, `示例图抓取失败：HTTP ${res.status}`)
 

@@ -31,6 +31,7 @@ import {
 } from '@motif/core'
 import { buildImageKey, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
+import { hasChinese, isNetworkFailureReason } from '@/lib/error-message'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
 import type { MailerConfig } from './mailer'
 import { removeFromAllStorages, resolveReadStorages, resolveStorage } from './context'
@@ -496,13 +497,27 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
   }
 }
 
-/** 面向用户的失败文案：剥离网关原始 JSON，附带退额信息（原始错误走服务端日志） */
+/**
+ * 面向用户的失败文案：剥离网关原始 JSON，附带退额信息（原始错误走服务端日志）。
+ *
+ * ⚠️ 末支**不能**无条件拼 `raw`：网络层失败时它是 undici 的纯英文 `fetch failed`，拼出来就是
+ * 「生成失败：fetch failed，已退还 N 张额度」—— 英文原文对用户毫无意义（issue #106）。
+ * 故先按已知的网络层特征给可行动的中文，其余无中文的（如 sharp 的英文原文）给泛化兜底。
+ * 原始 `raw` 不丢：调用方 catch 里已有 `console.error('[motif] 生成失败:', raw)`。
+ */
 export function friendlyGenerateError(raw: string, refund: number): string {
   const refunded = refund > 0 ? `，已退还 ${refund} 张额度` : ''
   const code = raw.match(/生图接口失败（(\d+)）/)
   if (code) return `生图服务暂时不可用（网关 ${code[1]}）${refunded}`
-  if (/timeout|timed?\s?out|abort|ETIMEDOUT|ECONN/i.test(raw)) return `生图请求超时${refunded}，请稍后重试`
+  // ⚠️ 这里的 `ECONN` 曾经在超时正则里（`|ECONN`），会把 ECONNREFUSED / ECONNRESET 抢先说成「超时」——
+  // 连接被拒不是超时，对用户是误导，且会让下面那条网络分支的 ECONN 特征永远走不到（死代码）。
+  // 故收窄为只认真正的超时特征：`AbortSignal.timeout` 抛的是 TimeoutError（message 含 timeout / abort）。
+  if (/timeout|timed?\s?out|abort|ETIMEDOUT/i.test(raw)) return `生图请求超时${refunded}，请稍后重试`
   if (/余额不足|额度不足/.test(raw)) return raw.slice(0, 80)
+  if (isNetworkFailureReason(raw)) return `网络异常，未能连上生图服务${refunded}，请稍后重试`
+  // 兜底挡纯英文。⚠️ 若将来 provider 新增**纯英文但可行动**的错误（配额 / 鉴权类），应在此处显式
+  // 映射成具体中文，而不是落进这条泛化文案 —— 原始串仍在 catch 的 console.error 里，但用户会失去线索。
+  if (!hasChinese(raw)) return `生成失败${refunded}，请稍后重试`
   return `生成失败：${raw.slice(0, 60)}${refunded}`
 }
 

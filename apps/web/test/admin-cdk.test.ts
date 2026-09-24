@@ -97,13 +97,18 @@ describe('GET /api/admin/cdks（列表）', () => {
     expect(b2.total).toBe(10)
     expect(b2.items).toHaveLength(4) // 10 条、每页 6 → 第 2 页剩 4
 
-    // 搜索筛到 4 条
+    // 搜索筛到 4 条。
+    // ⚠️ 查询词带连字符（`BBB-`）不是随手写的：`q` 落库是 `code LIKE '%<q>%'`，而码体取自
+    // CDK_ALPHABET（31 个字符，含 B）—— 只写 `q=BBB` 的话，`AAA-` 那批的码体有约 1/3000 的概率
+    // 凑出「BBB」，断言就会偶发地变成 5（与 cc1423f 修的 db 侧那条同源的**概率性 flake**）。
+    // 码体里不含连字符，故「BBB-」只可能来自 BBB 前缀本身 ⇒ 确定性地恰好 4 条。
     const searchReq = {
       cookies: { get: (n: string) => (n === SESSION_COOKIE ? { value: t } : undefined) },
-      nextUrl: new URL('http://localhost:3100/api/admin/cdks?q=BBB'),
+      nextUrl: new URL('http://localhost:3100/api/admin/cdks?q=BBB-'),
     } as unknown as NextRequest
-    const b3 = (await (await cdksGET(searchReq)).json()) as { items: unknown[]; total: number }
+    const b3 = (await (await cdksGET(searchReq)).json()) as { items: Array<{ code: string }>; total: number }
     expect(b3.total).toBe(4)
+    expect(b3.items.every((it) => it.code.startsWith('BBB-'))).toBe(true)
   })
 })
 

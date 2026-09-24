@@ -90,7 +90,11 @@ describe('首次打开不阻塞', () => {
     await refreshPromptSources(store, undefined, impl)
     const after = await loadPromptLibrary(store, query, impl)
     expect(after.failures).toHaveLength(REMOTE)
-    expect(after.failures.every((f) => f.error === 'fetch failed')).toBe(true)
+    // #106：用户可见的 failures[].error 已收口成中文（旧行为是把底层的 `fetch failed` 原样交给前端）
+    expect(after.failures.every((f) => f.error === '网络不可达')).toBe(true)
+    expect(after.failures.some((f) => f.error.includes('fetch failed'))).toBe(false)
+    // ⚠️ 管理端那条（lastError）必须仍是**原文** —— 运营要靠它看具体原因（本仓刻意不改，见 #106）
+    expect(fetchableSources().every((s) => s.lastError === 'fetch failed')).toBe(true)
   })
 })
 
