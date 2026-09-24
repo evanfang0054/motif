@@ -55,3 +55,77 @@ describe('pendingSkeletonSlots（#88：骨架数 = 未产出张数）', () => {
     expect(out.map((s) => `${s.messageId}:${s.index}`)).toEqual(['m1:1', 'm2:0', 'm2:1', 'm2:2'])
   })
 })
+
+/**
+ * 字段缺失的兜底（线上回归）。
+ *
+ * 复现的崩溃：`TypeError: Cannot read properties of undefined (reading 'length')`
+ * —— `slotPlan` 是 undefined 时，`m.slotPlan.length` 直接抛，`skeletons` 这个 `useMemo`
+ * 在 Workspace 渲染期求值，于是**整个工作台白屏**（不只是少几个骨架）。
+ *
+ * 为什么服务端会少发这个字段：`slotPlan` 是 #88 新加的，客户端（静态资源）与服务端
+ * （API）**可以版本错开** —— 滚动发布时新客户端配旧服务端，dev 下 `next dev` 持有的
+ * runtime 单例也可能仍是旧模块（见仓库记忆「dev 单例持旧类实例」）。
+ * 客户端**不能**假设对端一定发了新字段。
+ *
+ * 兜底语义不是新发明的：`slotPlan = []` 本来就有明确定义 —— 老消息没有计划时
+ * 「不产出骨架、走现场分配」（见 `server/services.ts` 的 `executeMessage` 里 `msg.slotPlan[i]`
+ * 取不到就回落 `allocateSlots` 的那处判断）。
+ * 所以「缺失」与「空数组」等价，都归到「没有计划」，而不是新造第三种行为。
+ */
+describe('pendingSkeletonSlots：slotPlan 缺失 / 形状不对时不崩（线上回归）', () => {
+  it('消息完全没有 slotPlan 字段 → 当作「没有计划」，不抛异常（复现的线上 TypeError）', () => {
+    const legacy = { id: 'm1', status: 'running' } as unknown as SkeletonMessageSource
+    expect(() => pendingSkeletonSlots([legacy], {})).not.toThrow()
+    expect(pendingSkeletonSlots([legacy], {})).toHaveLength(0)
+  })
+
+  it('slotPlan 显式为 undefined / null → 同上（JSON 里字段可能被序列化成 null）', () => {
+    const undef = { id: 'm1', status: 'queued', slotPlan: undefined } as unknown as SkeletonMessageSource
+    const nul = { id: 'm2', status: 'queued', slotPlan: null } as unknown as SkeletonMessageSource
+    expect(pendingSkeletonSlots([undef, nul], {})).toHaveLength(0)
+  })
+
+  it('slotPlan 不是数组（脏数据）→ 同样归到「没有计划」，且不影响同批其它消息', () => {
+    // 服务端坏值不该让整批骨架消失：坏的那条按空处理，好的那条照常出骨架。
+    const broken = { id: 'bad', status: 'running', slotPlan: '[]' } as unknown as SkeletonMessageSource
+    const out = pendingSkeletonSlots([broken, msg('good', 'running', 2)], {})
+    expect(out.map((s) => `${s.messageId}:${s.index}`)).toEqual(['good:0', 'good:1'])
+  })
+
+  it('缺失兜底与「空计划」等价 —— 已落库张数再多也不会出负数骨架', () => {
+    const legacy = { id: 'm1', status: 'running' } as unknown as SkeletonMessageSource
+    expect(pendingSkeletonSlots([legacy], { m1: 3 })).toHaveLength(0)
+  })
+
+  it('数组内坏元素被跳过，但**保留原下标**（序号不与真实批次位置脱节）', () => {
+    // 「字段在、元素坏」与「字段缺失」是同一前提（不信对端形状）下的两种形态，故同一标准。
+    // ⚠️ 断言 index === 1（不是 0）：位置由 `rect` 自己携带，`index`/`ordinal` 只用于 React key
+    // 与读屏文案；保留原下标是为了让「正在生成第 N 张」的序号贴合真实批次位置。
+    // （真正会被 filter 重编号弄坏的场景是「坏槽落在已产出区间之前」，见下一条用例。）
+    const bad = {
+      id: 'm1',
+      status: 'running',
+      slotPlan: [null, { x: 0, y: 0, w: 240, h: 240 }, { x: NaN, y: 0, w: 240, h: 240 }, { x: 0, y: 0, w: 0, h: 240 }],
+    } as unknown as SkeletonMessageSource
+    const out = pendingSkeletonSlots([bad], {})
+    expect(out).toHaveLength(1)
+    expect(out[0].index).toBe(1)
+    expect(out[0].ordinal).toBe(2)
+    expect(out[0].rect).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+  })
+
+  it('坏槽落在已产出区间之前时，剩余槽一个都不能少（这条才是「保留原下标」的真正理由）', () => {
+    // 已产出 1 张 ⇒ 从下标 1 开始找未产出槽。下标 0 的槽是坏的、本就不该渲染。
+    // 若实现改成「先 filter 掉坏项再按下标取」，plan 变成 [good1, good2] 而 done 仍是 1，
+    // 循环从新数组的 1 起 ⇒ 只剩 1 个骨架（good2），good1 被静默吃掉。
+    const m = {
+      id: 'm1',
+      status: 'running',
+      slotPlan: [null, { x: 10, y: 0, w: 240, h: 240 }, { x: 20, y: 0, w: 240, h: 240 }],
+    } as unknown as SkeletonMessageSource
+    const out = pendingSkeletonSlots([m], { m1: 1 })
+    expect(out.map((s) => s.index)).toEqual([1, 2])
+    expect(out.map((s) => s.rect.x)).toEqual([10, 20])
+  })
+})

@@ -478,6 +478,24 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
     expect(legacyMsg.referenceIds).toEqual([])
     expect(legacyMsg.status).toBe('completed')
 
+    // slot_plan 里混进坏元素时**逐项剔除**，只留合法矩形（判据 = core 的 `isCanvasRect`，
+    // 与客户端读 API 时用的是同一份）。坏值会直接喂给 left/top/width/height，渲染成诡异占位块，
+    // 比「没有骨架」更糟 —— 故这一层必须挡住，不能只靠上游自觉。
+    s.createTopic('usr_legacy', '坏计划')
+    const badPlanMsg = s.createMessage({
+      topicId: s.listTopics('usr_legacy')[0].id,
+      userId: 'usr_legacy',
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 3,
+      enhancePrompt: false,
+      referenceIds: [],
+      // 故意混入 null / NaN / 零尺寸：只有第 2 项合法
+      slotPlan: [null, { x: 10, y: 20, w: 240, h: 240 }, { x: NaN, y: 0, w: 240, h: 240 }, { x: 0, y: 0, w: 0, h: 240 }] as never,
+    })
+    expect(s.getMessage(badPlanMsg.id)!.slotPlan).toEqual([{ x: 10, y: 20, w: 240, h: 240 }])
+
     // 新表已建
     s.insertAudit({ actorId: 'usr_legacy', action: 'settings.update' })
     expect(s.listAudit()).toHaveLength(1)

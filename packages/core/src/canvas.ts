@@ -140,6 +140,24 @@ export const SLOT_COLS = 4
 
 export interface CanvasRect { x: number; y: number; w: number; h: number }
 
+/**
+ * `CanvasRect` 的**运行时形状判据**（类型守卫）。
+ *
+ * 为什么单独抽到 core：这个形状有两处「必须不信输入」的消费者 ——
+ * ① 服务端读库（`@motif/db` 的 `safeParseSlotPlan` 解析 `slot_plan` 列）；
+ * ② 客户端读 API（`apps/web` 的 `pendingSkeletonSlots` 取 `slotPlan`）。
+ * 两处口径必须一致：槽位坐标会直接喂给 `left/top/width/height`，坏值（NaN / 负尺寸 / 非数字）
+ * 会渲染出诡异的占位块，比「没有骨架」更糟。各写一份必然漂移，故下沉到这里共用。
+ *
+ * 判据：`x/y/w/h` 都是**有限数**且 `w/h > 0`（尺寸为 0 或负数不是合法矩形）。
+ */
+export function isCanvasRect(v: unknown): v is CanvasRect {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Partial<CanvasRect>
+  if (![r.x, r.y, r.w, r.h].every((n) => typeof n === 'number' && Number.isFinite(n))) return false
+  return (r.w as number) > 0 && (r.h as number) > 0
+}
+
 export function placementRect(p: CanvasImagePlacement): CanvasRect {
   return { x: p.canvasX, y: p.canvasY, w: p.canvasWidth, h: p.canvasHeight }
 }
