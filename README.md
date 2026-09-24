@@ -235,9 +235,19 @@ docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # 
 - 构建期已把 npm 源指向 npmmirror、原生依赖（better-sqlite3 / sharp）也在构建期装好 ——
   运行时镜像不带编译器，国内网络无需额外配代理
 
-> ⚠️ **配置只在首次启动播种一次**：`docker-compose.yml` / `.env` 里的值会写进数据库（`settings` 表），
-> 之后**改它们不再生效** —— 请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
-> 只有 `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` 与引导类参数永远只认环境变量。
+> ⚠️ **配置入口只有 `.env`**：compose 用 `env_file` 把它注入容器 —— 写了才注入、没写的不注入
+> （改完要 `docker compose up -d` 重建容器才会生效）。两点注意：
+> - **数据位置与生产标记由 compose 钉死**，写在 `.env` 里无效：`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`
+>   （必须与挂载点一致，否则数据落在容器里、重建即丢）、`NODE_ENV`（改成 `development`
+>   会让注册验证码对任何人直出）。
+> - **值里的字面 `$` 要写成 `$$`**：compose 会对 `.env` 做变量插值（实测 `SMTP_PASS=abc$def`
+>   到容器里只剩 `abc`）。密码/密钥带 `$` 时尤其注意。
+>
+> ⚠️ **但这些值只在首次启动播种一次**：会写进数据库（`settings` 表），之后**改 `.env` 不再生效**
+> —— 请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
+> 只有上面钉死的几个键与引导类参数永远只认环境变量。
+>
+> 需要 Docker Compose ≥ 2.24（`env_file` 的 `required` 字段）。
 
 **容器内运维命令**（镜像里只带了容器内真能跑的 `admin.mjs` / `cdk.mjs`，用 `node` 直接跑；
 容器工作目录是 `/app/apps/web`，故写绝对路径）：

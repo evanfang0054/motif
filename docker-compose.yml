@@ -4,9 +4,12 @@
 #   1) cp .env.docker.example .env      # 填 IMAGE_API_BASE_URL / IMAGE_API_KEY
 #   2) docker compose up -d --build     # → http://localhost:3100
 #
-# ⚠️ 这里的环境变量只在**首次启动**时播种进数据库（settings 表）。之后改 .env 不再生效，
-#    请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
-#    例外：MOTIF_DATA_DIR / MOTIF_DB_FILE 与引导类参数只认环境变量。
+# 配置入口只有 `.env`（下面用 env_file 注入容器；写了才注入）。
+# 改完 .env 需要 `docker compose up -d` 让容器重建才会生效。
+#
+# ⚠️ 但配置**只在首次启动时播种一次**进数据库（settings 表）。容器已经跑起来过之后，
+#    改 .env 对已播种的键不再生效 —— 请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
+#    例外：MOTIF_DATA_DIR / MOTIF_DB_FILE 由 compose 钉死在挂载点（见下），引导类参数只认环境变量。
 #
 # ⚠️ 不填 IMAGE_API_BASE_URL / IMAGE_API_KEY 也能启动（配置是懒校验的），
 #    但首次生图会报错；也可以先起来、登录管理员后在「系统设置 → 生图网关」里填。
@@ -20,44 +23,34 @@ services:
       # SQLite + 生成图片持久化：目录映射到宿主机 ./data
       - ./data:/app/apps/web/.data
     environment:
-      # —— 生图网关（必需，可从 .env 读，也可起来后在管理后台填）——
+      # —— 下面几项由 compose 钉死，**不允许 .env 覆盖**（environment 优先级高于 env_file）——
+      # 数据位置：必须与 volume 的挂载点一致，否则数据落在容器里、重建即丢
+      - MOTIF_DATA_DIR=/app/apps/web/.data
+      - MOTIF_DB_FILE=/app/apps/web/.data/motif.db
+      # 运行时标记：`services.ts` 的验证码直出判据是
+      # `NODE_ENV !== 'production' || MOTIF_EXPOSE_DEV_CODE` —— 若被 .env 改成 development，
+      # 配合默认的 console mailer 会让注册验证码对任何人直出
+      - NODE_ENV=production
+
+      # —— 生图网关（必需，从 shell 环境或 .env 取值，也可起来后在管理后台填）——
+      # 留空不阻断启动：会构造占位 provider，首次生图才报错
       - IMAGE_API_BASE_URL=${IMAGE_API_BASE_URL:-}
       - IMAGE_API_KEY=${IMAGE_API_KEY:-}
       - IMAGE_MODEL=${IMAGE_MODEL:-gpt-image-2}
 
-      # —— 站点对外地址：支付回调 / 支付完成跳转 / 找回密码邮件里的直达链接都由它拼接 ——
-      # - SITE_URL=https://motif.example.com
-
-      # —— HTTPS 部署时开启（会话 Cookie 加 Secure 标记）；本地 http 联调勿开 ——
-      # - MOTIF_COOKIE_SECURE=1
-
-      # —— 图片存储切 S3 / MinIO（默认 local，存 dataDir/storage）——
-      # - STORAGE_DRIVER=s3
-      # - S3_ENDPOINT=https://s3.example.com
-      # - S3_BUCKET=motif
-      # - S3_ACCESS_KEY_ID=...
-      # - S3_SECRET_ACCESS_KEY=...
-      # - S3_FORCE_PATH_STYLE=true        # 自建 MinIO 需开
-      # - S3_PUBLIC_BASE_URL=https://cdn.example.com   # 想让图片直连 CDN 时填（需先跑完搬迁）
-
-      # —— 队列 worker 进程内/独立进程（默认进程内；改后需重启容器）——
-      # - MOTIF_INPROC_WORKER=false
-
-      # —— 提示词增强（可选，需同时配端点与密钥才生效）——
-      # - LLM_ENHANCE_ENABLED=true
-      # - LLM_API_BASE_URL=https://api.example.com/v1
-      # - LLM_API_KEY=sk-...
-
-      # —— 邮件发信（默认 console：验证码打进容器日志，便于本地/内网试用）——
-      # - MOTIF_MAILER=smtp
-      # - SMTP_HOST=smtp.qq.com
-      # - SMTP_PORT=465
-      # - SMTP_USER=you@qq.com
-      # - SMTP_PASS=授权码
-      # - MAIL_FROM=you@qq.com
-
-      # —— 仅本地联调：注册验证码随接口直出。生产务必保持注释 ——
-      # - MOTIF_EXPOSE_DEV_CODE=1
+    # —— 其余配置项一律由 .env 原样注入：写了才注入，没写的不注入 ——
+    # 包括 SITE_URL / MOTIF_COOKIE_SECURE / STORAGE_DRIVER / S3_* / MOTIF_INPROC_WORKER /
+    # LLM_* / SMTP_* / MAIL_FROM / MOTIF_EXPOSE_DEV_CODE 等（清单见 .env.docker.example）。
+    #
+    # ⚠️ 这里以前是把这些键**注释着列在 environment 里**，那等于没转发 —— compose 只把
+    #    environment 里真正列出的变量传给容器，于是这些键写进 .env 也到不了容器。
+    #    改用 env_file 后，.env 才是唯一的配置入口。
+    # ⚠️ `.env` 不存在也能起（required: false，需 Compose ≥ 2.24）。
+    # ⚠️ `.env` 的值会被 compose 做变量插值：含字面 `$` 的密钥要写成 `$$`
+    #    （实测 `SMTP_PASS=abc$def` 到容器里只剩 `abc`；`$$` 才得到 `abc$def`）。
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
     healthcheck:
       # 这个端点不需要登录（公开配置），故可直接当存活探针
