@@ -341,4 +341,30 @@ describe('friendlyGenerateError（失败文案）', () => {
   it('无退款时不提退款', () => {
     expect(friendlyGenerateError('生图接口失败（500）：oops', 0)).not.toContain('退还')
   })
+  // #106：网络层失败时 raw 是 undici 的纯英文 `fetch failed`，旧实现会拼成
+  // 「生成失败：fetch failed，已退还 1 张额度」—— 英文原文对用户毫无意义
+  it('网络层失败（纯英文 fetch failed）换成中文可行动文案，且不把英文带出去', () => {
+    const msg = friendlyGenerateError('fetch failed', 1)
+    expect(msg).toContain('网络异常')
+    expect(msg).toContain('已退还 1 张额度')
+    expect(msg).not.toContain('fetch failed')
+  })
+  it('连接被拒 / 连接重置归「网络异常」而不是「超时」—— 超时正则不再吞掉 ECONN*', () => {
+    for (const raw of ['connect ECONNREFUSED 127.0.0.1:443', 'read ECONNRESET']) {
+      const msg = friendlyGenerateError(raw, 0)
+      expect(msg).toContain('网络异常')
+      expect(msg).not.toContain('超时')
+    }
+    // 对照：真正的超时仍走超时分支（这条与上面互为对照，只改「是否吞 ECONN」会让其中一条先红）
+    expect(friendlyGenerateError('ETIMEDOUT', 0)).toContain('超时')
+    expect(friendlyGenerateError('The operation was aborted due to timeout', 0)).toContain('超时')
+  })
+  it('其余纯英文原因（如 sharp 的报错）同样不外泄，仍保留退额信息', () => {
+    const msg = friendlyGenerateError('Input buffer contains unsupported image format', 2)
+    expect(msg).not.toContain('Input buffer')
+    expect(msg).toContain('已退还 2 张额度')
+  })
+  it('含中文的原因照旧拼进文案 —— 收口只挡英文，不能把已有中文原因也吃掉', () => {
+    expect(friendlyGenerateError('生图接口未返回图片数据', 0)).toBe('生成失败：生图接口未返回图片数据')
+  })
 })
