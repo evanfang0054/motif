@@ -4,6 +4,7 @@ import {
   allocateSlots,
   centerRectsInViewport,
   displaySize,
+  isCanvasRect,
   normalizeCanvasMeta,
   parseCanvasMeta,
   placementRect,
@@ -183,5 +184,33 @@ describe('placementRect / rectToPlacement 互逆', () => {
     const p = rectToPlacement('cimg_a', { x: 10, y: 20, w: 240, h: 120 }, '2026-09-20T10:00:00.000Z')
     expect(p).toEqual({ id: 'cimg_a', canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 120, updatedAt: '2026-09-20T10:00:00.000Z' })
     expect(placementRect(p)).toEqual({ x: 10, y: 20, w: 240, h: 120 })
+  })
+})
+
+/**
+ * `isCanvasRect`：读库（`@motif/db` 的 `safeParseSlotPlan`）与读 API（`apps/web` 的
+ * `pendingSkeletonSlots`）共用的同一份形状判据。两边口径必须一致 —— 槽位坐标直接喂给
+ * `left/top/width/height`，坏值比「没有骨架」更糟。
+ */
+describe('isCanvasRect 形状判据（读库与读 API 共用）', () => {
+  it('合法矩形通过', () => {
+    expect(isCanvasRect({ x: 0, y: 0, w: 240, h: 240 })).toBe(true)
+    expect(isCanvasRect({ x: -10, y: 5.5, w: 1, h: 1 })).toBe(true) // 负坐标合法，只要尺寸为正
+  })
+
+  it('非对象一律拒绝（含 null / undefined / 字符串 / 数字 / 数组）', () => {
+    for (const v of [null, undefined, '[]', 42, true, []]) expect(isCanvasRect(v)).toBe(false)
+  })
+
+  it('缺字段 / 非数字 / 非有限数一律拒绝（NaN 与 Infinity 都会渲染出坏块）', () => {
+    expect(isCanvasRect({ x: 0, y: 0, w: 240 })).toBe(false)
+    expect(isCanvasRect({ x: '0', y: 0, w: 240, h: 240 })).toBe(false)
+    expect(isCanvasRect({ x: NaN, y: 0, w: 240, h: 240 })).toBe(false)
+    expect(isCanvasRect({ x: 0, y: Infinity, w: 240, h: 240 })).toBe(false)
+  })
+
+  it('尺寸为 0 或负数拒绝（不是合法矩形）', () => {
+    expect(isCanvasRect({ x: 0, y: 0, w: 0, h: 240 })).toBe(false)
+    expect(isCanvasRect({ x: 0, y: 0, w: 240, h: -1 })).toBe(false)
   })
 })

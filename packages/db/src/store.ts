@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import {
   allocateSlots,
   displaySize,
+  isCanvasRect,
   parseCanvasMeta,
   placementRect,
   rectToPlacement,
@@ -96,14 +97,9 @@ function safeParseSlotPlan(raw: string | null | undefined): CanvasRect[] {
   try {
     const v = JSON.parse(raw || '[]')
     if (!Array.isArray(v)) return []
-    return v.filter(
-      (r): r is CanvasRect =>
-        !!r &&
-        typeof r === 'object' &&
-        [r.x, r.y, r.w, r.h].every((n) => typeof n === 'number' && Number.isFinite(n)) &&
-        r.w > 0 &&
-        r.h > 0
-    )
+    // 形状判据下沉在 core（`isCanvasRect`）：客户端读 API 时也要用同一份口径，
+    // 各写一遍必然漂移（见 core/canvas.ts 里该函数的说明）。
+    return v.filter(isCanvasRect)
   } catch {
     return []
   }
