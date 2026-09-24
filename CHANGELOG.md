@@ -21,7 +21,8 @@
 ### Added
 
 - `.github/workflows/docker-publish.yml`：tag 触发 + 手动补发，多架构矩阵（arm64 走原生
-  `ubuntu-24.04-arm`，不用 QEMU），`imagetools` 合并 manifest，产出 `:<tag>` 与 `:latest`
+  `ubuntu-24.04-arm`，不用 QEMU），`imagetools` 合并 manifest，产出 `:<tag>`；
+  **非预发布 tag**（不含 `-`）同时更新 `:latest` —— 预发布不顶掉默认部署路径拉的那个 tag
 
 ## [0.6.0] - 2026-09-24
 
