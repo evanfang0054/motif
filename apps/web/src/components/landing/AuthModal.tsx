@@ -8,6 +8,7 @@ import { PASSWORD_RULE_TEXT } from '@motif/core'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
 import { clientAuthError, isFormFilled, switchAuthFields, type AuthMode } from '@/lib/auth-form'
+import { errorMessage } from '@/lib/error-message'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { ResetPrefill } from '@/lib/reset-link'
 
@@ -182,7 +183,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
           //（注册成功后整页换成 Workspace，本弹窗直接卸载，永远走不到这行）。
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : '操作失败，请重试。')
+        setError(errorMessage(err, '操作失败，请重试。'))
       } finally {
         setBusy(false)
       }
@@ -214,7 +215,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       if (data.devCode) setCode(data.devCode)
       startCooldown()
     } catch (err) {
-      setCodeMsg({ kind: 'err', text: err instanceof Error ? err.message : '发送失败' })
+      setCodeMsg({ kind: 'err', text: errorMessage(err, '发送失败') })
     }
   }, [mode, email, cooldown, startCooldown])
 

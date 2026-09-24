@@ -52,6 +52,7 @@ import { backgroundGesture } from '@/lib/canvas/gesture'
 import { gridStyle } from '@/lib/canvas/grid'
 import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
+import { errorMessage } from '@/lib/error-message'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
 import { allocateSlots, centerRectsInViewport, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
 import { deriveLineage, isSameLayout, layoutLineageTree, lineageLayerModel } from '@/lib/canvas/lineage'
@@ -829,7 +830,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
       showToast({ tone: 'success', message: `已导出画布归档（${images.length} 张图的布局与图片）。` })
     } catch (err) {
-      showToast({ tone: 'danger', message: err instanceof Error ? err.message : '导出失败。' })
+      // ⚠️ 这里**不能**用「只认 ApiError」的判据：上面取图失败时抛的是**中文**
+      // `Error('导出失败：有图片取不到（HTTP N）。')`（非 ApiError），只认 ApiError 会把它
+      // 换成泛化的「导出失败。」，丢掉「哪张图取不到、什么状态码」这条有效信息。
+      // `errorMessage` 的判据是「message 含中文才透传」—— 既保住上面这条中文原因，
+      // 又把离线时 fetch 自身 reject 出的英文原文（`TypeError: Failed to fetch`）换成下面的中文兜底。
+      showToast({ tone: 'danger', message: errorMessage(err, '导出失败。') })
     } finally {
       setZipping(false)
     }
@@ -861,7 +867,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         // 不承诺已写进服务端；被 LWW 拒掉的情况由提交回调单独提示
         else showToast({ tone: 'success', message: `已恢复 ${applied.length} 张图的位置。` })
       } catch (err) {
-        showToast({ tone: 'danger', message: err instanceof Error ? err.message : '导入失败。' })
+        // 归档解析（`lib/zip` / `lib/canvas/archive` / `lib/canvas/serialization`）故意抛**中文** `Error`
+        //（如「导入失败：不是画布归档（缺少 canvas.json）。」），`errorMessage` 会透传；
+        // 英文原文（如离线时的 `Failed to fetch`）则回落下面的中文兜底。
+        showToast({ tone: 'danger', message: errorMessage(err, '导入失败。') })
       } finally {
         setImporting(false)
       }

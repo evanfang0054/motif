@@ -5,6 +5,7 @@ import { Alert, Button, Chip, SearchField, Skeleton, Spinner, Tag, TagGroup, Typ
 import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
+import { errorMessage } from '@/lib/error-message'
 import { showToast } from '@/components/ui/toast'
 import { PromptDetailDialog } from './PromptDetailDialog'
 import { ALL_PROMPTS_OPTION, PROMPT_PAGE_SIZE } from '@/lib/prompt-sources'
@@ -228,7 +229,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
         setPage(targetPage)
         setError(null)
       } catch (e) {
-        if (seq === seqRef.current) setError(e instanceof Error ? e.message : '提示词库加载失败')
+        if (seq === seqRef.current) setError(errorMessage(e, '提示词库加载失败'))
       } finally {
         if (seq === seqRef.current) {
           setLoading(false)
@@ -272,7 +273,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           : { tone: 'warning', message: `重试了 ${r.retried} 个源，仍有 ${r.failures.length} 个源失败` }
       )
     } catch (e) {
-      if (seq === seqRef.current) setError(e instanceof Error ? e.message : '重试失败')
+      if (seq === seqRef.current) setError(errorMessage(e, '重试失败'))
     } finally {
       if (seq === seqRef.current) {
         setLoading(false)

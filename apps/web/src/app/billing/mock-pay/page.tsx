@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Alert, Button, Card, Typography } from '@heroui/react'
 import { api } from '@/lib/client'
+import { errorMessage } from '@/lib/error-message'
 import { BrandMark } from '@/components/BrandMark'
 import { anchorRender } from '@/components/ui/anchor-button'
 
@@ -31,7 +32,7 @@ function PayPanel() {
       setMessage(`支付成功，已充值 ${res.paid} 张额度。`)
     } catch (e) {
       setState('error')
-      setMessage(e instanceof Error ? e.message : '支付失败')
+      setMessage(errorMessage(e, '支付失败'))
     }
   }
 

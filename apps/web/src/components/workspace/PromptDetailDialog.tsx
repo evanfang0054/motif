@@ -5,6 +5,7 @@ import { Alert, Button, Chip, Spinner, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { Copy } from '@gravity-ui/icons'
 import type { PromptLibraryEntry } from '@/lib/client'
+import { errorMessage } from '@/lib/error-message'
 import { isAttachableImage, PROMPT_ENTRY_MAX_IMAGES } from '@/lib/prompts'
 import { WorkspaceModal } from './dialogs'
 
@@ -44,7 +45,9 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
     try {
       await onAttachImage(index)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '加入参考图失败')
+      // `onAttachImage` 会抛**中文** `Error`（参考图上限 / 未建任务，见 Workspace.attachPromptImage），
+      // `errorMessage` 会原样透传；离线时的英文原文则回落兜底。
+      setError(errorMessage(e, '加入参考图失败'))
     } finally {
       setBusyIndex(null)
     }
