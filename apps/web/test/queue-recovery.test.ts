@@ -6,7 +6,7 @@ import { enqueueGeneration, executeMessage, finishCancel, type WorkerDeps } from
 import { startWorker, stopWorker } from '@/server/worker'
 import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { MotifStore } from '@motif/db'
-import { placementRect, rectsIntersect } from '@motif/core'
+import { LINEAGE_COL_GAP, SLOT_GAP, SLOT_STEP, placementRect, rectsIntersect } from '@motif/core'
 import type { GeneratedImage, ImageProvider } from '@motif/image-provider'
 
 let dir: string
@@ -276,6 +276,126 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     expect(spy).toHaveBeenCalledTimes(3)
     expect(spy.mock.calls.every(([id]) => id === topicId)).toBe(true)
     spy.mockRestore()
+  })
+})
+
+describe('血缘落位（新图挨着参考图，不从视野左上角另起一片）', () => {
+  /** 与真实出图同尺寸的桩：1×1 的计数桩会把落位断言变成「跟着退化尺寸走」，测不出真实形态 */
+  const square: ImageProvider = {
+    name: 'square-stub',
+    generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 1024 }),
+  }
+
+  /** 造「画布上已有一张参考图」的任务（上传转正 / 上一轮产出都长这样） */
+  function seedReference(email: string, at = { x: 400, y: 300 }) {
+    const user = store.createUser({ email, passwordHash: 'h', name: 'a', credits: 8 })
+    const topic = store.createTopic(user.id, '任务')
+    const ref = store.insertCanvasImage({
+      topicId: topic.id,
+      userId: user.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图',
+      imageKey: 'ref',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+      placement: { x: at.x, y: at.y, width: 240, height: 240 },
+    })
+    return { user, topicId: topic.id, refId: ref.id }
+  }
+
+  const enqueueWithRefs = (
+    user: Parameters<typeof enqueueGeneration>[3],
+    topicId: string,
+    count: number,
+    referenceCanvasImageIds: string[]
+  ) =>
+    enqueueGeneration(store, countingProvider([]), dir, user, {
+      prompt: '以它为参考',
+      count,
+      size: '1024x1024',
+      enhance: false,
+      topicId,
+      referenceCanvasImageIds,
+    })
+
+  it('计划槽落在参考图右侧一列（列顶对齐参考图、列内固定步长）', async () => {
+    const { user, topicId, refId } = seedReference('anchor@b.co')
+    const res = await enqueueWithRefs(user, topicId, 2, [refId])
+    expect(store.getMessage(res.messageId)!.slotPlan).toEqual([
+      { x: 400 + 240 + LINEAGE_COL_GAP, y: 300, w: 240, h: 240 },
+      { x: 400 + 240 + LINEAGE_COL_GAP, y: 300 + SLOT_STEP, w: 240, h: 240 },
+    ])
+  })
+
+  it('出图落回同一列（骨架与出图同坐标：不在视野左上角，也不压参考图）', async () => {
+    const { user, topicId, refId } = seedReference('land@b.co')
+    const res = await enqueueWithRefs(user, topicId, 2, [refId])
+    claim(res.messageId)
+    await executeMessage(makeDeps(square), res.messageId)
+
+    const colX = 400 + 240 + LINEAGE_COL_GAP
+    const generated = store.listCanvasPlacements(topicId).filter((p) => p.id !== refId)
+    expect(generated.map((p) => ({ x: p.canvasX, y: p.canvasY }))).toEqual([
+      { x: colX, y: 300 },
+      { x: colX, y: 300 + SLOT_STEP },
+    ])
+  })
+
+  it('同一张参考图的第二次生成：整批落在上一批下方（同代同列，不另起一片）', async () => {
+    const { user, topicId, refId } = seedReference('twice@b.co')
+    const first = await enqueueWithRefs(user, topicId, 2, [refId])
+    claim(first.messageId)
+    await executeMessage(makeDeps(square), first.messageId)
+
+    const second = await enqueueWithRefs(user, topicId, 1, [refId])
+    // 第一批底边 = 300 + 280 + 240 = 820 → 第二批顶边 820 + SLOT_GAP
+    expect(store.getMessage(second.messageId)!.slotPlan).toEqual([
+      { x: 400 + 240 + LINEAGE_COL_GAP, y: 300 + SLOT_STEP + 240 + SLOT_GAP, w: 240, h: 240 },
+    ])
+  })
+
+  it('多张参考图 → 锚点取引用数组的**首位**（顺序即 `validRefs` 顺序）', async () => {
+    const a = seedReference('multi-a@b.co', { x: 400, y: 300 })
+    const b = store.insertCanvasImage({
+      topicId: a.topicId,
+      userId: a.user.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图2',
+      imageKey: 'ref2',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+      placement: { x: 2000, y: 300, width: 240, height: 240 },
+    })
+    const ab = await enqueueWithRefs(a.user, a.topicId, 1, [a.refId, b.id])
+    expect(store.getMessage(ab.messageId)!.slotPlan[0].x).toBe(400 + 240 + LINEAGE_COL_GAP)
+    // 同一任务里连续入队会被「任务仍在生成中」挡住 —— 先把第一轮跑完再入第二轮（也顺便覆盖了「跑完可再提交」）
+    claim(ab.messageId)
+    await executeMessage(makeDeps(square), ab.messageId)
+    const ba = await enqueueWithRefs(a.user, a.topicId, 1, [b.id, a.refId])
+    expect(store.getMessage(ba.messageId)!.slotPlan[0].x).toBe(2000 + 240 + LINEAGE_COL_GAP)
+  })
+
+  it('无参考图（纯文生图）→ 维持原网格（从视野原点起，不受画布上已有图影响）', async () => {
+    const { user, topicId } = seedReference('plain@b.co')
+    const res = await enqueueWithRefs(user, topicId, 1, [])
+    expect(store.getMessage(res.messageId)!.slotPlan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+  })
+
+  it('参考图是「未补位的老行」（0 尺寸摆放）→ 不拿它当锚点，退回网格', async () => {
+    // 升级库的老行在 `backfillCanvasPlacements` 之前是 canvas_w/h = 0：拿它当锚点会算出
+    // 「0 右缘 + 列间距」这种与它无关的位置，比不锚定更糟。
+    const { user, topicId, refId } = seedReference('legacy@b.co')
+    store.db
+      .prepare("UPDATE canvas_images SET canvas_x = 0, canvas_y = 0, canvas_w = 0, canvas_h = 0, updated_at = '' WHERE id = ?")
+      .run(refId)
+    const res = await enqueueWithRefs(user, topicId, 1, [refId])
+    expect(store.getMessage(res.messageId)!.slotPlan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
   })
 })
 

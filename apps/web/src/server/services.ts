@@ -9,6 +9,7 @@ import {
   displaySize,
   inviteRewardFor,
   isBusyTopicStatus,
+  isCanvasRect,
   placementRect,
   planSlotRects,
   rectsIntersect,
@@ -21,6 +22,7 @@ import {
   validateSize,
   viewportOrigin,
   type CanvasImage,
+  type CanvasImagePlacement,
   type CanvasRect,
   type CreditPackage,
   type GenerateImagesInput,
@@ -307,11 +309,12 @@ export async function enqueueGeneration(
   // 待生成槽位计划（#88）：入队即算好、随消息下发，前端立刻渲染 N 个骨架。
   // ⚠️ 必须在 `resolveStagedReferences` **之后**算：转正的参考图此刻已进画布，
   // `occupied` 必须含它们，否则骨架会与刚转正的参考图重叠。
-  // 与 worker 出图落位共用 `planSlotRects`（内部即 `allocateSlots`）—— 两边同源，
-  // 这是「出图就地填入不跳动」的唯一保证。
+  // 与 worker 出图落位共用 `planSlotRects`（内部即 `allocateSlots` / `planLineageColumn`）——
+  // 两边同源，这是「出图就地填入不跳动」的唯一保证。
   const planOrigin = viewportOrigin(store.getCanvasMeta(topic.id).viewport)
-  const planOccupied = store.listCanvasPlacements(topic.id).map(placementRect)
-  const slotPlan = planSlotRects(planOccupied, size, input.count, planOrigin)
+  const planPlacements = store.listCanvasPlacements(topic.id)
+  const planOccupied = planPlacements.map(placementRect)
+  const slotPlan = planSlotRects(planOccupied, size, input.count, planOrigin, anchorRectOf(planPlacements, validRefs))
 
   const message = store.createMessage({
     topicId: topic.id,
@@ -338,6 +341,29 @@ export async function enqueueGeneration(
 
 function validateCountOf(count: number): string | null {
   if (!Number.isInteger(count) || count < 1 || count > 12) return '张数需在 1–12 之间。'
+  return null
+}
+
+/**
+ * 血缘锚点（用户 2026-09-24 裁决）：本轮参考图里**第一张形状合法的摆放** ——
+ * 新图与骨架都落在它右侧一列（见 `@motif/core` 的 `planLineageColumn`）。
+ *
+ * 为什么是「第一张」：`validRefs` 是 `[...canvasRefIds, ...stagedCanvasIds]`，而「以它为参考再生成」
+ * 产出的 `referenceIds` 里被点的那张是唯一的画布引用（暂存参考排在它之后），@ 引用则按
+ * `referenceIds` 的顺序（逐张点击 = 点击顺序；框选批量 = 画布顺序）。批量 @ 的顺序未必等于
+ * 「用户心里想以哪张为父图」，但「取第一张」这条口径本身是用户定的。
+ *
+ * 跳过 w/h ≤ 0 的摆放（判据复用 `isCanvasRect`）：升级库的老行在补位前是 0 尺寸，拿它当锚点
+ * 会算出「0 右缘 + 列间距」这种与它无关的位置 —— 宁可不锚定、退回网格。
+ * 没有任何参考图（纯文生图）时同样返回 null：没有父图可依，调用方维持原网格分配。
+ */
+function anchorRectOf(placements: readonly CanvasImagePlacement[], referenceIds: readonly string[]): CanvasRect | null {
+  if (referenceIds.length === 0) return null
+  const rectById = new Map(placements.map((p) => [p.id, placementRect(p)]))
+  for (const id of referenceIds) {
+    const rect = rectById.get(id)
+    if (rect && isCanvasRect(rect)) return rect
+  }
   return null
 }
 

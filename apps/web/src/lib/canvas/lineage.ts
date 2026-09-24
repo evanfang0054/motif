@@ -13,6 +13,8 @@
  * 这正是「不存可推导字段」原则的落点：零新表、零新列。
  */
 
+import { LINEAGE_COL_GAP } from '@motif/core'
+
 export interface LineageImage {
   id: string
   messageId: string | null
@@ -205,7 +207,11 @@ export interface TreeLayoutOptions {
   rowGap?: number
 }
 
-const TREE_COL_GAP = 120
+/** 列间距不在这里定义：与「生成时按血缘落位」的列间距是**同一个值**
+ * （`@motif/core` 的 `LINEAGE_COL_GAP`）—— 两处各写一份必然漂移。
+ * ⚠️ 共用的只有**列间距**这一个值：行距（本处 48 / 生成处是固定步长 280）与纵向基准
+ * （本处按整棵树居中 / 生成处对齐锚点顶边）口径不同，所以生成完再点一次「按血缘整理」
+ * 位置仍会变（会收紧）—— 别把这里读成「生成后就已经是整理好的样子」。 */
 const TREE_ROW_GAP = 48
 
 /**
@@ -224,7 +230,7 @@ export function layoutLineageTree(input: {
   origin: { x: number; y: number }
   options?: TreeLayoutOptions
 }): Array<{ id: string; rect: Rect }> {
-  const colGap = input.options?.colGap ?? TREE_COL_GAP
+  const colGap = input.options?.colGap ?? LINEAGE_COL_GAP
   const rowGap = input.options?.rowGap ?? TREE_ROW_GAP
   if (input.images.length === 0) return []
 
