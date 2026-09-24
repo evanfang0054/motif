@@ -51,9 +51,10 @@ motif/
 ├── packages/image-provider/   # 生图 Provider（OpenAI 兼容网关）
 ├── scripts/cdk.mjs            # CDK 发放 CLI
 ├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
-├── Dockerfile                 # 多阶段构建（builder 构建 + slim 运行时）
+├── Dockerfile                 # 多阶段构建（builder 构建 + slim 运行时，含运维脚本）
 ├── docker-compose.yml         # 一键部署：端口/数据卷/环境变量/健康检查
-└── e2e/                       # ego-browser 测试：run.sh（主流程 5 轮）+ acceptance.sh（验收 A–F）
+├── .env.docker.example        # Docker 部署配置模板（cp 成 .env 后填两项必需配置）
+└── e2e/                       # ego-browser 测试：run.sh（主流程 5 轮）+ acceptance.sh（验收 A–G）
 ```
 
 ## 一、支持的能力
@@ -88,6 +89,9 @@ motif/
 - 选中浮动工具栏（放大预览 / @引用 / 以它为参考再生成 / 下载 / 删除确认）、双击灯箱预览
 - **整理布局**把整块图片居中到可视区域；**溯源**开关打开后可「按来源整理」，
   把画布铺成从左到右的分层树（没有上游的排最左列，同一轮产出同列）
+- **新图挨着父图落位**：从某张图续作时，产出（含等待中的骨架）落在**该图右侧一列**，
+  同一张参考图的第二次生成顺次往下排 —— 不必再自己把图拖回父图旁边。
+  纯文生图（没有参考图）仍落在当前视野的空位槽
 - 画布归档：导出为单个 zip（布局清单 + 图片副本）/ 导入恢复布局
 - 窄屏最小可用：单指拖图 / 框选 / 点按缩放（不自创双指手势）
 
@@ -97,6 +101,13 @@ motif/
   `mock`（模拟收银台，本地演示）/ `epay`（易支付协议网关）/ `stripe`（托管收银台）；
   回调验签 → 金额逐分核对 → 幂等入账（重复通知只到账一次）（见 [#14](https://github.com/evanfang0054/motif/issues/14)）
 - CDK：CLI 发码 + 管理后台「CDK 管理」页发放/查询 + 页面兑换（真实）
+- **两个商业化开关**（都在「系统设置」里，随时可翻转，不影响已产生的数据）：
+  - **充值**（`BILLING_ENABLED`，**默认关闭**）：不接支付渠道的自建部署可以直接不开 ——
+    额度只靠注册赠送 / 邀请 / CDK。关闭时工作台不显示充值入口、下单接口拒绝新订单，
+    余额入口自动退化成「兑换」（只开兑换时）或纯余额展示（两个都关时）；
+    ⚠️ **只拦新订单**，已支付订单的回调照常入账，不会吞掉用户已付的钱
+  - **CDK 兑换**（`CDK_REDEEM_ENABLED`，**默认开启**）：关闭后兑换入口隐藏、兑换接口拒绝，
+    已发出的码仍有效（重开即可兑换）
 - 邀请：专属邀请码/链接，好友经邀请链接注册自动带上邀请码，双方得利（奖励额度与人数上限在后台「额度与奖励」可配，**活动默认关闭**）（真实）
 - 反馈：提交入库 + 管理后台反馈处理（真实）
 - 参考图：上传 PNG/JPG/WebP ≤10MB，**暂存制** —— 点「开始生成」扣费后才转正进画布
@@ -123,11 +134,11 @@ motif/
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · **860 个单元测试**（core 58 · db 78 · provider 8 · web 716）
+- pnpm monorepo · TypeScript strict · **1221 个单元测试**（core 90 · db 141 · provider 8 · web 982）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
-- ego-browser 端到端（5 轮）+ 补充验收（A–F，真实网关实跑）
-- Docker 多阶段构建一键部署，数据卷持久化，健康检查
+- ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
+- Docker 多阶段构建一键部署（`.env` 驱动、数据卷持久化、健康检查、容器内可跑运维脚本）
 - **部署形态可配**：图片存储 local/S3 可切换（双读 + 一次性搬迁）、队列 worker 进程内/独立进程、
   提示词增强独立 LLM 配置 —— 三项都在「系统设置」里改，不碰代码（见「部署形态」）
 
@@ -139,6 +150,9 @@ motif/
 | --- | --- | --- |
 | 生图网关地址 | 你的 OpenAI 兼容网关（如 `http://host:3000/v1`） | `IMAGE_API_BASE_URL` |
 | 网关令牌 | 网关「令牌」页生成 | `IMAGE_API_KEY` |
+
+> 两项都可以**先不填**：服务照常启动（配置是懒校验的，首个触发生图的请求才报错），
+> 起来后登录管理员到「系统设置 → 生图网关」填也一样（保存即热生效）。
 
 ### 可选配置（按需）
 
@@ -159,6 +173,8 @@ motif/
 | `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
 | `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
 | `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
+| `BILLING_ENABLED` | `false` | **充值总开关**。默认关（不接支付渠道的自建部署形态）：关闭后不显示充值入口、下单接口拒绝新订单；**已支付订单的回调不受影响**。要卖额度就打开它 |
+| `CDK_REDEEM_ENABLED` | `true` | CDK 兑换开关。关闭后兑换入口隐藏、兑换接口拒绝（已发出的码仍有效） |
 | `STORAGE_DRIVER` | `local` | 图片存储驱动：`local`（默认，存 `dataDir/storage`）/ `s3`（S3 兼容对象存储，自建 MinIO 也可） |
 | `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY_ID` `S3_SECRET_ACCESS_KEY` | — | 驱动为 `s3` 时**必填**；`S3_REGION` 多数自建服务不校验、`S3_FORCE_PATH_STYLE` 自建 MinIO 需开 |
 | `S3_PUBLIC_BASE_URL` | 留空 | 图片**公开访问前缀**（如 `https://cdn.example.com`）。配了之后画布图片与打包下载直接由它取，字节不再经应用转发；留空则一切照旧走应用代理。**三个前提**：驱动为 `s3`、老图已搬迁完（未搬迁的老图只在本地，直链取不到）、桶允许公开读**并允许跨域 GET**（批量下载走 `fetch`） |
@@ -205,16 +221,65 @@ motif/
 ### 方式 A：Docker 一键部署（推荐）
 
 ```bash
-# 1. 在 docker-compose.yml 填两项必需配置（IMAGE_API_BASE_URL / IMAGE_API_KEY）
-# 2. 启动
-docker compose up -d --build
-# → http://localhost:3100，数据持久化在 ./data/
-# 3. 首次启动会自动创建超级管理员，从容器日志取初始密码：
-docker compose logs motif | grep -A4 '已自动创建超级管理员账号'
-#    同一份凭据也会写入 ./data/admin-credentials.txt（权限 600）
+git clone https://github.com/evanfang0054/motif.git && cd motif
+cp .env.docker.example .env      # ① 填两项必需配置（生图网关地址 / 令牌）
+docker compose up -d --build     # ② 构建并启动 → http://localhost:3100
+docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # ③ 取管理员初始密码
 ```
 
-> 部署后请尽快用该账号登录 `/admin` 并修改密码。忘记密码时用 `pnpm admin:reset`（见下）。
+- 首次启动自动完成初始化（建库 → 播种配置 → 启动生成队列 → 建超级管理员），不需要额外初始化步骤；
+  同一份凭据也会写入 `./data/admin-credentials.txt`（权限 600）
+- 数据持久化在宿主机 `./data/`，容器重建不丢：SQLite 与管理员凭据始终在里面，
+  图片在**默认的 local 存储**下也在里面（切 `s3` 后图片转由对象存储承载）
+- 自带健康检查（每 30s 探一次公开的套餐接口 `/api/billing/packages`），`docker compose ps` 显示 `healthy` 即正常
+- 构建期已把 npm 源指向 npmmirror、原生依赖（better-sqlite3 / sharp）也在构建期装好 ——
+  运行时镜像不带编译器，国内网络无需额外配代理
+
+> ⚠️ **配置只在首次启动播种一次**：`docker-compose.yml` / `.env` 里的值会写进数据库（`settings` 表），
+> 之后**改它们不再生效** —— 请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
+> 只有 `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` 与引导类参数永远只认环境变量。
+
+**容器内运维命令**（镜像里只带了容器内真能跑的 `admin.mjs` / `cdk.mjs`，用 `node` 直接跑；
+容器工作目录是 `/app/apps/web`，故写绝对路径）：
+
+```bash
+docker compose exec motif node /app/scripts/admin.mjs --list        # 查看管理员账号
+docker compose exec motif node /app/scripts/admin.mjs --reset       # 重置管理员密码（忘记密码时用）
+docker compose exec motif node /app/scripts/cdk.mjs MY-CODE-10 10   # 发放一张 10 额度的 CDK
+docker compose exec motif node /app/scripts/cdk.mjs --list          # 查看全部 CDK 与兑换状态
+```
+
+> `pnpm worker`（独立队列进程）与 `pnpm storage:migrate`（图片搬迁到 S3）走 `tsx` 读 `apps/web/src`，
+> 而运行时镜像里**没有源码**（这两个脚本也就没打进去）：请在仓库检出目录里、
+> 用 `MOTIF_DATA_DIR` 指向同一份 `./data` 执行（`MOTIF_DATA_DIR=./data pnpm storage:migrate --dry-run`）。
+
+**升级 / 备份**
+
+```bash
+git pull && docker compose up -d --build          # 升级：重建镜像；./data 里的数据不受影响
+tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存储）下 ./data 就是全部状态
+```
+
+> 上面的备份命令对应**默认的 local 存储**：数据库、生成图片（`./data/storage/`）、管理员凭据都在
+> `./data` 里。若已把「系统设置 → 图片存储」切到 `s3`，**新图**写进远端桶；未搬迁的老图仍在
+> `./data/storage`（双读，跑完 `pnpm storage:migrate` 才只剩库与凭据）—— 所以桶要另行备份
+> （`mc mirror` / `aws s3 sync` 之类），`./data` 也照常备份。
+
+**HTTPS 部署**：前面挂一层反向代理（Caddy / Nginx / Traefik），并在 `.env` 里设
+`SITE_URL=https://你的域名` 与 `MOTIF_COOKIE_SECURE=1`（会话 Cookie 加 Secure）。
+支付回调地址为 `<SITE_URL>/api/billing/notify/epay`（易支付）或
+`<SITE_URL>/api/billing/webhook/stripe`（Stripe）。
+
+**常见问题**
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| 容器起不来 / 打不开 3100 | `docker compose logs motif` 看原因；最常见是宿主 3100 被占用（改 `ports` 左边那个端口） |
+| 提交后报「网络不可达」或生成失败 | 网关地址或令牌不对（`IMAGE_API_BASE_URL` 要带 `/v1`）。网关跑在宿主机上时别写 `127.0.0.1`（那是容器自己）：Docker Desktop 用 `host.docker.internal`，**Linux 上还要在 `docker-compose.yml` 里加 `extra_hosts: ["host.docker.internal:host-gateway"]`** 才解析得到 |
+| 注册收不到验证码 | 默认 `MOTIF_MAILER=console`，验证码只打进容器日志：`docker compose logs -f motif`。要真发信去「系统设置 → 邮件发信」配 |
+| 改了 `.env` 没反应 | 见上文「配置只在首次启动播种一次」 |
+| 忘记管理员密码 | `docker compose exec motif node /app/scripts/admin.mjs --reset`（绝对路径，容器工作目录是 `/app/apps/web`） |
+| 生成成功但画布图片打不开 | 图片在 `./data/storage/`，确认该目录没被清掉、卷挂载没变 |
 
 ### 方式 B：本地开发
 
@@ -230,10 +295,10 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 860 个单元测试（core 58 · db 78 · provider 8 · web 716）
+pnpm test             # 1221 个单元测试（core 90 · db 141 · provider 8 · web 982）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
-bash e2e/acceptance.sh  # 补充验收 A–F（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布
+bash e2e/acceptance.sh  # 补充验收 A–G（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布 · 骨架
 ```
 
 ### CDK 发放

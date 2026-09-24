@@ -43,12 +43,26 @@ COPY --from=builder /app/apps/web/node_modules /app/apps/web/node_modules
 COPY --from=builder /app/apps/web/.next /app/apps/web/.next
 COPY --from=builder /app/apps/web/public /app/apps/web/public
 COPY --from=builder /app/apps/web/package.json /app/apps/web/package.json
+# next.config.ts：`next start` 会读它（容器启动日志里有 `✓ Running next.config.ts`）。
+# 目前里面只有构建期选项（outputFileTracingRoot / serverExternalPackages / transpilePackages），
+# 少它不会立刻报错 —— 但将来加 headers / rewrites / redirects 这类**运行时**配置后，
+# 缺这一层会变成「本地能跑、容器里行为缺失且不报错」，所以现在就补齐。
+COPY --from=builder /app/apps/web/next.config.ts /app/apps/web/next.config.ts
 COPY --from=builder /app/packages /app/packages
 COPY --from=builder /app/package.json /app/package.json
 COPY --from=builder /app/pnpm-workspace.yaml /app/pnpm-workspace.yaml
+# 运维脚本：只带**容器内真能跑**的两个。admin.mjs / cdk.mjs 只依赖 better-sqlite3 + node 内置模块，
+# 而 worker.mjs / storage-migrate.mjs 会 `import '../apps/web/src/server/*.ts'`（要靠 tsx + 源码），
+# 运行时镜像里没有源码 —— 带进来只会让人 `node /app/scripts/worker.mjs` 撞一个费解的模块解析错误。
+# 那两个命令请在仓库检出目录里、用 MOTIF_DATA_DIR 指向同一份 ./data 执行。
+COPY --from=builder /app/scripts/admin.mjs /app/scripts/cdk.mjs /app/scripts/
 
 RUN mkdir -p /app/apps/web/.data
 EXPOSE 3100
 
 # better-sqlite3/sharp 已随 node_modules 复制；@motif/* 源码包在构建期已被打包进 .next/server
+#
+# ⚠️ 刻意**不以非 root 用户运行**：数据卷是宿主机 bind mount（`./data`），首次由 Docker 以 root 创建；
+#    换成 USER node 后该目录不可写 → 建库失败、容器起不来（「一键部署」最常见的坑）。
+#    真要非 root，请先把 ./data 的属主改成 1000:1000，再自行加 USER node。
 CMD ["node", "./node_modules/next/dist/bin/next", "start", "-p", "3100"]

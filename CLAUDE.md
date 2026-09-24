@@ -40,6 +40,7 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - 原生依赖 better-sqlite3 / sharp 首次安装需编译（已通过 pnpm-workspace.yaml `allowBuilds` 放行；.npmrc 走 npmmirror 二进制镜像）。
 - 端口：dev 3100 · e2e 3210 · acceptance 3220；e2e 脚本自行 `next start`、清空 `.data-e2e` / `.data-accept`，缺 `.next/server` 时自动先 build（16 起 dev 产物在 `.next/dev`，用 `.next` 当判据会误判）。
 - CI（main）= `pnpm install --frozen-lockfile` → typecheck → test → build；e2e 不在 CI 中。提交前本地至少通过 typecheck + 单测。
+- **Docker 运行时镜像里没有 `apps/web/src`**（拷贝清单见 Dockerfile：`apps/web` 的 `.next` 产物 / `public` / `package.json` / `next.config.ts` + 根 `node_modules`、`packages/`、根 `package.json`、`pnpm-workspace.yaml` + `scripts/admin.mjs`、`scripts/cdk.mjs`）。所以容器内能跑 `node /app/scripts/admin.mjs --reset|--list` 与 `cdk.mjs`（只用 better-sqlite3），但 `scripts/worker.mjs` / `storage-migrate.mjs` 会 `import '../apps/web/src/server/*.ts'`，**容器内跑不了、也就没打进镜像** —— 在仓库检出目录里用 `MOTIF_DATA_DIR` 指向同一份数据目录执行。另外配置只在首次启动播种进库，之后改 `.env` / compose 无效。
 
 ## HeroUI 使用规范
 

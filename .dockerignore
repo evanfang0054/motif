@@ -11,3 +11,13 @@ node_modules
 .git
 *.log
 .DS_Store
+
+# 与镜像构建无关的重目录，排掉可显著缩小构建上下文：
+# 前四个只在注释/文档里被提到；docs 是知识库；e2e 虽是 pnpm workspace 包，
+# 但构建期只按 Dockerfile 里显式列出的清单拷各包 package.json，从不读它。
+dogfood-output
+dsh-image-gen
+.heroui-docs
+.infinite-canvas-ref
+docs
+e2e
