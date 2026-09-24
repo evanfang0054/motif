@@ -240,10 +240,10 @@ docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # 
 - 要**钉版本**（可复现）：把 `docker-compose.yml` 里的 `:latest` 换成具体版本，如
   `ghcr.io/evanfang0054/motif:v0.6.0`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
 
-> ⚠️ **GHCR package 首次发布后需要手动设为 public**：GitHub 的 container package 默认是**私有**的
-> （即使仓库是 public），匿名 `docker pull` 会 403、报 `unauthorized`。
+> ⚠️ **拉镜像报 `unauthorized` / `denied` 时**：说明 GHCR 上这个 package 不是公开的。GitHub 的
+> container package **可能**默认私有（即使仓库是 public），匿名 `docker pull` 会 403。
 > 处理：打开 `https://github.com/users/evanfang0054/packages/container/motif/settings`
-> → Danger Zone → Change visibility → Public。在此之前可以先 `docker login ghcr.io` 再拉。
+> → Danger Zone → Change visibility → Public；或先 `docker login ghcr.io` 再拉。
 >
 > ⚠️ **配置入口只有 `.env`**：compose 用 `env_file` 把它注入容器 —— 写了才注入、没写的不注入
 > （改完要 `docker compose up -d` 重建容器才会生效）。两点注意：
