@@ -53,9 +53,12 @@ jobs:
 
       - name: 解析并校验发布的 tag
         id: tag
+        env:
+          # 经 env 传，避免把 dispatch 输入直接插值进 shell
+          IN_TAG: ${{ github.event.inputs.tag }}
         run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
+          if [ -n "$IN_TAG" ]; then
+            TAG="$IN_TAG"
             if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
               echo "::error::tag '$TAG' 不存在"
               exit 1
@@ -108,9 +111,14 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          docker buildx imagetools create \
-            -t "$IMAGE:$TAG" \
-            -t "$IMAGE:latest" \
+          TAGS=(-t "$IMAGE:$TAG")
+          # ⚠️ 预发布 tag（含 `-`，如 v0.6.1-rc.1）**不要顶掉 latest**：
+          #    否则「一键部署」的默认路径（拉 :latest）会拿到 RC 内容。
+          case "$TAG" in
+            *-*) echo "「$TAG」是预发布 tag，本次不更新 latest" ;;
+            *) TAGS+=(-t "$IMAGE:latest") ;;
+          esac
+          docker buildx imagetools create "${TAGS[@]}" \
             "$IMAGE:$TAG-amd64" \
             "$IMAGE:$TAG-arm64"
 

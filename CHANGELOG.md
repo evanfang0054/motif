@@ -13,7 +13,8 @@
   起因是低配宿主机上编译 Next.js 需要约 2 GiB 可用内存，内存不足时会转入 swap 抖动、
   **把宿主机拖死约 10 分钟且没有 OOM-kill 记录**
 - 从源码构建降级为可选路径：`docker-compose.build.yml` overlay（产物打本地 tag `motif:local`）；
-  Dockerfile 的 builder 阶段加 `NODE_OPTIONS=--max-old-space-size=1536`，让内存超限变成干净的构建失败
+  Dockerfile 的 builder 阶段加 `NODE_OPTIONS=--max-old-space-size=1536` 作**安全网**
+  （只兜 V8 堆，不保证不冻 —— Next/Turbopack 还有堆外内存，低配机器请用默认的拉取路径）
 - README 部署章节拆成三条路（拉取 / 源码构建 / 本地开发），补上内存前提、GHCR package 可见性说明，
   常见问题新增「构建把宿主机拖死」与「拉镜像 unauthorized」两行
 
