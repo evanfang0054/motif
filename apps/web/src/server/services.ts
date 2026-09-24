@@ -442,21 +442,23 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     }
 
     const final = store.getMessage(messageId)
-    const done = store.countGeneratedInMessage(messageId)
     if (final && (final.status === 'canceling' || final.status === 'canceled')) {
-      finishCancel(store, msg, done)
+      finishCancel(store, msg)
     } else {
       store.setMessageStatus(messageId, 'completed')
       store.syncTopicStatus(msg.topicId, null, null, 'completed')
     }
   } catch (e) {
-    const done = store.countGeneratedInMessage(messageId)
-    const refund = msg.requestedCount - done
-    if (refund > 0) store.addCredits(msg.userId, refund, { source: 'generation_refund', refId: messageId, note: '生成失败退额' })
     const raw = e instanceof Error ? e.message : String(e)
     console.error('[motif] 生成失败:', raw)
-    store.setMessageStatus(messageId, 'failed', friendlyGenerateError(raw, refund))
-    store.syncTopicStatus(msg.topicId, null, null, 'failed')
+    // 退额 + 落 failed + 任务回 idle 全部下沉到 store 的原子 CAS（`finalizeFailure`）：只有把状态
+    // 从 running（且执行者身份匹配）翻走的那一方退额。这堵掉「单次 provider.generate 跨过 30 分钟
+    // 租约、被回收重排（甚至被另一进程重新认领）后，本进程迟到的 catch 又退一次」的双退窗口 ——
+    // 与 `finalizeCancel` 同构：谁先翻走状态谁收尾，另一方退化为 no-op。
+    store.finalizeFailure(messageId, {
+      workerId: deps.workerId,
+      buildError: (refund) => friendlyGenerateError(raw, refund),
+    })
   }
 }
 
@@ -470,11 +472,17 @@ export function friendlyGenerateError(raw: string, refund: number): string {
   return `生成失败：${raw.slice(0, 60)}${refunded}`
 }
 
-export function finishCancel(store: MotifStore, msg: { id: string; topicId: string; requestedCount: number }, done: number): void {
-  const refund = msg.requestedCount - done
-  if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund, { source: 'generation_refund', refId: msg.id, note: '取消退额' })
-  store.setMessageStatus(msg.id, 'canceled')
-  store.syncTopicStatus(msg.topicId, null, null, 'canceled')
+/**
+ * 取消收尾：按「请求张数 − 已落库张数」退还剩余额度，消息落 `canceled`、任务回 idle。
+ *
+ * ⚠️ 只是 `store.finalizeCancel` 的**薄封装** —— 退额的唯一实现下沉在 store 里，因为租约回收
+ * （`requeueExpiredLeases` 同时捞过期的 canceling，#93）也在那一层：两边必须共用同一份收尾逻辑
+ * 与同一个「谁先把状态从 canceling 翻走谁退额」的原子 CAS，否则两份实现必然漂移、且可能双退。
+ * 这里刻意不再自己算 `requestedCount - done`：让 store 在 CAS 命中的同一个事务里现算，
+ * 避免调用方传入一个已过期的 `done` 造成退额数漂移。
+ */
+export function finishCancel(store: MotifStore, msg: { id: string }): void {
+  store.finalizeCancel(msg.id)
 }
 
 // ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------

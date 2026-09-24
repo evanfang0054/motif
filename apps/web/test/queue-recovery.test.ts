@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { enqueueGeneration, executeMessage, type WorkerDeps } from '@/server/services'
+import { enqueueGeneration, executeMessage, finishCancel, type WorkerDeps } from '@/server/services'
 import { startWorker, stopWorker } from '@/server/worker'
 import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { MotifStore } from '@motif/db'
@@ -108,6 +108,9 @@ describe('断点续跑（崩溃恢复）', () => {
   it('续跑中失败：provider 抛错 → 按已生成数退额（2-1=1）且不落新图', async () => {
     const { user, messageId, topicId } = await enqueue(2) // 6
     seedGenerated(messageId, user.id, topicId, 1)
+    // 认领（running + worker_id=worker-test）：失败收尾的 CAS 守卫要求「状态 running + 执行者身份
+    // 匹配」，这正是生产里 executeMessage 被调用时的形态（worker 先 leaseNextMessage 再执行）。
+    store.leaseNextMessage('worker-test', 60_000)
     const calls: number[] = []
     const failing: ImageProvider = {
       name: 'failing-stub',
@@ -262,5 +265,58 @@ describe('worker 启动', () => {
       delete process.env.IMAGE_API_BASE_URL
       delete process.env.IMAGE_API_KEY
     }
+  })
+})
+
+describe('过期 canceling 的租约回收（#93：worker 被重启后不再永久卡死）', () => {
+  it('回收退额后，worker 再走 finishCancel 不二次退额（两者共用同一份收尾）', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 已出 1 张 → 应退 2
+    // 认领 → 用户取消 → 租约过期（模拟 worker 在「下一张出图前」的取消检查点之前被重启）
+    store.leaseNextMessage('w1', 60_000)
+    store.db.prepare(`UPDATE messages SET status = 'canceling' WHERE id = ?`).run(messageId)
+    store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', messageId)
+
+    // 恢复路径：租约回收直接取消收尾（退额 + canceled + 任务回 idle）
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getTopic(topicId)!.status).toBe('idle')
+    expect(store.getUserById(user.id)!.credits).toBe(7) // 5 + 退 2
+
+    // 命门：worker 若仍活着走到收尾，绝不能二次退额（与回收共用同一份原子收尾）
+    finishCancel(store, { id: messageId })
+    expect(store.getUserById(user.id)!.credits).toBe(7)
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    // 额度守恒
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+})
+
+describe('失败分支的双退窗口（#93 同类：失败收尾也走原子 CAS）', () => {
+  it('租约被重排回 queued 后，原进程迟到的失败 catch 不再退额、不把任务误打成 failed', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 若误退会是 2
+    // 认领（running + worker_id=worker-test），再让租约过期 → 回收重排回 queued（不退额）
+    store.leaseNextMessage('worker-test', 60_000)
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', messageId)
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(messageId)!.status).toBe('queued')
+
+    // 原进程此刻才抛错（单次 provider.generate 跨过了整个租约）：catch 走 finalizeFailure，
+    // 但状态已不是 running → CAS 落空，不得退额、不得改状态（消息仍可被重新认领）。
+    const failing: ImageProvider = {
+      name: 'late-fail',
+      generate: async () => {
+        throw new Error('迟到失败')
+      },
+    }
+    await executeMessage(makeDeps(failing), messageId)
+
+    expect(store.getMessage(messageId)!.status).toBe('queued')
+    expect(store.getUserById(user.id)!.credits).toBe(5) // 一分未退
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
   })
 })
