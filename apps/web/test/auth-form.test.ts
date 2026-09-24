@@ -106,33 +106,25 @@ describe('isFormFilled：提交按钮的置灰判据（#74-2.2）', () => {
 
 describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）', () => {
   it('密码类字段被清空 —— 登录密码不得被带进「找回密码」的新密码框', () => {
-    const next = switchAuthFields(filled, 'reset')
+    const next = switchAuthFields(filled)
     expect(next.password).toBe('')
     expect(next.passwordConfirm).toBe('')
   })
 
   it('昵称与验证码被清空（视图私有字段；注册与重置的验证码用途不同，不可复用）', () => {
-    const next = switchAuthFields(filled, 'login')
+    const next = switchAuthFields(filled)
     expect(next.name).toBe('')
     expect(next.code).toBe('')
   })
 
   it('邮箱与邀请码保留（邮箱三视图共用；邀请码是入口上下文，清掉会静默丢奖励）', () => {
-    for (const target of ['login', 'register', 'reset'] as const) {
-      const next = switchAuthFields(filled, target)
-      expect(next.email).toBe('me@example.com')
-      expect(next.inviteCode).toBe('INVITE01')
-    }
-  })
-
-  it('清空集合与目标视图无关（三种目标结果一致）', () => {
-    const login = switchAuthFields(filled, 'login')
-    expect(switchAuthFields(filled, 'register')).toEqual(login)
-    expect(switchAuthFields(filled, 'reset')).toEqual(login)
+    const next = switchAuthFields(filled)
+    expect(next.email).toBe('me@example.com')
+    expect(next.inviteCode).toBe('INVITE01')
   })
 
   it('是纯函数：不改动入参', () => {
-    switchAuthFields(filled, 'login')
+    switchAuthFields(filled)
     expect(filled.password).toBe('Passw0rd!')
     expect(filled.passwordConfirm).toBe('Passw0rd!')
     expect(filled.name).toBe('小美')

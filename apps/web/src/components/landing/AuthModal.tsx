@@ -7,7 +7,7 @@ import { Eye, EyeSlash, PaperPlane } from '@gravity-ui/icons'
 import { PASSWORD_RULE_TEXT } from '@motif/core'
 import { IconButton } from '@/components/ui/icon-button'
 import { api } from '@/lib/client'
-import { clientAuthError, isFormFilled, switchAuthFields, type AuthMode } from '@/lib/auth-form'
+import { clientAuthError, isFormFilled, switchAuthFields, type AuthFieldState, type AuthMode } from '@/lib/auth-form'
 import { errorMessage } from '@/lib/error-message'
 import { usePublicConfig } from '@/lib/use-public-config'
 import type { ResetPrefill } from '@/lib/reset-link'
@@ -89,6 +89,19 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   const [cooldown, setCooldown] = useState(0)
   const emailRef = useRef<HTMLInputElement>(null)
   const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /**
+   * 字段快照的「最新值 ref」。
+   *
+   * `switchMode` 需要读**当前**字段值来决定切视图后保留什么，但若把这六个 state 放进它的依赖数组，
+   * 每次击键都会换掉它的 identity —— 将来一旦被放进 `useEffect` 依赖就会自激（改了 state → effect 跑
+   * → 又改 state）。改为渲染后把最新值同步进 ref、`switchMode` 只依赖 `onModeChange`。
+   * 选 ref 而不是「把六个字段收成一个 state 对象」：后者要改所有 setter、`isFormFilled` /
+   * `clientAuthError` 的调用点与预填初值，改动面大且容易碰到行为；ref 只多一个 ref + 一个 effect。
+   */
+  const fieldsRef = useRef<AuthFieldState>({ name, email, code, password, passwordConfirm, inviteCode })
+  useEffect(() => {
+    fieldsRef.current = { name, email, code, password, passwordConfirm, inviteCode }
+  })
 
   // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（与通用弹窗外壳同一套焦点还原做法）
   const restoreRef = useRef<HTMLElement | null>(null)
@@ -130,8 +143,9 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       setNotice(null)
       setCodeMsg(null)
       setCooldown(0)
-      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）
-      const next = switchAuthFields({ name, email, code, password, passwordConfirm, inviteCode }, m)
+      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）。
+      // 读 ref 而不是闭包里的六个 state：见 fieldsRef 的说明（依赖数组不再随击键变化）。
+      const next = switchAuthFields(fieldsRef.current)
       setName(next.name)
       setEmail(next.email)
       setCode(next.code)
@@ -139,7 +153,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       setPasswordConfirm(next.passwordConfirm)
       setInviteCode(next.inviteCode)
     },
-    [onModeChange, name, email, code, password, passwordConfirm, inviteCode]
+    [onModeChange]
   )
 
   const submit = useCallback(
@@ -328,23 +342,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                   <PasswordInput label="确认密码" ariaBase="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
                 </div>
               )}
-
-              {error && (
-                <Alert status="danger" role="alert" className="mt-3">
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>{error}</Alert.Title>
-                  </Alert.Content>
-                </Alert>
-              )}
-              {notice && (
-                <Alert status="success" className="mt-3">
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>{notice}</Alert.Title>
-                  </Alert.Content>
-                </Alert>
-              )}
+              {/* ⚠️ 报错 / 成功 Alert **不在这里**：它们已移到 Footer（见下方说明）——
+                  留在表单末尾会在矮视口下被裁到折叠线以下。 */}
             </form>
           </HeroModal.Body>
 
@@ -354,9 +353,32 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
            * 表现为「点了没反应」。Footer 常驻在滚动区之外，三种视图（login / register / reset）都受益。
            * 按钮与表单分离后靠 `form` 属性关联：`form="auth-form"` 让原生按钮仍是该表单的
            * default button，所以**回车提交**与 `type="submit"` 的隐式提交行为都不受影响。
+           *
+           * ⚠️ 报错 / 成功 Alert 也放在这里（#98-1），紧贴主按钮上方：Body 是弹窗内**唯一**的滚动容器
+           * （`.modal__body--scroll-inside` 才有 overflow，Footer 是它的兄弟 flex 项、不参与滚动 ——
+           * 产物级证据见 @heroui/styles 的 modal.css）。若 Alert 留在表单末尾，矮视口下用户最后一次编辑
+           * 在顶部字段、Body 未滚到底时，点 footer 主按钮触发的**客户端先行校验**报错会落在折叠线以下，
+           * 「点了没反应」的观感依旧。放到 Footer 后无论 Body 滚到哪里都必然可见，且不依赖
+           * scrollIntoView 的时序 / 浏览器滚动行为（确定性更强）。
            */}
           <HeroModal.Footer>
             <div className="w-full">
+              {error && (
+                <Alert status="danger" role="alert" data-testid="auth-error" className="mb-3">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{error}</Alert.Title>
+                  </Alert.Content>
+                </Alert>
+              )}
+              {notice && (
+                <Alert status="success" data-testid="auth-notice" className="mb-3">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>{notice}</Alert.Title>
+                  </Alert.Content>
+                </Alert>
+              )}
               {/* #74-2.2：必填没填齐就置灰，不再把空表单丢给服务端兜底（登录空提交曾误报「邮箱或密码不正确。」） */}
               <Button
                 type="submit"
