@@ -93,13 +93,19 @@ export default function AdminFeedbackPage() {
           <Table.Content aria-label="反馈列表">
             <Table.Header>
               {/* 列宽（#79-1.1）：此前状态 chip 被压成 32×53px 竖条、「标记已处理」按钮一字一行、
-                  提交时间 98px 断成三行。给这几列最小宽后 chip 横排、按钮单行、时间不断行。 */}
-              <Table.Column isRowHeader minWidth={240}>内容</Table.Column>
-              <Table.Column minWidth={180}>提交用户</Table.Column>
-              <Table.Column minWidth={88}>状态</Table.Column>
-              <Table.Column minWidth={180}>处理人</Table.Column>
-              <Table.Column minWidth={168}>提交时间</Table.Column>
-              <Table.Column minWidth={120}>操作</Table.Column>
+                  提交时间 98px 断成三行。给这几列最小宽后 chip 横排、按钮单行、时间不断行。
+                  ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                  仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                  本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                  丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                  合计最小宽 976px（本页各列之和），容器约 1018px：宽屏不滚动，窄屏会出现横向滚动
+                  （`table__scroll-container` 自带 `overflow-x-auto`，可接受）。 */}
+              <Table.Column isRowHeader className="min-w-[240px]">内容</Table.Column>
+              <Table.Column className="min-w-[180px]">提交用户</Table.Column>
+              <Table.Column className="min-w-[88px]">状态</Table.Column>
+              <Table.Column className="min-w-[180px]">处理人</Table.Column>
+              <Table.Column className="min-w-[168px]">提交时间</Table.Column>
+              <Table.Column className="min-w-[120px]">操作</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>

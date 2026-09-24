@@ -50,6 +50,19 @@ const SETTLED_TOPIC_STATUS = topicStatusFromMessage(null)
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(',')
 
 /**
+ * 「按人筛选」把筛选词解析成 ID 集合时的**上限**（`findUserIdsByTerm`）。
+ *
+ * 为什么必须有上限：筛选是「缩小范围」而不是「全量列举」。不设上限的话，一个空泛的词
+ * （如「@」）会把 IN 子句撑到 SQLite 的变量上限（默认 999），整条查询直接报错。
+ *
+ * ⚠️ 命中超过上限时**静默截断**（只取前 100 个，按 `created_at DESC, id DESC`）：
+ * 调用方拿到的是一个子集，但**没有任何标记**告诉它「还有更多」—— 页面因此会把子集
+ * 当作完整的筛选结果展示。要让运营看见，得让接口回一个 `truncated` 标记并在页面上提示，
+ * 那是接口契约的改动，不在本次收口范围（此处只把魔数提为具名常量并写明这一取舍）。
+ */
+const USER_TERM_MATCH_LIMIT = 100
+
+/**
  * 读取自愈的 WHERE 片段：topic 声称在跑，但活跃消息已不在跑（含 `active_message_id` 为空）。
  *
  * ⚠️ 两个状态清单都从 `@motif/core` 取，**不在此处抄字面量** —— 抄一份就意味着
@@ -734,10 +747,10 @@ export class MotifStore {
    * 而页面上没有任何提示 —— 表现为「筛选点了没反应」。这里统一三路解析：
    * 精确 ID 优先（原样贴 ID 仍然可用），否则退化为邮箱 / 昵称模糊匹配。
    *
-   * ⚠️ 上限 100：筛选是「缩小范围」而不是「全量列举」。不设上限的话，一个空泛的词
-   * （如「@」）会把 IN 子句撑到 SQLite 的变量上限（默认 999），整条查询直接报错。
+   * ⚠️ 上限见 `USER_TERM_MATCH_LIMIT`：超出即**静默截断**（返回子集，且不带「已截断」标记），
+   * 页面会把子集当完整结果展示 —— 取舍与原因写在该常量的注释里。
    */
-  findUserIdsByTerm(term: string, limit = 100): string[] {
+  findUserIdsByTerm(term: string, limit = USER_TERM_MATCH_LIMIT): string[] {
     const t = term.trim()
     if (!t) return []
     if (this.getUserById(t)) return [t]

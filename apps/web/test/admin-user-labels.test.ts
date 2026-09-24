@@ -19,8 +19,12 @@ import { userBriefMap, userDisplayLabel } from '@/lib/admin-display'
  *  2. 筛选词按邮箱 / 昵称 / 裸 ID 三路解析 —— 而且解析不到人时返回 **0 条**，
  *     不能因为「解析出空集」就退化成「不过滤」把全量数据当成筛选结果。
  *
- * 同时用 `userDisplayLabel` 走一遍「接口给的摘要 → 页面显示的文案」，
- * 保证这两段不是各说各话（接口给了但页面没用，等于没修）。
+ * ⚠️ 本文件覆盖的是「接口返回形状 + `userDisplayLabel` 这个纯函数的语义」：
+ * 用例里把 `body.users` 与 `userDisplayLabel` 串起来断言，证明**这两段能接上**
+ * （接口给的字段名/形状与渲染函数期望的一致，改了任一侧这里会红）。
+ * 它**不覆盖**「页面组件是否真的调用了 `userDisplayLabel`」—— 页面漏用该函数时，
+ * 这些用例照样全绿。那需要渲染页面组件才能钉住，而本仓 vitest 是 node 环境（无 DOM），
+ * 不在本文件的射程内。
  */
 
 let dir: string

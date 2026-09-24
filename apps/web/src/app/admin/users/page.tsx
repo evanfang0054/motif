@@ -23,7 +23,11 @@ export default function AdminUsersPage() {
   const [status, setStatus] = useState<StatusFilter>('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  // ⚠️ 取数失败与动作失败必须分开：共用一个状态时，抽屉里的校验失败（「调整张数需为非 0 整数。」）、
+  // 调额度 403、改角色「不可失去最后一个超管」等都会走进整页错误态，把整张用户表换成错误块
+  // （此前是表格上方的 banner）。只有 `load()` 失败才是「这张表不可信」。
+  const [listErr, setListErr] = useState<string | null>(null)
+  const [actionErr, setActionErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const { confirm, confirmElement } = useConfirm()
@@ -41,13 +45,13 @@ export default function AdminUsersPage() {
       const r = await api.adminListUsers({ q: q || undefined, role: role || undefined, status: status || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
       setTotal(r.total)
-      setErr(null)
+      setListErr(null)
     } catch (e) {
       // 失败时**清空旧数据与旧计数**：留着上一次的结果会让「筛选没生效」看起来像成功，
       // 且错误态会与一份过期数据同时出现在页面上，误导运营。
       setItems([])
       setTotal(0)
-      setErr(describeAdminError(e))
+      setListErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -64,17 +68,17 @@ export default function AdminUsersPage() {
   async function submitAdjust() {
     if (!adjust) return
     const delta = Number(adjust.delta)
-    if (!Number.isInteger(delta) || delta === 0) return setErr('调整张数需为非 0 整数。')
-    if (!adjust.reason.trim()) return setErr('请填写调整原因。')
+    if (!Number.isInteger(delta) || delta === 0) return setActionErr('调整张数需为非 0 整数。')
+    if (!adjust.reason.trim()) return setActionErr('请填写调整原因。')
     setBusy(true)
-    setErr(null)
+    setActionErr(null)
     try {
       await api.adminAdjustCredits({ userId: adjust.user.id, delta, reason: adjust.reason.trim() })
       setMsg(`已为 ${adjust.user.name} 调整 ${delta > 0 ? '+' : ''}${delta} 张`)
       setAdjust(null)
       await load()
     } catch (e) {
-      setErr(describeAdminError(e))
+      setActionErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -88,13 +92,13 @@ export default function AdminUsersPage() {
         : `确认启用 ${u.name}？其可以重新登录，额度不变。`
     if (!(await confirm({ message: tip }))) return
     setBusy(true)
-    setErr(null)
+    setActionErr(null)
     try {
       await api.adminSetUserStatus(u.id, next)
       setMsg(next === 'disabled' ? `已禁用 ${u.name}` : `已启用 ${u.name}`)
       await load()
     } catch (e) {
-      setErr(describeAdminError(e))
+      setActionErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -104,13 +108,13 @@ export default function AdminUsersPage() {
     if (next === u.role) return
     if (!(await confirm({ message: `确认把 ${u.name} 的角色改为「${ROLE_LABEL[next] ?? next}」？` }))) return
     setBusy(true)
-    setErr(null)
+    setActionErr(null)
     try {
       await api.adminSetUserRole(u.id, next)
       setMsg(`已把 ${u.name} 的角色改为「${ROLE_LABEL[next] ?? next}」`)
       await load()
     } catch (e) {
-      setErr(describeAdminError(e))
+      setActionErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -119,12 +123,12 @@ export default function AdminUsersPage() {
   async function resetPassword(u: User) {
     if (!(await confirm({ message: `确认为 ${u.name} 重置密码？\n\n旧密码会立刻失效，该用户现有登录也会失效。新密码只显示一次。` }))) return
     setBusy(true)
-    setErr(null)
+    setActionErr(null)
     try {
       const r = await api.adminResetPassword(u.id)
       setReset({ name: u.name, password: r.password })
     } catch (e) {
-      setErr(describeAdminError(e))
+      setActionErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -179,15 +183,18 @@ export default function AdminUsersPage() {
         </Select>
         {/* 错误态不显示数字：此时没有可信的 total，但保留计数位并写明「暂不可用」，
             既不会误导成「共 0 个」，也不会让工具栏跳一下 */}
-        <ListCount loading={loading} total={total} unit="个" errored={!!err} />
+        <ListCount loading={loading} total={total} unit="个" errored={!!listErr} />
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
+      {/* 动作失败（校验 / 403 / 网络异常）只影响这一次操作，表本身仍然可信 —— 用表格上方的 banner 提示，
+          不换成整页错误块（否则运营会以为整张用户表都坏了，也丢掉了继续操作其他人的入口） */}
+      {actionErr && <div className="admin-alert-err" role="alert">{actionErr}</div>}
 
-      {err ? (
-        // 错误态：中文文案 + 重试入口（此前会把英文响应体原样弹出、且表格留着旧数据/旧计数）
+      {listErr ? (
+        // 整页错误态：只有**列表取数失败**才走到这里（中文文案 + 重试入口）
         <div className="admin-alert-err flex items-center justify-between gap-3" role="alert">
-          <span>{err}</span>
+          <span>{listErr}</span>
           <button className="admin-btn-primary" disabled={loading} onClick={() => void load()}>重试</button>
         </div>
       ) : (
@@ -196,12 +203,20 @@ export default function AdminUsersPage() {
             <Table.ScrollContainer className="admin-table-scroll">
               <Table.Content aria-label="用户列表">
                 <Table.Header>
-                  <Table.Column isRowHeader minWidth={200}>邮箱</Table.Column>
-                  <Table.Column minWidth={120}>昵称</Table.Column>
-                  <Table.Column minWidth={88}>角色</Table.Column>
-                  <Table.Column minWidth={88}>状态</Table.Column>
-                  <Table.Column minWidth={72}>额度</Table.Column>
-                  <Table.Column minWidth={260}>操作</Table.Column>
+                  {/* 列宽（#79-1.1）：操作列要横排「调额度 / 禁用 / 改角色下拉 / 重置密码」四个控件，
+                      邮箱列要放下完整地址，否则会被均分压缩成竖条。
+                      ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                      仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                      本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                      丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                      合计最小宽 828px（各列之和），容器约 1018px；更窄的视口会横向滚动
+                      （`table__scroll-container` 自带 `overflow-x-auto`）。 */}
+                  <Table.Column isRowHeader className="min-w-[200px]">邮箱</Table.Column>
+                  <Table.Column className="min-w-[120px]">昵称</Table.Column>
+                  <Table.Column className="min-w-[88px]">角色</Table.Column>
+                  <Table.Column className="min-w-[88px]">状态</Table.Column>
+                  <Table.Column className="min-w-[72px]">额度</Table.Column>
+                  <Table.Column className="min-w-[260px]">操作</Table.Column>
                 </Table.Header>
                 <Table.Body
                   renderEmptyState={() =>

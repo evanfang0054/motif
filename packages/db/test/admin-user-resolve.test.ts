@@ -82,6 +82,20 @@ describe('findUserIdsByTerm：把筛选词解析成人', () => {
     expect(store.findUserIdsByTerm('')).toEqual([])
     expect(store.findUserIdsByTerm('   ')).toEqual([])
   })
+
+  it('命中人数超过上限时**静默截断**：返回值是子集，且不带任何「已截断」标记', () => {
+    // 造 5 个都能被同一个宽词命中的用户 —— 这正是运营筛「@」时会遇到的情形
+    const ids = Array.from({ length: 5 }, (_, i) => user(`u${i}@b.co`, `用户${i}`).id)
+    expect(new Set(store.findUserIdsByTerm('@b.co'))).toEqual(new Set(ids))
+
+    // 上限降到 2：只回 2 个（上限生效，避免 IN 子句撑爆 SQLite 变量上限）
+    const capped = store.findUserIdsByTerm('@b.co', 2)
+    expect(capped).toHaveLength(2)
+    expect(ids).toEqual(expect.arrayContaining(capped))
+    // ⚠️ 钉住**已知取舍**：调用方拿到的就是全部返回内容，无从判断「正好 2 人」还是「至少 2 人」。
+    // 将来若给接口加 truncated 标记，这条断言会红 —— 那时应连同页面提示一起改。
+    expect(capped).not.toHaveLength(ids.length)
+  })
 })
 
 describe('listUserBriefs：批量取「昵称 + 邮箱」摘要', () => {

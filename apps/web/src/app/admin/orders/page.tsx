@@ -90,15 +90,22 @@ export default function AdminOrdersPage() {
         <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="订单列表">
             <Table.Header>
-              <Table.Column isRowHeader minWidth={200}>订单号</Table.Column>
-              <Table.Column minWidth={120}>套餐</Table.Column>
-              <Table.Column minWidth={72}>额度</Table.Column>
+              {/* 列宽（#79-1.1）：时间列与订单号被均分压缩后断行、状态 chip 竖排。
+                  ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                  仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                  本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                  丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                  合计最小宽 1008px，容器约 1018px —— 贴得极近，窄一点就会横向滚动
+                  （`table__scroll-container` 自带 `overflow-x-auto`，可接受）。 */}
+              <Table.Column isRowHeader className="min-w-[200px]">订单号</Table.Column>
+              <Table.Column className="min-w-[120px]">套餐</Table.Column>
+              <Table.Column className="min-w-[72px]">额度</Table.Column>
               {/* 币种单列：混排时它是唯一的「分组标识」，只看 ¥ / HK$ 符号容易看漏 */}
-              <Table.Column minWidth={72}>币种</Table.Column>
-              <Table.Column minWidth={120}>金额</Table.Column>
-              <Table.Column minWidth={88}>状态</Table.Column>
-              <Table.Column minWidth={168}>创建时间</Table.Column>
-              <Table.Column minWidth={168}>支付时间</Table.Column>
+              <Table.Column className="min-w-[72px]">币种</Table.Column>
+              <Table.Column className="min-w-[120px]">金额</Table.Column>
+              <Table.Column className="min-w-[88px]">状态</Table.Column>
+              <Table.Column className="min-w-[168px]">创建时间</Table.Column>
+              <Table.Column className="min-w-[168px]">支付时间</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>

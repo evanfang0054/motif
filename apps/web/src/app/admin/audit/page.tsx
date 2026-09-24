@@ -88,12 +88,18 @@ export default function AdminAuditPage() {
           <Table.Content aria-label="审计日志列表">
             <Table.Header>
               {/* 列宽（#79-1.1）：时间与操作者给足最小宽，否则会被均分压缩 ——
-                  `2026-09-23 15:29:42` 会断成三行、操作者也会被挤碎 */}
-              <Table.Column isRowHeader minWidth={168}>时间</Table.Column>
-              <Table.Column minWidth={180}>操作者</Table.Column>
-              <Table.Column minWidth={150}>动作</Table.Column>
-              <Table.Column minWidth={150}>目标</Table.Column>
-              <Table.Column minWidth={72}>详情</Table.Column>
+                  `2026-09-23 15:29:42` 会断成三行、操作者也会被挤碎。
+                  ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                  仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                  本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                  丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                  合计最小宽 720px（各列之和），容器约 1018px；更窄的视口会横向滚动
+                  （`table__scroll-container` 自带 `overflow-x-auto`）。 */}
+              <Table.Column isRowHeader className="min-w-[168px]">时间</Table.Column>
+              <Table.Column className="min-w-[180px]">操作者</Table.Column>
+              <Table.Column className="min-w-[150px]">动作</Table.Column>
+              <Table.Column className="min-w-[150px]">目标</Table.Column>
+              <Table.Column className="min-w-[72px]">详情</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>

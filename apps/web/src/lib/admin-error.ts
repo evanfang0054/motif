@@ -11,11 +11,15 @@ import { ApiError } from './client'
  * 判据：`ApiError` 的文案来自服务端 `ServiceError`，本就是中文；**只有中文文案才放行**，
  * 其余（英文原文 / 空串）一律换成中文兜底。这样既保留服务端的具体原因（如「管理员不可
  * 调整超级管理员的额度。」），又不会把框架英文透给用户。
+ *
+ * 401 的处理与其它状态码一致（先看有没有中文），只在**没有中文时**才用「登录已过期」兜底：
+ * 「未登录」与「登录已过期」不是一回事，无条件改写会把服务端更准确的原因（如「请先登录。」）
+ * 换成一句并不总成立的话 —— 这里是通用入口，任何调用方都会受影响。
  */
 export function describeAdminError(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 401) return '登录已过期，请重新登录。'
     if (hasChinese(e.message)) return e.message
+    if (e.status === 401) return '登录已过期，请重新登录。'
     if (e.status === 403) return '当前账号没有权限访问该功能，请用更高权限的账号登录。'
     return `请求失败（${e.status}），请稍后重试。`
   }

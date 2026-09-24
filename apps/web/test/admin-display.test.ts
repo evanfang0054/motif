@@ -79,9 +79,13 @@ describe('enumDisplayValue：枚举下拉回显当前生效值', () => {
 })
 
 describe('describeAdminError：错误文案不透传英文原文', () => {
-  it('401 一律换成「登录已过期」可行动提示', () => {
-    expect(describeAdminError(new ApiError(401, '请先登录。'))).toBe('登录已过期，请重新登录。')
+  it('401 且服务端给了中文原因时先透传（「未登录」不等于「登录已过期」）', () => {
+    expect(describeAdminError(new ApiError(401, '请先登录。'))).toBe('请先登录。')
+  })
+
+  it('401 且只有框架英文原文时才换成「登录已过期」这一可行动提示', () => {
     expect(describeAdminError(new ApiError(401, 'Unauthorized'))).toBe('登录已过期，请重新登录。')
+    expect(describeAdminError(new ApiError(401, ''))).toBe('登录已过期，请重新登录。')
   })
 
   it('保留服务端的中文业务原因（403 的具体理由不能丢）', () => {

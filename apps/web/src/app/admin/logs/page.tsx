@@ -142,14 +142,20 @@ export default function AdminLogsPage() {
             <Table.Header>
               {/* 列宽（#79-1.1）：此前各列均分，时间被压成三行、「失败」chip 竖排，
                   且整表 1205px 超出容器 1018px 要横向滚动才看得到「提示词」列。
-                  给关键列最小宽后总宽回到容器内，时间与 chip 都能单行显示。 */}
-              <Table.Column isRowHeader minWidth={168}>时间</Table.Column>
-              <Table.Column minWidth={180}>用户</Table.Column>
-              <Table.Column minWidth={88}>状态</Table.Column>
-              <Table.Column minWidth={72}>张数</Table.Column>
-              <Table.Column minWidth={64}>重试</Table.Column>
-              <Table.Column minWidth={160}>失败原因</Table.Column>
-              <Table.Column minWidth={72}>提示词</Table.Column>
+                  给关键列最小宽后时间与 chip 都能单行显示。
+                  ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                  仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                  本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                  丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                  合计最小宽 804px，容器约 1018px ⇒ 该宽度下不出现横向滚动；**更窄的视口仍会滚动**
+                  （`table__scroll-container` 自带 `overflow-x-auto`），这是「列宽设下限」的必然取舍。 */}
+              <Table.Column isRowHeader className="min-w-[168px]">时间</Table.Column>
+              <Table.Column className="min-w-[180px]">用户</Table.Column>
+              <Table.Column className="min-w-[88px]">状态</Table.Column>
+              <Table.Column className="min-w-[72px]">张数</Table.Column>
+              <Table.Column className="min-w-[64px]">重试</Table.Column>
+              <Table.Column className="min-w-[160px]">失败原因</Table.Column>
+              <Table.Column className="min-w-[72px]">提示词</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>
