@@ -25,6 +25,16 @@ function stubProvider(width: number, height: number): ImageProvider {
   }
 }
 
+/**
+ * 认领消息 —— **与生产同序**：`runWorkerTick` 先 `leaseNextMessage(state.workerId)` 再 `executeMessage`。
+ * 成功收尾（`finalizeSuccess`）的 CAS 守卫要求「状态 running + 执行者身份匹配」；夹具不认领就与生产
+ * 形态不一致（消息停在 queued、worker_id 为 NULL → CAS 落空 → 状态不会变 completed）。
+ */
+function claim(): void {
+  const leased = store.leaseNextMessage('w1', 60_000)
+  if (!leased) throw new Error('夹具错误：队列里没有可认领的消息')
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-place-write-'))
   dataDir = join(dir, 'data')
@@ -43,6 +53,7 @@ describe('生成产出自动带位置', () => {
       topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
       requestedCount: 4, enhancePrompt: false, referenceIds: [],
     })
+    claim()
     await executeMessage({ store, provider: stubProvider(1024, 768), dataDir, workerId: 'w1' }, msg.id)
 
     const images = store.listCanvasImages(topicId)
@@ -72,6 +83,7 @@ describe('生成产出自动带位置', () => {
       topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
       requestedCount: 1, enhancePrompt: false, referenceIds: [],
     })
+    claim()
     await executeMessage({ store, provider: stubProvider(1024, 1024), dataDir, workerId: 'w1' }, msg.id)
     // 视口原点 = (2800, 2800)；槽位 0 就在原点
     expect(store.listCanvasPlacements(topicId)[0].canvasX).toBeCloseTo(2800, 6)
@@ -95,6 +107,7 @@ describe('生成产出自动带位置', () => {
     })
     expect(store.countGeneratedInMessage(msg.id)).toBe(2) // 断点续跑的起点
 
+    claim()
     await executeMessage({ store, provider: stubProvider(1024, 1024), dataDir, workerId: 'w1' }, msg.id)
 
     const images = store.listCanvasImages(topicId)

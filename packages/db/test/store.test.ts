@@ -1172,6 +1172,36 @@ describe('话题状态派生与读取自愈', () => {
     }
     expect(offenders).toEqual([])
   })
+
+  it('全仓源码里没有绕过 CAS 收尾的 messages.status 直写（计费路径的收口断言）', () => {
+    // 与上一条同款，对象换成 `messages.status`。判据（比「白名单方法名」更严、且不会随方法增删
+    // 悄悄变宽）：`messages.status` 的**任何**写入都必须落在 `packages/db/src/store.ts` 内 ——
+    //   ① 裸 SQL 字面量（`UPDATE messages SET ... status = '...'`）：会绕过 CAS 守卫与流水；
+    //   ② 公开的无条件写入器 `setMessageStatus(`：它无条件写 + 清 worker_id/lease，正是本批
+    //      在 `executeMessage` 成功分支上修掉的那个缺陷的载体（当时它在 apps/web 侧被直接调用）。
+    // store.ts 内部的写入方法（finalizeCancel / finalizeFailure / finalizeSuccess / leaseNextMessage /
+    // requeueExpiredLeases / cancelQueuedMessage / markMessageCanceling / setMessageStatus）各自的
+    // 原子性与守卫由本文件的 #93 系列用例钉住。
+    // 为什么不做「方法名白名单」：白名单只约束「调了哪个方法」，挡不住「在 apps/web 里调 setMessageStatus」
+    // 或「内联一段裸 SQL」这两种形态；把写入点整体收进 store.ts 才能同时挡住，且新增写入方法时会
+    // 自然落在 store.ts 内、必须过审。
+    const root = fileURLToPath(new URL('../../..', import.meta.url))
+    const srcFiles = [
+      ...globSync('packages/*/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.tsx', { cwd: root }),
+    ]
+    expect(srcFiles.length).toBeGreaterThan(50)
+
+    const STORE = 'packages/db/src/store.ts'
+    const offenders: string[] = []
+    for (const rel of srcFiles) {
+      const text = readFileSync(join(root, rel), 'utf8')
+      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*'/i.test(text)) offenders.push(`${rel}: 裸写 messages.status`)
+      if (rel !== STORE && text.includes('setMessageStatus(')) offenders.push(`${rel}: 调用 setMessageStatus`)
+    }
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('租约回收后的状态一致性（P1）', () => {
@@ -1478,5 +1508,89 @@ describe('失败收尾的原子 CAS（finalizeFailure）', () => {
     expect(store.getMessage(m.id)?.status).toBe('running')
     expect(store.getUserById(u.id)!.credits).toBe(18)
     expect(refundRows(u.id)).toBe(0)
+  })
+})
+
+/**
+ * 成功收尾的原子 CAS（finalizeSuccess）：成功分支过去是**无条件**写入 + 清租约，会覆盖并发的
+ * `canceling/failed`，并让另一位执行者的 CAS 静默 no-op。现在与失败/取消收尾同构：守卫
+ * 「状态 running + 执行者身份匹配」，命中才落 completed + 清租约 + 任务回 idle。
+ */
+describe('成功收尾的原子 CAS（finalizeSuccess）', () => {
+  function running(count: number, credits = 20) {
+    const u = store.createUser({ email: 'fs@b.co', passwordHash: 'h', name: 'fs', credits })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, count, { source: 'generation_charge' })
+    const m = store.createMessage({
+      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+    })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    store.leaseNextMessage('w1', 60_000)
+    return { u, t, m }
+  }
+  function expireLease(id: string) {
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', id)
+  }
+
+  it('① 正常路径：running + 身份匹配 → completed、清租约、任务回 idle、无流水', () => {
+    const { u, t, m } = running(2) // 20 − 2 = 18
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: true })
+    expect(store.getMessage(m.id)?.status).toBe('completed')
+    expect(store.getMessage(m.id)?.workerId).toBeNull()
+    expect(store.getMessage(m.id)?.leaseExpiresAt).toBeNull()
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+    expect(store.getTopic(t.id)?.activeMessageId).toBeNull()
+    // 成功不产生流水（额度守恒：账目 == 余额）
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('② 身份不匹配（worker_id 不同）→ no-op，不把别人的在跑轮次标成 completed', () => {
+    const { u, t, m } = running(2)
+    const res = store.finalizeSuccess(m.id, { workerId: 'other' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('running')
+    expect(store.getMessage(m.id)?.workerId).toBe('w1')
+    expect(store.getTopic(t.id)?.status).toBe('running')
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+  })
+
+  it('③ 租约被重排回 queued 后，原进程迟到的成功收尾 no-op（不覆盖重排、不误标完成）', () => {
+    const { u, t, m } = running(2)
+    expireLease(m.id)
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+    expect(store.getTopic(t.id)?.status).toBe('pending')
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+  })
+
+  it('⚠️ 回归：并发的 canceling 不被成功收尾覆盖（旧的无条件写入会把它标成 completed）', () => {
+    const { u, t, m } = running(3) // 20 − 3 = 17
+    // 生成进行中用户取消（保留租约）——与 cancel 路由同序
+    store.syncTopicStatus(t.id, m.id, 'p', 'canceling')
+    expect(store.markMessageCanceling(m.id)).toBe(true)
+
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('canceling') // 未被覆盖
+    expect(store.getTopic(t.id)?.status).toBe('canceling')
+    expect(store.getUserById(u.id)?.credits).toBe(17)
+  })
+
+  it('幂等：对同一 running 消息重复调用，只有第一次落 completed', () => {
+    const { m } = running(1)
+    expect(store.finalizeSuccess(m.id, { workerId: 'w1' })).toEqual({ finalized: true })
+    expect(store.finalizeSuccess(m.id, { workerId: 'w1' })).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('completed')
   })
 })

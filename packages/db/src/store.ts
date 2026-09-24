@@ -1150,6 +1150,23 @@ export class MotifStore {
   }
 
   /**
+   * 「请求取消」一条**正在运行**的消息：仅当仍为 `running` 时置 `canceling`（条件 UPDATE = CAS），
+   * 且**保留租约列**（执行者还在跑，租约仍是「谁在执行」的唯一凭据；真正收尾在 `finalizeCancel`）。
+   *
+   * 为什么收进 store：`messages.status` 的写入必须全部收敛在存储层，才能用一条机械断言守住
+   * 「计费/执行路径不得裸写消息状态」这条不变式（见 `store.test.ts` 的全仓扫描断言）。
+   * 早先取消路由内联了这段 SQL —— 功能正确，但它让写入点散落在 apps/web 侧、断言无从覆盖。
+   *
+   * @returns 真的把状态翻成 `canceling` 返回 `true`；消息已不是 `running`（已被收尾/重排）返回 `false`
+   */
+  markMessageCanceling(id: string): boolean {
+    const res = this.db
+      .prepare(`UPDATE messages SET status = 'canceling' WHERE id = ? AND status = 'running'`)
+      .run(id)
+    return res.changes > 0
+  }
+
+  /**
    * 归还过期租约的消息（崩溃恢复）。
    * skipIds：本进程 worker 正在执行的消息——租约过期也不回收，避免「执行中→被重排→取消全额退」的双退额窗口。
    *
@@ -1188,13 +1205,16 @@ export class MotifStore {
 
     // 过期 canceling：直接取消收尾（**不重排回 queued**）。逐条走 `finalizeCancel` 的原子 CAS ——
     // 只有把状态从 canceling 翻走的那一方退额，与仍活着的 worker 走到 `finishCancel` 天然互斥。
+    // ⚠️ 这里要求 `lease_expires_at IS NOT NULL`：取消接口只把 running 翻成 canceling、**保留租约列**，
+    // 故生产路径不会产生「canceling + 租约 NULL」这一组合（本批已确认）；真出现该组合时本路径不覆盖它。
+    // 复用上面同一个 `now`（不再现取一次时间）。
     const canceling = this.db
       .prepare(
         `SELECT id FROM messages
          WHERE status = 'canceling' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
       )
       .all(now, ...skipIds) as Array<{ id: string }>
-    for (const r of canceling) this.finalizeCancel(r.id, { leaseExpiredOnly: true })
+    for (const r of canceling) this.finalizeCancel(r.id, { leaseExpiredOnly: true, now })
   }
 
   /**
@@ -1214,9 +1234,11 @@ export class MotifStore {
    * @param leaseExpiredOnly 只收尾「租约已过期」的消息（租约回收路径传 true：租约过期 =
    *   执行侧确实没了，绝不误伤仍在取消中的活任务）。worker 自己的收尾路径传 false ——
    *   它就是在执行的那一方，租约必然还活着。
+   * @param now 租约判据用的时间戳；缺省取当前时刻。回收路径会传入它 SELECT 候选集时的同一个
+   *   `now` —— 两次取值时点不同只会把候选集略微放大（无漏判），但复用同一个值能减少理解成本。
    * @returns 本次是否由自己完成收尾（`finalized === true` 时才真的退了额）
    */
-  finalizeCancel(id: string, opts: { leaseExpiredOnly?: boolean } = {}): { finalized: boolean; refund: number } {
+  finalizeCancel(id: string, opts: { leaseExpiredOnly?: boolean; now?: string } = {}): { finalized: boolean; refund: number } {
     const tx = this.db.transaction((): { finalized: boolean; refund: number } => {
       const row = this.db
         .prepare('SELECT user_id, topic_id, requested_count FROM messages WHERE id = ?')
@@ -1224,7 +1246,7 @@ export class MotifStore {
       if (!row) return { finalized: false, refund: 0 }
       // 状态守卫与租约守卫一起进 WHERE：CAS 的判据全部落在同一条语句里，读-判-写之间没有窗口。
       const leaseGuard = opts.leaseExpiredOnly ? ' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?' : ''
-      const params: string[] = opts.leaseExpiredOnly ? [id, nowIso()] : [id]
+      const params: string[] = opts.leaseExpiredOnly ? [id, opts.now ?? nowIso()] : [id]
       const res = this.db
         .prepare(
           `UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
@@ -1268,6 +1290,12 @@ export class MotifStore {
     opts: { workerId: string; buildError: (refund: number) => string }
   ): { finalized: boolean; refund: number } {
     const tx = this.db.transaction((): { finalized: boolean; refund: number } => {
+      // 先读 row 再 CAS：row 缺失时返回「未收尾」且**不写任何状态**，返回值语义与副作用一致
+      // （同一事务内 CAS 命中后 row 不可能消失，故「已置 failed 却返回 finalized:false」不可达）。
+      const row = this.db
+        .prepare('SELECT user_id, topic_id, requested_count FROM messages WHERE id = ?')
+        .get(id) as { user_id: string; topic_id: string; requested_count: number } | undefined
+      if (!row) return { finalized: false, refund: 0 }
       // CAS：状态与执行者身份一起进 WHERE —— 判据全落在同一条语句里，读-判-写之间没有窗口。
       const res = this.db
         .prepare(
@@ -1276,16 +1304,44 @@ export class MotifStore {
         )
         .run(id, opts.workerId)
       if (res.changes === 0) return { finalized: false, refund: 0 }
-      const row = this.db
-        .prepare('SELECT user_id, topic_id, requested_count FROM messages WHERE id = ?')
-        .get(id) as { user_id: string; topic_id: string; requested_count: number } | undefined
-      if (!row) return { finalized: false, refund: 0 }
       const refund = row.requested_count - this.countGeneratedInMessage(id)
       this.db.prepare('UPDATE messages SET error = ? WHERE id = ?').run(opts.buildError(refund), id)
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式在失败路径上破掉。
       if (refund > 0) this.addCredits(row.user_id, refund, { source: 'generation_refund', refId: id, note: '生成失败退额' })
       this.syncTopicStatus(row.topic_id, null, null, 'failed')
       return { finalized: true, refund }
+    })
+    return tx()
+  }
+
+  /**
+   * 成功收尾（原子 CAS）：把一条**仍由本执行者持有**的 `running` 消息落定为 `completed` 并清租约，
+   * 命中时把任务同步回 idle（`syncTopicStatus` 是 topic 状态的唯一写入口，这里不裸写）。
+   *
+   * **守卫为什么是「状态 + 执行者身份」**：与 `finalizeFailure` 同构 —— 唯一会与它争抢同一条消息的
+   * 是 `requeueExpiredLeases`（过期 `running` 重排回 `queued`，随后可能被**另一个进程**重新认领成
+   * `running`）。若无守卫，迟到的成功分支会覆盖并发的 `canceling/failed`（把用户已取消的轮次标成
+   * 已完成），或把另一位执行者的在跑轮次标成 `completed`、并让后者的 CAS 静默 no-op。
+   *
+   * ⚠️ 命中才落 completed + 同步 topic：CAS 落空时整体 no-op，**不碰 topic** —— 避免
+   * 「CAS 未命中却把任务标成已完成」的不一致（这正是无守卫写入的旧行为）。
+   *
+   * @param opts.workerId 调用方（执行者）的 worker id：`leaseNextMessage` 认领时写入 `worker_id` 的那个值。
+   * @returns `finalized === true` 时才真的落了 completed
+   */
+  finalizeSuccess(id: string, opts: { workerId: string }): { finalized: boolean } {
+    const tx = this.db.transaction((): { finalized: boolean } => {
+      const row = this.db.prepare('SELECT topic_id FROM messages WHERE id = ?').get(id) as { topic_id: string } | undefined
+      if (!row) return { finalized: false }
+      const res = this.db
+        .prepare(
+          `UPDATE messages SET status = 'completed', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+           WHERE id = ? AND status = 'running' AND worker_id = ?`
+        )
+        .run(id, opts.workerId)
+      if (res.changes === 0) return { finalized: false }
+      this.syncTopicStatus(row.topic_id, null, null, 'completed')
+      return { finalized: true }
     })
     return tx()
   }
