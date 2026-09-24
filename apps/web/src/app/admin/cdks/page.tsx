@@ -9,6 +9,7 @@ import { api, type AdminCdk } from '@/lib/client'
 import { buildCdkCsv } from '@/lib/admin-csv'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
+import { describeAdminError } from '@/lib/admin-error'
 
 type StatusFilter = '' | 'unredeemed' | 'redeemed' | 'revoked'
 
@@ -51,7 +52,7 @@ export default function AdminCdksPage() {
       setTotal(r.total)
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -70,7 +71,7 @@ export default function AdminCdksPage() {
       setMsg(`已生成 ${r.codes.length} 个码（每个 ${r.credits} 张额度）`)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '生成失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -83,7 +84,7 @@ export default function AdminCdksPage() {
       setMsg(`已作废 ${code}`)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '作废失败')
+      setErr(describeAdminError(e))
     }
   }
 

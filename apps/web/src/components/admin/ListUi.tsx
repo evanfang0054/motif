@@ -46,8 +46,12 @@ export function ListEmptyContent({ text }: { text: string }) {
  *
  * 为什么不能显示 0：加载窗口里「共 0 个」与「真的没有数据」无法区分，会误导运营（本文件头注释同源）。
  * 早先显示的是「共 … 个」—— 诚实但会闪一下；改成与数字等宽的骨架条，位置不跳。
+ *
+ * `errored` 用于**取数失败**的页面：此时既没有可信的 total，也不该显示一个会误导人的数字，
+ * 但直接把计数整块拿掉会让工具栏跳一下、且读屏用户不知道发生了什么。显示「计数暂不可用」
+ * 既诚实又保留了 live region。
  */
-export function ListCount({ loading, total, unit }: { loading: boolean; total: number; unit: string }) {
+export function ListCount({ loading, total, unit, errored }: { loading: boolean; total: number; unit: string; errored?: boolean }) {
   // ⚠️ 外层必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
   // 若加载时整个换掉、完成后再挂一个新元素，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
   // ⚠️ 外层用 `<div>` 而不是 `<span>`：加载态塞的是骨架 `<div>`，`<span>` 里放 `<div>` 是非法嵌套
@@ -55,7 +59,9 @@ export function ListCount({ loading, total, unit }: { loading: boolean; total: n
   // 布局不受影响：父级 `.admin-toolbar` 是 flex 容器，flex item 一律块级化，span/div 表现一致。
   return (
     <div role="status">
-      {loading ? (
+      {errored ? (
+        <InlineText type="body-sm" className="admin-muted">计数暂不可用</InlineText>
+      ) : loading ? (
         <Skeleton className="inline-block h-4 w-16 rounded-medium" />
       ) : (
         <InlineText type="body-sm" className="admin-muted">共 {total} {unit}</InlineText>

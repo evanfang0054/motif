@@ -62,7 +62,7 @@ export interface AdminOverview {
     bySource: Array<{ source: string; net: number; inflow: number; outflow: number }>
   }
   generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
-  orders: { pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
+  orders: { total: number; pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
   cdks: { unredeemed: number; redeemed: number; revoked: number }
   feedback: { pending: number }
 }
@@ -75,6 +75,17 @@ export interface AdminFeedbackRow {
   resolvedAt: string | null
   resolvedBy: string | null
   createdAt: string
+}
+
+/**
+ * 用户摘要：管理端把裸 `usr_` ID 渲染成「昵称（邮箱）」用。
+ * 三个列表接口（反馈 / 生成日志 / 审计）都附带当页引用到的这一小份映射，
+ * 于是页面不需要再为每一行单独发一次用户查询。
+ */
+export interface AdminUserBrief {
+  id: string
+  name: string
+  email: string
 }
 
 export interface AdminLogRow {
@@ -298,15 +309,21 @@ export const api = {
   adminResetPassword: (userId: string) =>
     call<{ user: User; password: string }>('/api/admin/users/password', { method: 'POST', body: JSON.stringify({ userId }) }),
   adminListFeedback: (params: { status?: string; page?: number; pageSize?: number } = {}) =>
-    call<{ items: AdminFeedbackRow[]; total: number; page: number; pageSize: number }>(`/api/admin/feedback${toQuery(params)}`),
+    call<{ items: AdminFeedbackRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
+      `/api/admin/feedback${toQuery(params)}`
+    ),
   adminResolveFeedback: (id: number) =>
     call<{ ok: true; feedback: AdminFeedbackRow }>('/api/admin/feedback/resolve', { method: 'POST', body: JSON.stringify({ id }) }),
   adminListLogs: (params: { status?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
-    call<{ items: AdminLogRow[]; total: number; page: number; pageSize: number }>(`/api/admin/logs${toQuery(params)}`),
+    call<{ items: AdminLogRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
+      `/api/admin/logs${toQuery(params)}`
+    ),
   adminCleanupLogs: (days: number) =>
     call<{ ok: true; deleted: number; auditDeleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
   adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
-    call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number }>(`/api/admin/audit${toQuery(params)}`),
+    call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
+      `/api/admin/audit${toQuery(params)}`
+    ),
   /** 公开配置（无需登录）：仅含白名单里的非密钥值 */
   publicConfig: () => call<PublicConfig>('/api/public-config'),
   adminGetSettings: () => call<{ items: AdminSettingItem[]; health: AdminConfigHealth[] }>('/api/admin/settings'),

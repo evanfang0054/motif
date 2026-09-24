@@ -6,6 +6,7 @@ import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminOverview } from '@/lib/client'
 import { formatMoney } from '@/lib/format'
+import { describeAdminError } from '@/lib/admin-error'
 
 /** 百分比展示：接口已保证 0/0 → 0，这里只负责保留一位小数 */
 function pct(rate: number): string {
@@ -32,7 +33,7 @@ export default function AdminHomePage() {
       setData(await api.adminOverview())
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     }
   }, [])
 
@@ -75,24 +76,33 @@ export default function AdminHomePage() {
 
       <div className="admin-cards">
         <div className="admin-card" id="ov-users">
-          <div className="admin-card-label">用户</div>
+          <div className="admin-card-label">用户（总数）</div>
           <div className="admin-card-value">{data.users.total}</div>
           <div className="admin-card-sub">近 7 日新增 {data.users.newLast7d}</div>
         </div>
 
         <div className="admin-card" id="ov-credits">
-          <div className="admin-card-label">额度（张）</div>
+          <div className="admin-card-label">额度（张 · 当前存量）</div>
           <div className="admin-card-value">{c.balance}</div>
           <div className="admin-card-sub">净消耗 {c.netSpent}（扣 {c.generatedCharged} / 退 {c.refunded}）</div>
         </div>
 
         <div className="admin-card" id="ov-generations">
-          <div className="admin-card-label">生成轮次</div>
+          <div className="admin-card-label">生成轮次（总数）</div>
           <div className="admin-card-value">{data.generations.total}</div>
           <div className="admin-ring-row">
             <div className="admin-ring-wrap">
+              {/* ⚠️ Track 必须显式给尺寸：组件默认 `size-7`（28px），而外层包裹盒（`.admin-ring-wrap`）
+                  与环（`.admin-ring`）都是 **64px** —— 若 Track 留在 28px，环只有 28px 却把「100.0%」
+                  的覆盖文字按 64px 居中，文字会压在环的左缘上（#79-1.2）。
+                  64px 环 + 12px 字，内圈直径约 50px > 文字宽度，「100.0%」也放得下。
+                  ⚠️ 64px 在**三处**必须同时改：这里（Tailwind `size-16`）、`admin.css` 的
+                  `.admin-ring-wrap`（覆盖文字的定位参照盒）与 `.admin-ring`（环本身）。
+                  收不成单一来源：这里是 Tailwind 字面量类，读不到 admin.css 里的 CSS 变量，
+                  硬串一个变量会引入「变量名写错即静默失效」的新风险，故保留重复并在此声明耦合。
+                  className 是官方定制面（不是覆盖组件内部样式）。 */}
               <ProgressCircle aria-label="生成成功率" value={data.generations.successRate * 100} maxValue={100} className="admin-ring">
-                <ProgressCircle.Track>
+                <ProgressCircle.Track className="size-16">
                   <ProgressCircle.TrackCircle />
                   <ProgressCircle.FillCircle />
                 </ProgressCircle.Track>
@@ -115,25 +125,28 @@ export default function AdminHomePage() {
           )}
         </div>
 
+        {/* ⚠️ 主数字是**已支付**、不是订单总数；口径写在标签里，避免被读成总数（#75-3.2） */}
         <div className="admin-card" id="ov-orders">
-          <div className="admin-card-label">订单</div>
+          <div className="admin-card-label">订单（已支付）</div>
           <div className="admin-card-value">{data.orders.paid}</div>
-          <div className="admin-card-sub">待支付 {data.orders.pending}</div>
+          <div className="admin-card-sub">待支付 {data.orders.pending} · 合计 {data.orders.total} 笔</div>
           {/* 币种随订单实际值推符号（此前写死 HK$，与订单页、购买弹窗矛盾）；
               历史上改过币种时会同时存在多种，故按币种分行而不是跨币种求和 */}
           <div className="admin-card-sub">
-            已支付金额{' '}
+            已支付金额{data.orders.amountByCurrency.length > 1 ? '（按币种）' : ''}{' '}
             {data.orders.amountByCurrency.length === 0
               ? '0.00'
               : data.orders.amountByCurrency.map((x) => formatMoney(x.amountTotal, x.currency)).join(' + ')}
           </div>
         </div>
 
+        {/* 同上：主数字是**未兑换**数，不是 CDK 总数 */}
         <div className="admin-card" id="ov-cdks">
-          <div className="admin-card-label">CDK</div>
+          <div className="admin-card-label">CDK（未兑换）</div>
           <div className="admin-card-value">{data.cdks.unredeemed}</div>
           {cdkTotal > 0 ? (
             <>
+              <div className="admin-card-sub">合计 {cdkTotal} 个</div>
               <div className="admin-bar-row">
                 <InlineText type="body-sm" className="admin-bar-label">未兑换</InlineText>
                 <ProgressBar aria-label="未兑换" value={data.cdks.unredeemed} maxValue={cdkTotal} className="admin-bar">
@@ -167,10 +180,11 @@ export default function AdminHomePage() {
           )}
         </div>
 
+        {/* 反馈只有「待处理」一个口径，标签里写明，避免被读成反馈总数 */}
         <div className="admin-card" id="ov-feedback">
-          <div className="admin-card-label">反馈</div>
+          <div className="admin-card-label">反馈（待处理）</div>
           <div className="admin-card-value">{data.feedback.pending}</div>
-          <div className="admin-card-sub">待处理</div>
+          <div className="admin-card-sub">已处理的反馈请在「反馈」页查看</div>
         </div>
       </div>
     </section>

@@ -1,13 +1,15 @@
 'use client'
 import { formatDateTime } from '@/lib/format'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Button, Drawer, ListBox, NumberField, SearchField, Select, Table, Typography } from '@heroui/react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Drawer, ListBox, NumberField, SearchField, Select, Table, Typography } from '@heroui/react'
 import { Eye } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
-import { api, type AdminLogRow } from '@/lib/client'
+import { api, type AdminLogRow, type AdminUserBrief } from '@/lib/client'
 import { ListCount, ListEmptyContent, ListLoadingRows, Pager } from '@/components/admin/ListUi'
 import { useConfirm } from '@/components/admin/confirm'
+import { userBriefMap, userDisplayLabel } from '@/lib/admin-display'
+import { describeAdminError } from '@/lib/admin-error'
 
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中',
@@ -23,6 +25,7 @@ const PAGE_SIZE = 20
 
 export default function AdminLogsPage() {
   const [items, setItems] = useState<AdminLogRow[]>([])
+  const [users, setUsers] = useState<AdminUserBrief[]>([])
   const [total, setTotal] = useState(0)
   const [status, setStatus] = useState('')
   const [userId, setUserId] = useState('')
@@ -36,15 +39,18 @@ export default function AdminLogsPage() {
   // 右侧抽屉查看的日志行（与 audit 抽屉同模式）
   const [detail, setDetail] = useState<AdminLogRow | null>(null)
 
+  const userMap = useMemo(() => userBriefMap(users), [users])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const r = await api.adminListLogs({ status: status || undefined, userId: userId || undefined, page, pageSize: PAGE_SIZE })
       setItems(r.items)
+      setUsers(r.users)
       setTotal(r.total)
       setErr(null)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '加载失败')
+      setErr(describeAdminError(e))
     } finally {
       setLoading(false)
     }
@@ -71,7 +77,7 @@ export default function AdminLogsPage() {
       setMsg(`已清理 ${r.deleted} 条（阈值 ${formatDateTime(r.before)} 之前）`)
       await load()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '清理失败')
+      setErr(describeAdminError(e))
     } finally {
       setBusy(false)
     }
@@ -99,10 +105,11 @@ export default function AdminLogsPage() {
             </ListBox>
           </Select.Popover>
         </Select>
-        <SearchField aria-label="按用户 ID 筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
+        {/* 筛选词支持邮箱 / 昵称 / 裸 ID 三路解析（服务端 findUserIdsByTerm） */}
+        <SearchField aria-label="按用户筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
           <SearchField.Group>
             <SearchField.SearchIcon />
-            <SearchField.Input placeholder="按用户 ID 筛选" />
+            <SearchField.Input placeholder="按用户邮箱 / 昵称 / ID" />
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
@@ -133,13 +140,22 @@ export default function AdminLogsPage() {
         <Table.ScrollContainer className="admin-table-scroll">
           <Table.Content aria-label="生成日志列表">
             <Table.Header>
-              <Table.Column isRowHeader>时间</Table.Column>
-              <Table.Column>用户</Table.Column>
-              <Table.Column>状态</Table.Column>
-              <Table.Column>张数</Table.Column>
-              <Table.Column>重试</Table.Column>
-              <Table.Column>失败原因</Table.Column>
-              <Table.Column>提示词</Table.Column>
+              {/* 列宽（#79-1.1）：此前各列均分，时间被压成三行、「失败」chip 竖排，
+                  且整表 1205px 超出容器 1018px 要横向滚动才看得到「提示词」列。
+                  给关键列最小宽后时间与 chip 都能单行显示。
+                  ⚠️ 必须用 `className` 上的任意值最小宽类（`min-w-…`），**不能用 `minWidth` prop**：RAC 的 `Column`
+                  仅在 `ResizableTableContainer` 提供 `layoutState` 时才认 width/minWidth/maxWidth，
+                  本仓没有用那个容器 —— `minWidth` 会被逐列 console.warn 警告、再被 `filterDOMProps`
+                  丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
+                  合计最小宽 804px，容器约 1018px ⇒ 该宽度下不出现横向滚动；**更窄的视口仍会滚动**
+                  （`table__scroll-container` 自带 `overflow-x-auto`），这是「列宽设下限」的必然取舍。 */}
+              <Table.Column isRowHeader className="min-w-[168px]">时间</Table.Column>
+              <Table.Column className="min-w-[180px]">用户</Table.Column>
+              <Table.Column className="min-w-[88px]">状态</Table.Column>
+              <Table.Column className="min-w-[72px]">张数</Table.Column>
+              <Table.Column className="min-w-[64px]">重试</Table.Column>
+              <Table.Column className="min-w-[160px]">失败原因</Table.Column>
+              <Table.Column className="min-w-[72px]">提示词</Table.Column>
             </Table.Header>
             <Table.Body
               renderEmptyState={() =>
@@ -152,7 +168,11 @@ export default function AdminLogsPage() {
                 items.map((m) => (
                   <Table.Row key={m.id}>
                     <Table.Cell data-label="时间">{formatDateTime(m.createdAt)}</Table.Cell>
-                    <Table.Cell className="admin-mono" data-label="用户">{m.userId}</Table.Cell>
+                    {/* 显示「昵称（邮箱）」而不是裸 usr_ ID；摘要缺失时退回 ID（可追溯）。
+                        ID 收进 title（TableCell 自身不接受 title，故套一层 span） */}
+                    <Table.Cell data-label="用户">
+                      <span title={m.userId}>{userDisplayLabel(userMap.get(m.userId), m.userId)}</span>
+                    </Table.Cell>
                     <Table.Cell data-label="状态">
                       <span className="admin-chip">{STATUS_LABEL[m.status] ?? m.status}</span>
                     </Table.Cell>
@@ -186,7 +206,11 @@ export default function AdminLogsPage() {
                 <>
                   <dl className="audit-detail-meta">
                     <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
-                    <div><dt>用户</dt><dd className="admin-mono">{detail.userId}</dd></div>
+                    {/* 详情同样显示成人；ID 收进 title，仍可复制追溯 */}
+                    <div>
+                      <dt>用户</dt>
+                      <dd title={detail.userId}>{userDisplayLabel(userMap.get(detail.userId), detail.userId)}</dd>
+                    </div>
                     <div><dt>状态</dt><dd>{STATUS_LABEL[detail.status] ?? detail.status}</dd></div>
                     <div><dt>张数</dt><dd>{detail.generatedCount}/{detail.requestedCount}</dd></div>
                     <div><dt>重试</dt><dd>{detail.attempts}</dd></div>

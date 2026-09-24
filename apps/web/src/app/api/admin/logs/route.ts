@@ -15,17 +15,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const status = statusRaw && (STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as MessageStatus) : undefined
     const page = Math.max(1, Number(sp.get('page') ?? 1) || 1)
     const pageSize = Math.min(200, Math.max(1, Number(sp.get('pageSize') ?? 50) || 50))
+    const userTerm = sp.get('userId') ?? undefined
+    const { store } = getRuntime()
+    // 筛选词先解析成人：裸 `usr_` ID 精确匹配，邮箱/昵称模糊匹配（同审计页口径）
+    const userIds = userTerm ? store.findUserIdsByTerm(userTerm) : undefined
     const filter = {
       status,
-      userId: sp.get('userId') ?? undefined,
+      userIds,
       from: sp.get('from') ?? undefined,
       to: sp.get('to') ?? undefined,
     }
 
-    const { store } = getRuntime()
     const total = store.countAllMessages(filter)
     const items = store.listAllMessages({ ...filter, limit: pageSize, offset: (page - 1) * pageSize })
-    return NextResponse.json({ items, total, page, pageSize })
+    // 附带昵称/邮箱映射，让列表与详情把 usr_ ID 显示成「昵称（邮箱）」
+    const users = store.listUserBriefs(items.map((r) => r.userId))
+    return NextResponse.json({ items, total, page, pageSize, users })
   } catch (e) {
     return jsonError(e)
   }

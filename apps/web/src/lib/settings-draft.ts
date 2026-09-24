@@ -19,6 +19,29 @@ export function enumOptionItems(options: string[] | null): Array<{ id: string; l
 }
 
 /**
+ * 枚举下拉要回显的值，以及它是否来自「未设置时的默认」（issue #79-1.3）。
+ *
+ * 问题：`MOTIF_MAILER` / `STORAGE_DRIVER` 这类枚举在**未显式设置**时 `value` 是 null，
+ * 下拉就显示占位符「选择一个项目」，展开后各项无选中态 —— 但系统其实正按 `defaultHint`
+ * （console / local）在跑，同页状态行还写着「已就绪」。管理员据此无法判断当前到底是
+ * 「未设置走默认」还是「已设置但没回显」，而这两种状态要采取的动作完全不同。
+ *
+ * 修法：把**生效值**补上，并由调用方用 `fromDefault` 显式标注「当前按默认生效」。
+ * ⚠️ 只在 `defaultHint` 恰好是合法选项时才回填 —— 若默认值不在 options 里（配置写错），
+ * 回填一个不存在的 id 只会让下拉显示空白，反而更难排查；此时保持原样。
+ */
+export function enumDisplayValue(item: {
+  value: string | null
+  defaultHint: string | null
+  options: string[] | null
+}): { value: string | null; fromDefault: boolean } {
+  if (item.value) return { value: item.value, fromDefault: false }
+  const hint = item.defaultHint
+  if (hint && (item.options ?? []).includes(hint)) return { value: hint, fromDefault: true }
+  return { value: null, fromDefault: false }
+}
+
+/**
  * 只提交本组里改动过且**当前可见**的键 —— 密钥框初值恒为空，未输入就不会进 dirty；
  * 可见性过滤防止「切走渠道后，隐藏字段残留的 dirty 被一并提交」。
  */

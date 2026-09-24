@@ -50,6 +50,19 @@ const SETTLED_TOPIC_STATUS = topicStatusFromMessage(null)
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(',')
 
 /**
+ * 「按人筛选」把筛选词解析成 ID 集合时的**上限**（`findUserIdsByTerm`）。
+ *
+ * 为什么必须有上限：筛选是「缩小范围」而不是「全量列举」。不设上限的话，一个空泛的词
+ * （如「@」）会把 IN 子句撑到 SQLite 的变量上限（默认 999），整条查询直接报错。
+ *
+ * ⚠️ 命中超过上限时**静默截断**（只取前 100 个，按 `created_at DESC, id DESC`）：
+ * 调用方拿到的是一个子集，但**没有任何标记**告诉它「还有更多」—— 页面因此会把子集
+ * 当作完整的筛选结果展示。要让运营看见，得让接口回一个 `truncated` 标记并在页面上提示，
+ * 那是接口契约的改动，不在本次收口范围（此处只把魔数提为具名常量并写明这一取舍）。
+ */
+const USER_TERM_MATCH_LIMIT = 100
+
+/**
  * 读取自愈的 WHERE 片段：topic 声称在跑，但活跃消息已不在跑（含 `active_message_id` 为空）。
  *
  * ⚠️ 两个状态清单都从 `@motif/core` 取，**不在此处抄字面量** —— 抄一份就意味着
@@ -71,13 +84,33 @@ function safeParseIds(raw: string | null | undefined): string[] {
   }
 }
 
+/**
+ * 把「按用户筛选」落成 SQL 片段（list / count 共用，审计与生成日志口径一致）。
+ *
+ * 为什么有 `userIds` 与 `userId` 两种形态：`userId` 是**裸 ID 精确匹配**（历史写法，测试与
+ * 既有调用点依赖）；`userIds` 是「筛选词解析出的候选集」—— 运营按邮箱/昵称筛选时先解析成人，
+ * 再按 IN 查流水。两者互斥，`userIds` 优先。
+ *
+ * ⚠️ 空数组必须落成恒假条件（`1 = 0`）：调用方给空数组的语义是「这个词没匹配到任何人」，
+ * 若当成「没有筛选条件」跳过，页面会返回**全量**数据 —— 那是比不筛选更糟的误导。
+ */
+function userScopeWhere(column: string, filter: { userId?: string; userIds?: string[] }): { clause: string | null; params: string[] } {
+  if (filter.userIds !== undefined) {
+    if (filter.userIds.length === 0) return { clause: '1 = 0', params: [] }
+    return { clause: `${column} IN (${placeholders(filter.userIds.length)})`, params: [...filter.userIds] }
+  }
+  if (filter.userId) return { clause: `${column} = ?`, params: [filter.userId] }
+  return { clause: null, params: [] }
+}
+
 /** 按操作者/动作/时间构造审计查询条件（供 list / count 共用）。action 用**精确匹配** —— 前缀匹配会让 credit.adjust 与 credit.adjust.rollback 互相污染 */
-function auditWhere(filter: { actorId?: string; action?: string; from?: string; to?: string }): { where: string; params: string[] } {
+function auditWhere(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
   const params: string[] = []
-  if (filter.actorId) {
-    clauses.push('actor_id = ?')
-    params.push(filter.actorId)
+  const actor = userScopeWhere('actor_id', { userId: filter.actorId, userIds: filter.userIds })
+  if (actor.clause) {
+    clauses.push(actor.clause)
+    params.push(...actor.params)
   }
   if (filter.action) {
     clauses.push('action = ?')
@@ -106,6 +139,17 @@ export interface AuditLogRow {
 }
 
 /**
+ * 用户摘要。管理端把裸 `usr_` ID 渲染成「昵称（邮箱）」用 ——
+ * 只带展示必需的三列，**不带 credits / role / status**：它会被塞进列表接口的响应里，
+ * 多余字段既扩大响应体，也容易让人误以为「列表接口顺带给了用户完整信息」。
+ */
+export interface UserBrief {
+  id: string
+  name: string
+  email: string
+}
+
+/**
  * 一条配置项。value 一律以字符串存储 —— 存储层**不解释语义**，
  * 类型化解析（布尔 / 枚举 / URL / 密钥）集中在 apps/web/src/server/settings.ts。
  */
@@ -116,16 +160,17 @@ export interface SettingRow {
 }
 
 /** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
-function messageWhere(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): { where: string; params: string[] } {
+function messageWhere(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
   const params: string[] = []
   if (filter.status) {
     clauses.push('m.status = ?')
     params.push(filter.status)
   }
-  if (filter.userId) {
-    clauses.push('m.user_id = ?')
-    params.push(filter.userId)
+  const user = userScopeWhere('m.user_id', filter)
+  if (user.clause) {
+    clauses.push(user.clause)
+    params.push(...user.params)
   }
   if (filter.from) {
     clauses.push('m.created_at >= ?')
@@ -186,11 +231,14 @@ function userWhere(filter: { q?: string; role?: UserRole; status?: UserStatus })
   const clauses: string[] = []
   const params: string[] = []
   if (filter.q && filter.q.trim()) {
-    // 邮箱与昵称都搜。邮箱统一小写存储，故用小写的 like 参数即可覆盖大小写；
-    // 昵称保持大小写敏感（不为此引入 LOWER() 全表扫描），中文昵称不受影响
-    clauses.push('(email LIKE ? OR name LIKE ?)')
+    // 三路命中，缺一不可：
+    //  1. `id` 精确匹配 —— 运营从反馈/审计里看到的正是裸 `usr_` ID，原样贴进搜索框必须能定位到人
+    //     （此前只搜邮箱/昵称，贴 ID 得到「共 0 个」，追溯链路是断的）
+    //  2. 邮箱模糊匹配：邮箱统一小写存储，故用小写的 like 参数即可覆盖大小写
+    //  3. 昵称模糊匹配：保持大小写敏感（不为此引入 LOWER() 全表扫描），中文昵称不受影响
+    clauses.push('(id = ? OR email LIKE ? OR name LIKE ?)')
     const like = `%${filter.q.trim().toLowerCase()}%`
-    params.push(like, like)
+    params.push(filter.q.trim(), like, like)
   }
   if (filter.role) {
     clauses.push('role = ?')
@@ -218,12 +266,13 @@ function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: 
 }
 
 /** 按用户/状态/时间范围构造订单查询条件（供 list / count 共用，避免两处口径漂移） */
-function orderWhere(filter: { userId?: string; status?: string; from?: string; to?: string }): { where: string; params: string[] } {
+function orderWhere(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string }): { where: string; params: string[] } {
   const clauses: string[] = []
   const params: string[] = []
-  if (filter.userId) {
-    clauses.push('user_id = ?')
-    params.push(filter.userId)
+  const user = userScopeWhere('user_id', filter)
+  if (user.clause) {
+    clauses.push(user.clause)
+    params.push(...user.params)
   }
   if (filter.status) {
     clauses.push('status = ?')
@@ -341,7 +390,14 @@ export interface AdminOverview {
     bySource: Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
   }
   generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
-  orders: { pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
+  orders: {
+    /** 订单总数。**不能拿 paid + pending 现算** —— 概览卡要写「合计 N 笔」，而 status 列没有 CHECK 约束，
+     *  靠两个已知状态相加会在出现第三种状态时静默少算。直接 COUNT(*) 才是唯一真相。 */
+    total: number
+    pending: number
+    paid: number
+    amountByCurrency: Array<{ currency: string; amountTotal: number }>
+  }
   cdks: { unredeemed: number; redeemed: number; revoked: number }
   feedback: { pending: number }
 }
@@ -684,6 +740,44 @@ export class MotifStore {
   }
 
   /**
+   * 把一个筛选词解析成用户 ID 集合（审计 / 生成日志的「按用户筛选」用）。
+   *
+   * 为什么要解析而不是直接拿词去查流水：流水表里存的是裸 `usr_` ID。运营手上有的是
+   * 邮箱或昵称（从工单、反馈里看来的），直接 `user_id = '张三'` 永远查不到东西，
+   * 而页面上没有任何提示 —— 表现为「筛选点了没反应」。这里统一三路解析：
+   * 精确 ID 优先（原样贴 ID 仍然可用），否则退化为邮箱 / 昵称模糊匹配。
+   *
+   * ⚠️ 上限见 `USER_TERM_MATCH_LIMIT`：超出即**静默截断**（返回子集，且不带「已截断」标记），
+   * 页面会把子集当完整结果展示 —— 取舍与原因写在该常量的注释里。
+   */
+  findUserIdsByTerm(term: string, limit = USER_TERM_MATCH_LIMIT): string[] {
+    const t = term.trim()
+    if (!t) return []
+    if (this.getUserById(t)) return [t]
+    const like = `%${t.toLowerCase()}%`
+    const rows = this.db
+      .prepare('SELECT id FROM users WHERE email LIKE ? OR name LIKE ? ORDER BY created_at DESC, id DESC LIMIT ?')
+      .all(like, like, limit) as Array<{ id: string }>
+    return rows.map((r) => r.id)
+  }
+
+  /**
+   * 按 ID 批量取用户摘要（管理端把 `usr_` ID 渲染成「昵称（邮箱）」）。
+   *
+   * 一次 IN 查询而不是逐行 `getUserById`：列表一页 20 条，逐行查会变成 20 次往返；
+   * 调用方（路由）负责把结果按 id 组成 Map 交给前端。
+   * 去重后查询：同一个人可能在「提交用户」与「处理人」两列各出现一次。
+   */
+  listUserBriefs(ids: readonly string[]): UserBrief[] {
+    const uniq = [...new Set(ids.filter((id) => !!id))]
+    if (uniq.length === 0) return []
+    const rows = this.db
+      .prepare(`SELECT id, name, email FROM users WHERE id IN (${placeholders(uniq.length)})`)
+      .all(...uniq) as Array<{ id: string; name: string; email: string }>
+    return rows.map((r) => ({ id: r.id, name: r.name, email: r.email }))
+  }
+
+  /**
    * 更新角色。**不加保护** —— 「管理员不可操作超级管理员」「最后一个超级管理员不可降级」
    * 是服务层契约（apps/web/src/server/admin.ts 的 assertCanModifyRole），调用方必须先过断言。
    */
@@ -735,6 +829,28 @@ export class MotifStore {
 
   deleteSession(token: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token = ?').run(this.hashToken(token))
+  }
+
+  /**
+   * 过期会话的持有者：**仅当**会话行存在、已过期、且账号仍存在时返回该用户，否则 null。
+   *
+   * 与 `getUserBySession` 的差别是**不按 expires_at 过滤**：后者把「过期」与「压根不存在」
+   * 都收敛成 null，于是管理页只能给出通用 404，无法提示「登录已过期，请重新登录」（issue #75-3.4）。
+   * 单独暴露过期态之后，页面守卫就能区分两种人：
+   *  - 曾经持有真实会话、只是过期了（数据库里还留着那一行）→ 给过期引导
+   *  - 随便带个 cookie 来探路的 → 仍是 404，不泄露管理面的存在性
+   * 因此判据是「行存在且已过期」，而不是「token 无效」。
+   *
+   * ⚠️ 返回值是**用户**而不是布尔：调用方还要按角色裁决（普通用户带过期会话访问 /admin
+   * 仍应得 404）。角色判断属服务层，不在这里做。
+   */
+  getExpiredSessionUser(token: string): User | null {
+    const row = this.db.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').get(this.hashToken(token)) as
+      | { user_id: string; expires_at: string }
+      | undefined
+    if (!row) return null
+    if (row.expires_at > nowIso()) return null
+    return this.getUserById(row.user_id)
   }
 
   /** 吊销用户全部会话（可选保留一个，如改密时的当前会话） */
@@ -1446,7 +1562,7 @@ export class MotifStore {
     return { id: r.id, userId: r.user_id, credits: r.credits, amountTotal: r.amount_total, status: r.status, channel: r.channel }
   }
 
-  listOrders(filter: { userId?: string; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
+  listOrders(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
     id: string
     userId: string
     packageId: string
@@ -1476,7 +1592,7 @@ export class MotifStore {
     }))
   }
 
-  countOrders(filter: { userId?: string; status?: string; from?: string; to?: string }): number {
+  countOrders(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string }): number {
     const { where, params } = orderWhere(filter)
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM orders ${where}`).get(...params) as { c: number }
     return row.c
@@ -1491,7 +1607,7 @@ export class MotifStore {
    * 排序用 `rowid DESC` 而不是 `created_at DESC`：同一毫秒内创建的多条记录无法靠时间区分，
    * 而 `id` 是随机 hex 前缀，按其倒序等于随机顺序（测试与页面都会看到不稳定的「最新一条」）。
    */
-  listAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string; limit?: number; offset?: number }): AdminLogRow[] {
+  listAllMessages(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string; limit?: number; offset?: number }): AdminLogRow[] {
     const { where, params } = messageWhere(filter)
     const rows = this.db
       .prepare(
@@ -1517,7 +1633,7 @@ export class MotifStore {
     }))
   }
 
-  countAllMessages(filter: { status?: MessageStatus; userId?: string; from?: string; to?: string }): number {
+  countAllMessages(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string }): number {
     const { where, params } = messageWhere(filter)
     return (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${where}`).get(...params) as { c: number }).c
   }
@@ -1635,6 +1751,7 @@ export class MotifStore {
           .all() as Array<{ error: string; count: number }>,
       },
       orders: {
+        total: n('SELECT COUNT(*) AS c FROM orders'),
         pending: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'pending'"),
         paid: n("SELECT COUNT(*) AS c FROM orders WHERE status = 'paid'"),
         // 按币种分组求和：币种是后台可配的（改过配置后历史订单会留下别的币种），
@@ -1702,7 +1819,7 @@ export class MotifStore {
    * 审计流水的管理端分页视图。**刻意与 `listAudit` 并存**：后者返回裸数组且被多处既有测试断言依赖，
    * 改它的返回值形状的代价大于新增一个方法。
    */
-  listAuditPaged(filter: { actorId?: string; action?: string; from?: string; to?: string; limit?: number; offset?: number }): AuditLogRow[] {
+  listAuditPaged(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string; limit?: number; offset?: number }): AuditLogRow[] {
     const { where, params } = auditWhere(filter)
     const rows = this.db
       .prepare(`SELECT * FROM admin_audit ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
@@ -1718,7 +1835,7 @@ export class MotifStore {
     }))
   }
 
-  countAudit(filter: { actorId?: string; action?: string; from?: string; to?: string }): number {
+  countAudit(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string }): number {
     const { where, params } = auditWhere(filter)
     return (this.db.prepare(`SELECT COUNT(*) AS c FROM admin_audit ${where}`).get(...params) as { c: number }).c
   }
