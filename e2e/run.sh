@@ -21,6 +21,12 @@ BASE="http://127.0.0.1:$PORT"
 export MOTIF_EXPOSE_DEV_CODE=1
 export MOTIF_DATA_DIR="${MOTIF_DATA_DIR:-$WEB_DIR/.data-e2e}"
 
+# 夹具密码（#98-3）：脚本里原本硬编码 3 处，改一处漏一处就会「注册用 A、登录用 B」。
+# 只在 shell 侧声明一次，再经临时 env json 传进 heredoc —— heredoc 是 `<<'EOF'`（不做变量展开），
+# 直接写 `$E2E_PASSWORD` 不会被替换。
+# 取值须满足 D14 复杂度：≥8 位且同时含大写/小写字母、数字、符号。
+E2E_PASSWORD='E2e-Secret-66'
+
 cd "$WEB_DIR"
 
 # 0. 若无构建产物则先构建。
@@ -49,7 +55,7 @@ curl -s -o /dev/null -w "[e2e] server ready: HTTP %{http_code}\n" "$BASE/api/bil
 # 2. 生成随机测试账号（ego-browser heredoc 不继承 shell env，改走临时文件）
 EMAIL="e2e-$(date +%s)-$RANDOM@test.dev"
 E2E_ENV_FILE=/tmp/motif-e2e-env.json
-printf '{"base":"%s","email":"%s"}\n' "$BASE" "$EMAIL" > "$E2E_ENV_FILE"
+printf '{"base":"%s","email":"%s","password":"%s"}\n' "$BASE" "$EMAIL" "$E2E_PASSWORD" > "$E2E_ENV_FILE"
 echo "[e2e] test account: $EMAIL"
 
 fail() { echo "[e2e] ❌ FAIL: $1"; exit 1; }
@@ -84,6 +90,7 @@ const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-e2e-en
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 const EMAIL = E2E.email
+const PASSWORD = E2E.password
 
 // 落地页的登录/注册已弹窗化：先点底部「免费注册」把弹窗打开（直接进注册模式）
 await js(String.raw`(() => {
@@ -123,15 +130,15 @@ const fillScript = String.raw`(() => {
   setVal(inputs[1], email)                 // 邮箱
   setVal(inputs[2], 'MOTIF-E2E-CDK')     // 邀请码（不存在的邀请码应被忽略）
   setVal(inputs[3], code)                  // 验证码
-  setVal(inputs[4], 'E2e-Secret-66')       // 密码（须满足 D14 复杂度：大写+小写+数字+符号，≥8 位）
-  setVal(inputs[5], 'E2e-Secret-66')       // 确认密码
+  setVal(inputs[4], '${PASSWORD}')         // 密码（须满足 D14 复杂度：大写+小写+数字+符号，≥8 位）
+  setVal(inputs[5], '${PASSWORD}')         // 确认密码
   return inputs.length
 })()`
 const filled = await js(fillScript)
 if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
 
 await js(String.raw`(() => {
-  // 主操作按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故选择器不能带 `form`
+  // 主操作按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故不能写成 form button[type="submit"]
   const b = [...document.querySelectorAll('[role="dialog"] button[type="submit"]')][0]
   b.click()
   return true
@@ -160,9 +167,11 @@ await ensureRealTab()
 // 判据：**只填提示词**；张数与尺寸逐值不变（模板已并入「系统自带」源，不再联动张数/尺寸）
 const readPanel = String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
-  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
-  const active = document.querySelector('.ws-panel [role="radio"][data-selected="true"]')
-  return { promptLen: ta.value.length, count: num ? num.value : null, size: active ? active.innerText.split('\n')[0] : null }
+  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
+  // 尺寸控件 2026-09-21 起由单选组改为 Dropdown：触发件按钮带 aria-label="尺寸：<名>"，
+  // 旧的 [role="radio"][data-selected="true"] 在 apps/web/src 已零命中（恒空 → 下面守卫必抛）
+  const sizeBtn = document.querySelector('.ws-panel button[aria-label^="尺寸："]')
+  return { promptLen: ta.value.length, count: num ? num.value : null, size: sizeBtn ? sizeBtn.getAttribute('aria-label').replace('尺寸：', '') : null }
 })()`
 const before = await js(readPanel)
 cliLog('PANEL_BEFORE ' + JSON.stringify(before))
@@ -210,7 +219,7 @@ if (after.size !== before.size) throw new Error('尺寸被联动改了: ' + befo
 // 改为 2 张（赠送额度 3，留余量）
 // 用 CDP 插入文本：实测「设 value + 派 input」没能驱动它的 onChange（提交时仍是旧值）
 await js(String.raw`(() => {
-  const num = document.querySelector('.ws-panel input[aria-label="张数"]')
+  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
   num.focus()
   num.select()
   return true
@@ -218,11 +227,11 @@ await js(String.raw`(() => {
 await cdp('Input.insertText', { text: '2' })
 await wait(0.5)
 await js(String.raw`(() => {
-  document.querySelector('.ws-panel input[aria-label="张数"]').blur()
+  document.querySelector('.ws-panel input[aria-label^="张数"]').blur()
   return true
 })()`)
 await wait(1)
-const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label="张数"]').value)()`)
+const countNow = await js(String.raw`(() => document.querySelector('.ws-panel input[aria-label^="张数"]').value)()`)
 cliLog('COUNT_AFTER ' + countNow)
 if (countNow !== '2') throw new Error('张数未改为 2: ' + countNow)
 
@@ -272,28 +281,23 @@ if (credits !== '1') throw new Error('生成后额度应为 1，实际: ' + cred
 EOF
 echo "[e2e] Round 3 ✅"
 
-# ---------- Round 4：任务抽屉（重命名）+ 充值弹窗 ----------
-echo "[e2e] Round 4: task drawer + billing"
+# ---------- Round 4：任务面板（重命名）+ 充值弹窗 ----------
+echo "[e2e] Round 4: topic panel + billing"
 ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
+// 面板是否渲染取决于 useMediaQuery('(min-width: 1024px)')；每轮是独立 heredoc，视口覆盖未必延续，
+// 故与 R1 同口径重设一次（幂等、无副作用），避免窄视口下面板不渲染导致下面的守卫失败
+await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
 
-// 打开任务抽屉
-await js(String.raw`(() => {
-  // 「任务」已图标化：IconButton 的短名落在 aria-label 上，按钮内没有文字
-  const b = document.querySelector('.ws-nav [aria-label="任务"]')
-  b.click()
-  return true
-})()`)
-await wait(1)
-
-const drawer = await js(String.raw`(() => {
-  // 抽屉的稳定锚点是关闭按钮的 aria-label（HeroUI 的 Drawer.Content 不保证把 aria-label 透传到 dialog 上）
-  const open = !!document.querySelector('[aria-label="关闭任务列表"]')
+// 任务面板 2026-09-21 起由「点图标弹出的抽屉」升级为**常驻浮动面板**（宽屏默认展开），
+// 故不再有「打开抽屉」这一步，锚点也换成面板本身的 aria-label
+const panel = await js(String.raw`(() => {
+  const open = !!document.querySelector('[aria-label="任务面板"]')
   return { open, items: document.querySelectorAll('.ws-topic-item').length, hasInvite: document.body.innerText.includes('邀请好友') }
 })()`)
-cliLog('DRAWER ' + JSON.stringify(drawer))
-if (!drawer.open || drawer.items < 1) throw new Error('任务抽屉未打开或为空')
+cliLog('PANEL ' + JSON.stringify(panel))
+if (!panel.open || panel.items < 1) throw new Error('任务面板未展开或为空')
 
 // 重命名任务
 await js(String.raw`(() => {
@@ -327,14 +331,10 @@ const renamed = await js(String.raw`(() => document.body.innerText.includes('E2E
 cliLog('RENAMED ' + renamed)
 if (!renamed) throw new Error('任务重命名未生效')
 
-// 关抽屉 → 打开充值弹窗
+// 打开充值弹窗（余额与充值已合并成顶栏一个按钮：无「充值」文字，靠 aria-label 前缀定位）
 await js(String.raw`(() => {
-  document.querySelector('[aria-label="关闭任务列表"]').click()
-  return true
-})()`)
-await wait(1)
-await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '充值')
+  const b = document.querySelector('.ws-nav button[aria-label^="余额"]')
+  if (!b) throw new Error('余额/充值入口未找到')
   b.click()
   return true
 })()`)
@@ -370,8 +370,17 @@ await js(String.raw`(() => {
   return true
 })()`)
 await wait(1)
+// 「退出」已收进顶栏的账号菜单（Popover 内容经 Portal 挂到 body，不在 .ws-nav 内），故两步走
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.includes('退出'))
+  const b = document.querySelector('.ws-nav button[aria-label="账号菜单"]')
+  if (!b) throw new Error('账号菜单未找到')
+  b.click()
+  return true
+})()`)
+await wait(1)
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '退出')
+  if (!b) throw new Error('「退出」菜单项未找到')
   b.click()
   return true
 })()`)
@@ -403,6 +412,7 @@ await wait(1)
 
 // 用刚注册的账号再次登录
 const EMAIL = E2E.email
+const PASSWORD = E2E.password
 await js(String.raw`(() => {
   const email = '${EMAIL}'
   const setVal = (el, v) => {
@@ -411,7 +421,7 @@ await js(String.raw`(() => {
   }
   const inputs = [...document.querySelectorAll('[role="dialog"] form input')]
   setVal(inputs[0], email)
-  setVal(inputs[1], 'E2e-Secret-66')
+  setVal(inputs[1], '${PASSWORD}')
   return true
 })()`)
 await js(String.raw`(() => {

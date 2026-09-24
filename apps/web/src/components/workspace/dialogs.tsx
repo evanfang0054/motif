@@ -345,9 +345,12 @@ function ProfileDialog({
 
       <form onSubmit={saveProfile} className="mt-3">
         <div className="flex items-end gap-2">
+          {/* data-testid：e2e（e2e/acceptance.sh 的 E 段）要按「哪个字段」定位，
+              而本弹窗的三个输入框都没有 aria-label（标签走 <Label> 的 aria-labelledby），
+              按下标取 input 太脆。仓库已有 data-testid 先例（画布区）。 */}
           <TextField className="min-w-0 flex-1" value={name} onChange={setName}>
             <Label>昵称</Label>
-            <Input />
+            <Input data-testid="profile-name" />
           </TextField>
           <Button type="submit" variant="primary" isDisabled={busy || !name.trim()}>保存昵称</Button>
         </div>
@@ -358,11 +361,11 @@ function ProfileDialog({
       <form onSubmit={changePassword}>
         <TextField type="password" autoComplete="current-password" value={oldPassword} onChange={setOldPassword} className="mt-3.5">
           <Label>当前密码</Label>
-          <Input />
+          <Input data-testid="profile-old-password" />
         </TextField>
         <TextField type="password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} className="mt-3.5">
           <Label>新密码</Label>
-          <Input />
+          <Input data-testid="profile-new-password" />
         </TextField>
         {/* #74-2.1：改密与注册共用同一条复杂度规则，规则文案也共用同一份常量（界面明示） */}
         <Typography type="body-xs" className="mt-1.5" style={{ color: 'var(--muted)' }}>
@@ -373,8 +376,9 @@ function ProfileDialog({
         </Button>
       </form>
 
+      {/* role="alert"：改密失败（旧密码错误等）是必须被读屏立即播报的错误；顺带给 e2e 一个稳定锚点 */}
       {error && (
-        <Alert status="danger" className="mt-3">
+        <Alert status="danger" role="alert" data-testid="profile-error" className="mt-3">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>{error}</Alert.Title>

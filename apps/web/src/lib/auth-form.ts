@@ -84,10 +84,12 @@ export function isFormFilled(mode: AuthMode, f: AuthFields): boolean {
 }
 
 /**
- * 视图切换时的字段清理（#80-1.2）：输入旧视图的字段值 + 新视图，输出新视图应持有的字段值。
+ * 视图切换时的字段清理（#80-1.2）：输入旧视图的字段值，输出新视图应持有的字段值。
  *
- * 清理规则与目标视图**无关**（`next` 参与签名只为让调用点自解释「这是新视图的字段状态」，
- * 并为将来按视图差异化留位 —— 当前三种视图的清空集合完全一致）：
+ * 清理规则与目标视图**无关** —— 三种视图的清空集合完全一致，故本函数**不接收**目标视图：
+ * 早先版本带过一个 `next: AuthMode` 参数，函数体里只 `void next`（死参数），签名会让人误以为
+ * 「清空集合随视图变化」，已按 YAGNI 删除。将来真出现按视图差异化时再加，且要带上单测。
+ *
  * - **清空**密码类字段（登录密码 / 新密码 / 注册密码与确认密码）：否则登录密码会被带进「找回密码」的
  *   新密码框（掩码可见），用户不留意就会把密码重置回同一个旧值；注册侧更直接 —— 密码被带入旧值、
  *   用户只补「确认密码」时极易触发「两次输入的密码不一致」。
@@ -96,8 +98,7 @@ export function isFormFilled(mode: AuthMode, f: AuthFields): boolean {
  * - **保留**邀请码：它来自邀请链接（`?invite=`），属于**入口上下文**而不是视图字段 ——
  *   清掉会让被邀请人切一次视图就静默丢掉奖励。
  */
-export function switchAuthFields(prev: AuthFieldState, next: AuthMode): AuthFieldState {
-  void next
+export function switchAuthFields(prev: AuthFieldState): AuthFieldState {
   return {
     name: '',
     email: prev.email,

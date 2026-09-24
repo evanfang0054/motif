@@ -4,6 +4,21 @@
 #   CDK 兑换 · 取消退额守恒 · 个人资料改名 · 修改密码与错误路径 · 参考图参与生成
 #
 # 用法：bash e2e/acceptance.sh
+#
+# ⚠️ 本脚本直连真实生图网关并消耗额度，仅当用户明确要求时运行；日常门禁是 typecheck + 单测。
+#
+# ⚠️ 选择器口径（#98-2）：认证 / 充值 / 个人资料等都已弹窗化，旧脚本里的
+#   `#auth` / `.ws-modal` / `.ws-modal-mask` / `.lp-alert-error` / `.ws-toast` / `canvas-lightbox` / `pf-name`
+#   在当前源码里**零命中**（`id="auth"` 只存在于更早的 AuthCard.tsx）。此处已逐个换成当前真实锚点：
+#     · 认证表单           → `#auth-form`（AuthModal.tsx）与 `button[form="auth-form"]`（主按钮在 Footer，靠 form 属性关联）
+#     · 工作台弹窗         → `[role="dialog"][aria-label="<标题>"]`（WorkspaceModal 把 title 落到 aria-label）
+#     · 报错 Alert         → `[data-testid="auth-error"]` / `[data-testid="profile-error"]`
+#     · 个人资料三个输入框 → `[data-testid="profile-*"]`
+#     · toast              → `[role="alertdialog"]`（与 run.sh 同口径）
+#     · 灯箱               → `[role="dialog"][aria-label="图片预览"]`
+#     · 张数输入框         → `.ws-panel input[aria-label^="张数"]`（RAC NumberField 渲染的是 type="text"，不是 number）
+#     · 充值入口           → `.ws-nav button[aria-label^="余额"]`（顶栏「余额 + 充值」已合并成一个按钮）
+#     · 账号菜单           → `.ws-nav button[aria-label="账号菜单"]`（资料 / 退出收进了下拉）
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,6 +27,12 @@ PORT=3220
 BASE="http://127.0.0.1:$PORT"
 export MOTIF_EXPOSE_DEV_CODE=1
 export MOTIF_DATA_DIR="${MOTIF_DATA_DIR:-$WEB_DIR/.data-accept}"
+
+# 夹具密码（#98-2）：必须满足 D14 复杂度（≥8 位且同时含大写/小写字母、数字、符号）——
+# 早先的 accept-66 / accept-99-new 只有小写+数字+符号，会被客户端先行校验（clientAuthError）直接拦下。
+# 只在 shell 侧声明一次；heredoc 是 `<<'EOF'`（不做变量展开），故经临时 env json 传进 JS。
+FIXTURE_PASSWORD='Accept-66!'
+FIXTURE_NEW_PASSWORD='Accept-99-New!'
 
 cd "$WEB_DIR"
 
@@ -43,7 +64,8 @@ curl -s -o /dev/null "$BASE/"
 cd "$ROOT"
 node scripts/cdk.mjs MOTIF-ACCEPT-20 20
 EMAIL="acc-$(date +%s)-$RANDOM@test.dev"
-printf '{"base":"%s","email":"%s"}\n' "$BASE" "$EMAIL" > /tmp/motif-accept-env.json
+printf '{"base":"%s","email":"%s","password":"%s","newPassword":"%s"}\n' \
+  "$BASE" "$EMAIL" "$FIXTURE_PASSWORD" "$FIXTURE_NEW_PASSWORD" > /tmp/motif-accept-env.json
 echo "[accept] account: $EMAIL"
 
 # 生成一张正经尺寸的参考图（供 Round C 真实图生图 edits 使用）
@@ -63,16 +85,21 @@ fail() { echo "[accept] ❌ FAIL: $1"; exit 1; }
 echo "[accept] A: register"
 ego-browser nodejs <<'EOF'
 const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-accept-env.json', 'utf8'))
+const PASSWORD = E2E.password
 const task = await useOrCreateTaskSpace('motif acceptance')
 await openOrReuseTab(E2E.base + '/', { wait: true, timeout: 30 })
 await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
 await gotoAndWait(E2E.base + '/', { timeout: 30 })
+// 认证已弹窗化：落地页底部的「免费注册」入口点开就是 register 模式（不再有独立 #auth 容器 / 先开登录再切注册）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('form button, #auth button')].find(x => x.innerText.trim() === '注册账号')
-  if (b) b.click()
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '免费注册')
+  if (!b) throw new Error('「免费注册」入口未找到')
+  b.click()
   return true
 })()`)
 await wait(1)
+const isRegister = await js(String.raw`document.body.innerText.includes('创建账号')`)
+if (!isRegister) throw new Error('注册表单未出现')
 const { devCode } = JSON.parse(await browserFetch('/api/auth/register/send-code', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -82,20 +109,24 @@ if (!devCode) throw new Error('devCode 未返回')
 const script = String.raw`(() => {
   const email = '${E2E.email}'
   const code = '${devCode}'
+  const password = '${PASSWORD}'
   const setVal = (el, v) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('#auth form input')]
+  // 注册表单的字段顺序：昵称 / 邮箱 / 邀请码 / 验证码 / 密码 / 确认密码
+  const inputs = [...document.querySelectorAll('#auth-form input')]
   setVal(inputs[0], '验收员')
   setVal(inputs[1], email)
   setVal(inputs[3], code)
-  setVal(inputs[4], 'accept-66')
-  setVal(inputs[5], 'accept-66')
+  setVal(inputs[4], password)
+  setVal(inputs[5], password)
   return inputs.length
 })()`
-await js(script)
-await js(String.raw`(() => { [...document.querySelectorAll('#auth form button[type="submit"]')][0].click(); return true })()`)
+const filled = await js(script)
+if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
+// 主按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故按 form 属性定位
+await js(String.raw`(() => { document.querySelector('button[form="auth-form"]').click(); return true })()`)
 await wait(4)
 const credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
 cliLog('registered, credits=' + credits)
@@ -108,27 +139,34 @@ echo "[accept] B: CDK redeem"
 ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
+// 充值与余额已合并成顶栏一个入口（无「充值」文字，靠 aria-label 定位）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '充值')
+  const b = document.querySelector('.ws-nav button[aria-label^="余额"]')
+  if (!b) throw new Error('余额/充值入口未找到')
   b.click(); return true
 })()`)
 await wait(1)
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('充值额度'))
-  const link = [...m.querySelectorAll('button')].find(x => x.innerText.includes('CDK'))
+  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+  if (!m) throw new Error('充值弹窗未打开')
+  // CDK 入口是 HeroUI Link（渲染成 <a>，不是 button），按可见文字定位
+  const link = [...m.querySelectorAll('a, button')].find(x => x.innerText.includes('CDK'))
+  if (!link) throw new Error('CDK 入口未找到')
   link.click(); return true
 })()`)
 await wait(1)
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('CDK'))
+  const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
+  if (!m) throw new Error('CDK 弹窗未打开')
   const input = m.querySelector('input')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'motif-accept-20')
   input.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('CDK'))
-  const b = [...m.querySelectorAll('button')].find(x => x.innerText.trim() === '兑换')
+  const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
+  const b = m.querySelector('button[type="submit"]')
+  if (!b) throw new Error('兑换按钮未找到')
   b.click(); return true
 })()`)
 let credits = null
@@ -139,8 +177,8 @@ for (let i = 0; i < 10; i++) {
 }
 cliLog('CDK redeem → credits=' + credits)
 if (credits !== '23') throw new Error('CDK 兑换后应为 23（3+20），实际 ' + credits)
-// 兑换成功后弹窗已自动关闭；若仍在则手动关闭
-await js(String.raw`(() => { const m = document.querySelector('.ws-modal-mask'); if (m) m.click(); return true })()`)
+// 兑换成功后弹窗自动关闭（Workspace 的 onRedeemed 会 setDialog(null)）；若仍在则点关闭按钮兜底
+await js(String.raw`(() => { const c = document.querySelector('[role="dialog"][aria-label="CDK 兑换"] [aria-label="关闭"]'); if (c) c.click(); return true })()`)
 await wait(1)
 EOF
 echo "[accept] B ✅"
@@ -151,10 +189,11 @@ ego-browser nodejs <<'EOF'
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
 
-// 新建任务并上传参考图（1×1 PNG）
+// 新建任务并上传参考图（512×512 PNG）
 await js(String.raw`(() => {
-  // 图标化后该按钮无可见文字，改用 aria-label（2026-09-21）
-  const b = document.querySelector('.ws-nav button[aria-label="新任务"]')
+  // 该按钮在右侧生成面板的**面板头**里（不是顶栏），图标化后只有 aria-label
+  const b = document.querySelector('button[aria-label="新任务"]')
+  if (!b) throw new Error('「新任务」按钮未找到')
   b.click(); return true
 })()`)
 await wait(2)
@@ -163,8 +202,9 @@ await wait(2)
 await uploadFile('.ws-panel input[type="file"]', '/tmp/motif-accept-ref.png')
 await wait(2)
 
-// 上传按钮图标化后计数进了 aria-label（原先是可见文字「上传参考图（1／6）」），故按前缀匹配
-const refUploaded = await js(String.raw`(() => document.body.innerText.includes('参考图已上传') || [...document.querySelectorAll('.ws-panel button')].some(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图（1')))()`)
+// 上传按钮图标化后计数进了 aria-label（「上传参考图（1／5）」），故按前缀匹配。
+// （旧脚本还 OR 了一个 `参考图已上传` 的文本探针，但那句文案在源码里并不存在 —— 恒为 false 的死判据，已删）
+const refUploaded = await js(String.raw`(() => [...document.querySelectorAll('.ws-panel button')].some(b => (b.getAttribute('aria-label') || '').startsWith('上传参考图（1')))()`)
 cliLog('refUploaded=' + refUploaded)
 
 // 提交 2 张生成
@@ -172,13 +212,18 @@ await js(String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：基于参考图的生成')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  const num = document.querySelector('.ws-panel input[type="number"]')
+  // RAC NumberField 真正入 DOM 的输入框是 type="text"（带 inputMode）—— react-aria 另建了一个
+  // **游离**（未插入 DOM）的 type="number" 元素做原生 min/max 校验，所以页面上 input[type="number"] 恒为空。
+  // 标签实际文案带范围（「张数（1–12 张）」），按 aria-label 前缀取更稳
+  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
   num.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
 await js(String.raw`(() => {
-  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim() === '生成')
+  // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
+  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
+  if (!btn) throw new Error('「生成」按钮未找到')
   btn.click(); return true
 })()`)
 let imgs = 0
@@ -210,7 +255,7 @@ cliLog(`before: credits=${before} imgs=${beforeImgs}`)
 
 // 提交 2 张（真实网关按张计费，压到最小）
 await js(String.raw`(() => {
-  const num = document.querySelector('.ws-panel input[type="number"]')
+  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '2')
   num.dispatchEvent(new Event('input', { bubbles: true }))
   const ta = document.querySelector('.ws-panel textarea')
@@ -219,7 +264,9 @@ await js(String.raw`(() => {
   return true
 })()`)
 await js(String.raw`(() => {
-  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim() === '生成')
+  // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
+  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
+  if (!btn) throw new Error('「生成」按钮未找到')
   btn.click(); return true
 })()`)
 await wait(1)
@@ -248,8 +295,10 @@ const newImgs = afterImgs - beforeImgs
 cliLog(`after: credits=${after} newImgs=${newImgs} conservation=${after}+${newImgs}==${before}`)
 // 守恒：余额 + 新增图片数 == 提交前余额（2 张的费用要么变成图、要么退回）
 if (after + newImgs !== before) throw new Error(`额度不守恒: ${after}+${newImgs} != ${before}`)
-// 若走了取消路径，应有退回 toast
-const refundToast = await js(String.raw`(() => { const t = document.querySelector('.ws-toast'); return t ? t.innerText : null })()`)
+// 若走了取消路径，应有退回 toast（HeroUI toast 的 role 由 react-aria useToast 给出，与 run.sh 同口径）
+// 注意 role="alertdialog" 有两个来源（react-aria 的每个 toast + HeroUI AlertDialog 删除确认框），
+// 故按内容过滤，别取 DOM 首个
+const refundToast = await js(String.raw`(() => { const t = [...document.querySelectorAll('[role="alertdialog"]')].find(x => x.innerText.includes('额度') || x.innerText.includes('退回')); return t ? t.innerText : null })()`)
 cliLog('refundToast=' + refundToast)
 EOF
 echo "[accept] D ✅"
@@ -258,22 +307,31 @@ echo "[accept] D ✅"
 echo "[accept] E: profile + password + error paths"
 ego-browser nodejs <<'EOF'
 const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-accept-env.json', 'utf8'))
+const PASSWORD = E2E.password
+const NEW_PASSWORD = E2E.newPassword
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
 
-// 打开个人资料
+// 打开账号菜单 → 个人资料（资料 / 退出都收进了顶栏的下拉）
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '验收员')
+  const b = document.querySelector('.ws-nav button[aria-label="账号菜单"]')
+  if (!b) throw new Error('账号菜单未找到')
   b.click(); return true
 })()`)
 await wait(1)
-const opened = await js(String.raw`(() => !![...document.querySelectorAll('.ws-modal')].find(m => m.innerText.includes('个人资料')))()`)
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '个人资料')
+  if (!b) throw new Error('「个人资料」菜单项未找到')
+  b.click(); return true
+})()`)
+await wait(1)
+const opened = await js(String.raw`(() => !!document.querySelector('[role="dialog"][aria-label="个人资料"]'))()`)
 if (!opened) throw new Error('个人资料弹窗未打开')
 
 // 改昵称
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('个人资料'))
-  const input = m.querySelector('#pf-name')
+  const m = document.querySelector('[role="dialog"][aria-label="个人资料"]')
+  const input = m.querySelector('[data-testid="profile-name"]')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '首席验收官')
   input.dispatchEvent(new Event('input', { bubbles: true }))
   ;[...m.querySelectorAll('button')].find(b => b.innerText.trim() === '保存昵称').click()
@@ -286,40 +344,44 @@ if (!renamed) throw new Error('昵称修改未生效')
 
 // 重新打开资料弹窗，错误旧密码 → 报错提示
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '首席验收官')
+  document.querySelector('.ws-nav button[aria-label="账号菜单"]').click(); return true
+})()`)
+await wait(1)
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '个人资料')
   b.click(); return true
 })()`)
 await wait(1)
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('个人资料'))
+  const m = document.querySelector('[role="dialog"][aria-label="个人资料"]')
   const setVal = (sel, v) => {
     const el = m.querySelector(sel)
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  setVal('#pf-oldpw', 'wrong-old-pw')
-  setVal('#pf-newpw', 'accept-99-new')
+  setVal('[data-testid="profile-old-password"]', 'wrong-old-pw')
+  setVal('[data-testid="profile-new-password"]', '${NEW_PASSWORD}')
   ;[...m.querySelectorAll('button')].find(b => b.innerText.trim() === '修改密码').click()
   return true
 })()`)
 await wait(2)
 const errShown = await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('个人资料'))
-  return !!m.querySelector('.lp-alert-error')
+  const m = document.querySelector('[role="dialog"][aria-label="个人资料"]')
+  return !!m.querySelector('[data-testid="profile-error"]')
 })()`)
 cliLog('wrong-old-password error shown=' + errShown)
 if (!errShown) throw new Error('错误旧密码未提示')
 
 // 正确旧密码 → 修改成功（弹窗自动关闭 + toast）
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('个人资料'))
+  const m = document.querySelector('[role="dialog"][aria-label="个人资料"]')
   const setVal = (sel, v) => {
     const el = m.querySelector(sel)
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  setVal('#pf-oldpw', 'accept-66')
-  setVal('#pf-newpw', 'accept-99-new')
+  setVal('[data-testid="profile-old-password"]', '${PASSWORD}')
+  setVal('[data-testid="profile-new-password"]', '${NEW_PASSWORD}')
   ;[...m.querySelectorAll('button')].find(b => b.innerText.trim() === '修改密码').click()
   return true
 })()`)
@@ -330,24 +392,37 @@ if (!pwOk) throw new Error('修改密码未成功')
 
 // 登出 → 旧密码登录应失败 → 新密码登录成功
 await js(String.raw`(() => {
-  const b = [...document.querySelectorAll('.ws-nav button')].find(x => x.innerText.trim() === '退出')
+  document.querySelector('.ws-nav button[aria-label="账号菜单"]').click(); return true
+})()`)
+await wait(1)
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '退出')
+  if (!b) throw new Error('「退出」菜单项未找到')
   b.click(); return true
 })()`)
 await wait(3)
+// 登出后落地页**不会**自动弹登录框：点导航「立即生成」打开（与 run.sh Round 5 同口径）
+await js(String.raw`(() => {
+  const b = [...document.querySelectorAll('button')].find(x => x.innerText.trim() === '立即生成')
+  if (!b) throw new Error('「立即生成」入口未找到')
+  b.click(); return true
+})()`)
+await wait(1)
 await js(String.raw`(() => {
   const email = '${E2E.email}'
   const setVal = (el, v) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('#auth form input')]
+  // 登录表单字段顺序：邮箱 / 密码
+  const inputs = [...document.querySelectorAll('#auth-form input')]
   setVal(inputs[0], email)
-  setVal(inputs[1], 'accept-66')
+  setVal(inputs[1], '${PASSWORD}')
   return true
 })()`)
-await js(String.raw`(() => { [...document.querySelectorAll('#auth form button[type="submit"]')][0].click(); return true })()`)
+await js(String.raw`(() => { document.querySelector('button[form="auth-form"]').click(); return true })()`)
 await wait(3)
-const oldRejected = await js(String.raw`(() => !!document.querySelector('.lp-alert-error'))()`)
+const oldRejected = await js(String.raw`(() => !!document.querySelector('[data-testid="auth-error"]'))()`)
 cliLog('old password rejected=' + oldRejected)
 if (!oldRejected) throw new Error('旧密码未被拒绝')
 
@@ -357,12 +432,12 @@ await js(String.raw`(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('#auth form input')]
+  const inputs = [...document.querySelectorAll('#auth-form input')]
   setVal(inputs[0], email)
-  setVal(inputs[1], 'accept-99-new')
+  setVal(inputs[1], '${NEW_PASSWORD}')
   return true
 })()`)
-await js(String.raw`(() => { [...document.querySelectorAll('#auth form button[type="submit"]')][0].click(); return true })()`)
+await js(String.raw`(() => { document.querySelector('button[form="auth-form"]').click(); return true })()`)
 await wait(4)
 const relogin = await js(String.raw`(() => !!document.querySelector('.ws-shell'))()`)
 cliLog('new password login=' + relogin)
@@ -409,7 +484,8 @@ await dragMouse([[center.cx + 160, center.cy + 90], [center.cx + 160, center.cy 
 await click([center.cx + 160, center.cy + 90], { label: 'select image' })
 await wait(1)
 const sel = await js(String.raw`(() => ({
-  pill: (document.querySelector('.canvas-pill') || {}).innerText?.replace(/\n/g, ' ') || null,
+  // 画布状态读数（原「画布左上角 pill」，现并入底部工具栏的 .canvas-status）
+  pill: (document.querySelector('.canvas-status') || {}).innerText?.replace(/\n/g, ' ') || null,
   toolbar: !!document.querySelector('.canvas-toolbar'),
   // 浮动工具栏的按钮只有 aria-label、从来没有 title（改用 title 会让这里恒为空数组 → 下面必 throw）
   toolArias: [...document.querySelectorAll('.canvas-toolbar [aria-label]')].map(b => b.getAttribute('aria-label'))
@@ -432,15 +508,15 @@ const refState = await js(String.raw`(() => ({
 cliLog('reference: ' + JSON.stringify(refState))
 if (!refState.promptHasSerial) throw new Error('@ 引用未把编号写入提示词')
 
-// 双击图片 → 灯箱；Esc 关闭
+// 双击图片 → 灯箱；Esc 关闭（灯箱已改用 HeroUI Modal 容器承载，锚点是 dialog 的 aria-label）
 await doubleClick([center.cx + 160, center.cy + 90], { label: 'open lightbox' })
 await wait(1)
-const lightbox = await js(String.raw`(() => !!document.querySelector('.canvas-lightbox'))()`)
+const lightbox = await js(String.raw`(() => !!document.querySelector('[role="dialog"][aria-label="图片预览"]'))()`)
 cliLog('lightbox open=' + lightbox)
 if (!lightbox) throw new Error('双击灯箱未打开')
 await pressKey('Escape')
 await wait(1)
-const lightboxClosed = await js(String.raw`(() => !document.querySelector('.canvas-lightbox'))()`)
+const lightboxClosed = await js(String.raw`(() => !document.querySelector('[role="dialog"][aria-label="图片预览"]'))()`)
 if (!lightboxClosed) throw new Error('Esc 未关闭灯箱')
 
 // 整理布局 → 位置吸附回网格
@@ -473,9 +549,9 @@ await js(String.raw`(() => {
   b.click(); return true
 })()`)
 await wait(1)
-// 确认对话框：校验文案要点后点击「删除」
+// 确认对话框（HeroUI AlertDialog → role="alertdialog"）：校验文案要点后点击「删除」
 const confirmModal = await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('删除图片'))
+  const m = [...document.querySelectorAll('[role="alertdialog"]')].find(x => x.innerText.includes('删除图片'))
   if (!m) return { open: false }
   return { open: true, hasCancel: [...m.querySelectorAll('button')].some(b => b.innerText.trim() === '取消'), serialNote: m.innerText.includes('编号') }
 })()`)
@@ -483,7 +559,7 @@ cliLog('confirm modal: ' + JSON.stringify(confirmModal))
 if (!confirmModal.open) throw new Error('删除确认框未出现')
 if (!confirmModal.serialNote) throw new Error('确认框缺少编号不变说明')
 await js(String.raw`(() => {
-  const m = [...document.querySelectorAll('.ws-modal')].find(x => x.innerText.includes('删除图片'))
+  const m = [...document.querySelectorAll('[role="alertdialog"]')].find(x => x.innerText.includes('删除图片'))
   ;[...m.querySelectorAll('button')].find(b => b.innerText.trim() === '删除').click()
   return true
 })()`)
@@ -502,7 +578,8 @@ await ensureRealTab()
 
 // 新建任务：骨架判据是「本轮 N − 已出图数」，存量图会干扰计数，故从零画布开始
 await js(String.raw`(() => {
-  const b = document.querySelector('.ws-nav button[aria-label="新任务"]')
+  const b = document.querySelector('button[aria-label="新任务"]')
+  if (!b) throw new Error('「新任务」按钮未找到')
   b.click(); return true
 })()`)
 await wait(2)
@@ -512,13 +589,15 @@ await js(String.raw`(() => {
   const ta = document.querySelector('.ws-panel textarea')
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, '验收：#88 骨架槽位')
   ta.dispatchEvent(new Event('input', { bubbles: true }))
-  const num = document.querySelector('.ws-panel input[type="number"]')
+  const num = document.querySelector('.ws-panel input[aria-label^="张数"]')
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(num, '4')
   num.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`)
 await js(String.raw`(() => {
-  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim() === '生成')
+  // 文案带张数（「生成（N 张）」），故用前缀匹配；找不到要显式报错，否则 .click() 抛的 TypeError 看不出原因
+  const btn = [...document.querySelectorAll('.ws-panel button')].find(b => b.innerText.trim().startsWith('生成'))
+  if (!btn) throw new Error('「生成」按钮未找到')
   btn.click(); return true
 })()`)
 
