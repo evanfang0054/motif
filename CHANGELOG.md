@@ -4,10 +4,11 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本 2.0.0](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.6.0] - 2026-09-24
 
-0.5.0 以来的第 6 轮迭代：31 个 PR（#51–#112）。主线是**部署形态可配与运维收口**（#59 起）、
-**第 3 轮 issue 驱动修批**（#94–#103）与**上线前的验收加固**（#104–#112）。
+v0.5.0 以来的第六轮迭代：33 个 PR、132 个提交、152 个文件变更（+13590 / −1362）。
+主线是**部署形态可配与运维收口**（#59 起）、**第 3 轮 issue 驱动修批**（#94–#103）
+与**上线前的验收加固**（#104–#114）。
 
 ### Added
 
@@ -27,6 +28,8 @@
 - 输入框边框全站统一（#112）：HeroUI 字段默认 0 宽边框，改由全局令牌桥接段给 1px
 - 英文错误原文不再进 UI（#105 / #108）：服务端原因串统一收口为中文文案
 - 改密提醒改为「本次会话抑制」（#96）；主题跟随常驻化（#101）
+- 提示词卡片不再显示上游地址与来源名，署名集中到 `NOTICE` 并如实列明各源许可证（#54）
+- 管理后台概览金额随币种配置渲染，配置类错误改为可行动提示（#56）
 
 ### Fixed
 
@@ -38,24 +41,27 @@
 - 生成表单校验收口与会话失效提示（#99）、失败消息的重试入口（#101）
 - 管理后台：`usr_` ID 显示为「昵称（邮箱）」、列宽生效化、会话过期引导（#102）、
   筛选下拉静默失效（#60）、系统设置枚举下拉保存失败与危险区勾选框错乱（#51）
+- 状态文字改走表面文字角色令牌，修徽标与提示的对比度与遮罩（#56）
+- 补回 Typography 迁移丢掉的居中（10 处）（#71）
 - 删任务 / 删暂存参考图时同步清对象存储（#66）
 - 亮色 `--danger-quiet` 与主按钮珊瑚对比度达 AA（#64 / #76）
 
 ### 部署
 
-- Docker 一键部署补齐：运行时镜像补上 `next.config.ts` 与容器内真能跑的两个运维脚本
+- Docker 一键部署补齐（#113）：运行时镜像补上 `next.config.ts` 与容器内真能跑的两个运维脚本
   `admin.mjs` / `cdk.mjs`（`node /app/scripts/admin.mjs --reset` 即可找回管理员密码）；compose 改为 `.env` 驱动
   （`cp .env.docker.example .env`）；构建上下文排掉与构建无关的重目录
-- **修 compose 的环境变量转发**：此前除 `IMAGE_*` 外的配置项只在 `environment` 里**注释着**列出，
+- **修 compose 的环境变量转发**（#114）：此前除 `IMAGE_*` 外的配置项只在 `environment` 里**注释着**列出，
   等于没转发 —— 那些键（`SITE_URL` / `S3_*` / `SMTP_*` / `MOTIF_EXPOSE_DEV_CODE` …）写进 `.env`
   也到不了容器。改用 `env_file` 注入：写了才注入、没写的不注入；同时把数据位置
-  （`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`）与运行时参数（`NODE_ENV` / `PORT` / `HOSTNAME`）
-  钉死在 `environment` 里防止被 `.env` 误覆盖，并在模板里写明「值里的字面 `$` 要写 `$$`」
+  （`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`）与生产标记（`NODE_ENV`）钉死在 `environment` 里防止被
+  `.env` 误覆盖，并在模板里写明「值里的字面 `$` 要写 `$$`」
 
 ### 验收
 
-- 单元测试 **860 → 1221**（core 90 · db 141 · provider 8 · web 982）
+- 单元测试 **763 → 1221**（core 90 · db 141 · provider 8 · web 982）
 - e2e：主流程 5 轮 + 补充验收扩到 **A–G**；两个脚本真跑一轮后修掉四处只在运行时才暴露的问题（#110）
+- Docker 部署形态真跑一轮（构建 → 起容器 → 注册 → 真实网关出图 → 重建容器后数据完好）
 
 ## [0.5.0] - 2026-09-22
 
@@ -255,7 +261,9 @@ v0.2.0 以来的第三轮迭代：6 个 PR、55 个提交、104 个文件变更�
 - Docker 一键部署（多阶段构建 + 数据卷持久化 + 健康检查）
 - 质量保障：54 个单元测试、ego-browser 端到端（5 轮）与验收套件（A–F）
 
-[Unreleased]: https://github.com/evanfang0054/motif/compare/v0.3.0...HEAD
+[0.6.0]: https://github.com/evanfang0054/motif/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/evanfang0054/motif/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/evanfang0054/motif/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/evanfang0054/motif/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/evanfang0054/motif/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/evanfang0054/motif/releases/tag/v0.1.0

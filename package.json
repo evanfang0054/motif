@@ -1,7 +1,7 @@
 {
   "name": "motif",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Motif — AI 商业图片批量生成工作台（monorepo）",
   "scripts": {
     "dev": "pnpm --filter @motif/web dev",
