@@ -1,4 +1,5 @@
 import { ApiError } from './client'
+import { errorMessage } from './error-message'
 
 /**
  * 管理端错误文案统一入口。
@@ -8,9 +9,13 @@ import { ApiError } from './client'
  *  - 会话失效时接口回 401/403，响应体可能是框架默认的英文（`Forbidden`），原样透出等于没说；
  *  - 「登录已过期」是可行动的（去重新登录），「请求失败（401）」不是。
  *
- * 判据：`ApiError` 的文案来自服务端 `ServiceError`，本就是中文；**只有中文文案才放行**，
- * 其余（英文原文 / 空串）一律换成中文兜底。这样既保留服务端的具体原因（如「管理员不可
- * 调整超级管理员的额度。」），又不会把框架英文透给用户。
+ * 与通用 `errorMessage` 的分工（后者只做「message 含中文才透传」）：
+ *  - 本函数额外按**状态码分级**：401 无中文原因时给「登录已过期」、403 给权限指引，
+ *    其它状态码给「请求失败（N）」—— 这些是管理端特有的可行动文案，通用入口给不出；
+ *  - 管理页**只调 `api.*`**，非 `ApiError` 的抛出必然是传输层故障（离线 / DNS / CORS），
+ *    故一律归为「网络异常」；通用入口不能这么判 —— 非管理端的调用方还会解析本地 zip、
+ *    做裸 `fetch`，它们故意抛的中文 `Error` 是要给用户看的（详见 `error-message.ts`）。
+ *    故这里**不**把非 `ApiError` 的 Error 交给 `errorMessage`，而是自己给「网络异常」。
  *
  * 401 的处理与其它状态码一致（先看有没有中文），只在**没有中文时**才用「登录已过期」兜底：
  * 「未登录」与「登录已过期」不是一回事，无条件改写会把服务端更准确的原因（如「请先登录。」）
@@ -18,16 +23,16 @@ import { ApiError } from './client'
  */
 export function describeAdminError(e: unknown): string {
   if (e instanceof ApiError) {
-    if (hasChinese(e.message)) return e.message
-    if (e.status === 401) return '登录已过期，请重新登录。'
-    if (e.status === 403) return '当前账号没有权限访问该功能，请用更高权限的账号登录。'
-    return `请求失败（${e.status}），请稍后重试。`
+    // `errorMessage` 在 message 含中文时透传服务端的具体原因，否则回落下面按状态码给的中文兜底
+    return errorMessage(e, adminFallbackForStatus(e.status))
   }
   if (e instanceof Error) return '网络异常，请检查网络后重试。'
   return '操作失败，请稍后重试。'
 }
 
-/** 文案里是否含中日韩统一表意文字 —— 用来区分「服务端业务中文文案」与「框架英文原文」 */
-function hasChinese(s: string): boolean {
-  return /[\u4e00-\u9fff]/.test(s)
+/** 没有中文原因时，按状态码给的可行动中文兜底 */
+function adminFallbackForStatus(status: number): string {
+  if (status === 401) return '登录已过期，请重新登录。'
+  if (status === 403) return '当前账号没有权限访问该功能，请用更高权限的账号登录。'
+  return `请求失败（${status}），请稍后重试。`
 }

@@ -693,13 +693,17 @@ function Workspace({ initialUser }: { initialUser: User }) {
         showToast({ tone: 'info', message: `参考图最多 ${MAX_REFERENCE_IMAGES} 张，请先移除一张再上传` })
         return
       }
-      // 自动建任务：用户不必理解「任务」概念，上传动作本身就该可用
-      const tid = await ensureTopic()
-      if (!tid) {
-        showToast({ tone: 'info', message: '请先新建一个任务' })
-        return
-      }
       try {
+        // 自动建任务：用户不必理解「任务」概念，上传动作本身就该可用。
+        // ⚠️ `ensureTopic` 必须留在 try **内**：它自己会 `fetch('/api/topics')`，离线时直接 reject 出
+        // `TypeError: Failed to fetch`。此前它在 try 外，而唯一调用方写的是 `void uploadReference(f)`
+        // （丢弃 Promise）—— 离线点「上传」既没有 toast、也没有任何落点，用户只会以为按钮坏了。
+        // 纳入 try 后由下面 catch 统一兜成「上传失败」；成功路径与 `!tid` 的 info 提示都不变。
+        const tid = await ensureTopic()
+        if (!tid) {
+          showToast({ tone: 'info', message: '请先新建一个任务' })
+          return
+        }
         const { reference } = await api.uploadReference(tid, file)
         // 只暂存（不进画布）：画布保持空态，模板画廊仍可选；生成时才转正
         const previewUrl = URL.createObjectURL(file)

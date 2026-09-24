@@ -549,8 +549,15 @@ describe('CDK 批量发放、列表与作废', () => {
 
   it('列表可按状态筛选与搜索', () => {
     const s = new MotifStore(join(dir, 'cdk4.db'))
-    s.createCdkBatch({ count: 3, credits: 10, prefix: 'AAA' })
-    s.createCdkBatch({ count: 2, credits: 10, prefix: 'BBB' })
+    // ⚠️ 必须注入确定性码：`q` 的实现是 `code LIKE '%AAA%'`，而随机码体取自**含 `A` 的字母表** ——
+    // 一个 `BBB-` 码的 12 位随机体恰好含 `AAA` 时，本用例会数到 4（概率约 1/1600，曾在 CI 上红过）。
+    // 固定码用 `0` 填充（`0` 不在 CDK 字母表里），故任何随机码都不可能与之撞上，断言变成确定的。
+    const seq = (prefix: string) => {
+      let n = 0
+      return () => `${prefix}-${String(++n).padStart(12, '0')}`
+    }
+    s.createCdkBatch({ count: 3, credits: 10, prefix: 'AAA', codeFactory: seq('AAA') })
+    s.createCdkBatch({ count: 2, credits: 10, prefix: 'BBB', codeFactory: seq('BBB') })
     const u = s.createUser({ email: 'c@b.co', passwordHash: 'h', name: 'c' })
     const all = s.listCdks({})
     expect(all).toHaveLength(5)

@@ -107,6 +107,14 @@ describe('describeAdminError：错误文案不透传英文原文', () => {
     expect(describeAdminError(new TypeError('Failed to fetch'))).not.toContain('Failed to fetch')
   })
 
+  it('非 ApiError 的普通 Error（即便带中文）也归为「网络异常」—— 与通用 errorMessage 的刻意分工', () => {
+    // 管理页只调 api.*：不是 ApiError 的抛出就是传输层故障；而通用 errorMessage 必须透传中文
+    //（画布归档解析等纯函数故意抛中文 Error），两者判据不同，此处钉住管理端这一侧。
+    expect(describeAdminError(new Error('读取失败：不是合法的 zip（找不到中央目录结尾记录）。'))).toBe(
+      '网络异常，请检查网络后重试。'
+    )
+  })
+
   it('非 Error 的未知抛出也给中文兜底', () => {
     expect(describeAdminError('boom')).toBe('操作失败，请稍后重试。')
     expect(describeAdminError(undefined)).toBe('操作失败，请稍后重试。')

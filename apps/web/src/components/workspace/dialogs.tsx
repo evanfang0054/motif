@@ -7,6 +7,7 @@ import { ArrowRight, Copy, FileCheck } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { PASSWORD_RULE_TEXT, type CreditPackage, type User } from '@motif/core'
 import { api } from '@/lib/client'
+import { errorMessage } from '@/lib/error-message'
 import { formatMoney } from '@/lib/format'
 import { usePublicConfig } from '@/lib/use-public-config'
 
@@ -107,7 +108,7 @@ function BillingDialog({
       const res = await api.mockPay(orderId)
       onPaid(res.user, res.paid)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '支付失败')
+      setError(errorMessage(e, '支付失败'))
       setBusyId(null)
     }
   }
@@ -170,7 +171,7 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
       const { user } = await api.redeem(code)
       onRedeemed(user)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '兑换失败')
+      setError(errorMessage(err, '兑换失败'))
     } finally {
       setBusy(false)
     }
@@ -252,7 +253,7 @@ function FeedbackDialog({ onClose, onSent }: { onClose: () => void; onSent: () =
       await api.feedback(content)
       onSent()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '提交失败')
+      setError(errorMessage(err, '提交失败'))
     } finally {
       setBusy(false)
     }
@@ -312,7 +313,7 @@ function ProfileDialog({
       if (!res.ok || !data.user) throw new Error(data.error || '保存失败')
       onSaved(data.user)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败')
+      setError(errorMessage(err, '保存失败'))
     } finally {
       setBusy(false)
     }
@@ -332,7 +333,7 @@ function ProfileDialog({
       if (!res.ok) throw new Error(data.error || '修改失败')
       onPasswordChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '修改失败')
+      setError(errorMessage(err, '修改失败'))
     } finally {
       setBusy(false)
     }
