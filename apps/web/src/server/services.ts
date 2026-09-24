@@ -442,21 +442,57 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     }
 
     const final = store.getMessage(messageId)
-    const done = store.countGeneratedInMessage(messageId)
     if (final && (final.status === 'canceling' || final.status === 'canceled')) {
-      finishCancel(store, msg, done)
+      // ⚠️ 必须带执行者身份（`workerId`）：单次 `executeMessage` 跨过 `LEASE_MS` 时，本进程的租约可能
+      // 已被回收、消息被**另一进程**重新认领（`worker_id` 换人），而 `markMessageCanceling` 只翻状态、
+      // 保留 `worker_id` —— 于是 canceling 上留的是**对方**的 id。本进程的循环若未抛错、正常跑完并读到
+      // canceling 就无条件收尾，会按「本进程看到的已出图数」退额，而对方仍在出图（收尾后还会再插 1 张）
+      // → 这 1 张被多退，且「收尾权归执行者」这条不变式被破坏。带身份后身份不匹配 → CAS 落空 → no-op，
+      // 收尾权留给真正的执行者（与下面 catch 里的取消收尾同构）。
+      finishCancel(store, msg, { workerId: deps.workerId })
     } else {
-      store.setMessageStatus(messageId, 'completed')
-      store.syncTopicStatus(msg.topicId, null, null, 'completed')
+      // 成功收尾也走 store 的原子 CAS（`finalizeSuccess`）：守卫「状态 running + 执行者身份匹配」，
+      // 命中才落 completed + 清租约 + 把任务同步回 idle。
+      // ⚠️ 本批之前这里是**无条件**写入 + 清 worker_id/lease：它会覆盖并发的 `canceling/failed`，
+      // 并让另一位执行者的 CAS 静默 no-op —— 是计费路径上最后一个非 CAS 写入点。
+      store.finalizeSuccess(messageId, { workerId: deps.workerId })
     }
   } catch (e) {
-    const done = store.countGeneratedInMessage(messageId)
-    const refund = msg.requestedCount - done
-    if (refund > 0) store.addCredits(msg.userId, refund, { source: 'generation_refund', refId: messageId, note: '生成失败退额' })
     const raw = e instanceof Error ? e.message : String(e)
+    // ⚠️ 先看当前状态再决定走哪条收尾路径。
+    //
+    // 「取消中 + provider 抛错」是生产可达的交错：worker 认领后正在 provider.generate，用户取消
+    // → 取消接口把消息置 `canceling`（**保留租约**）；此刻本次生成抛错（超时/网关 5xx，很常见）。
+    // 若这里直接走 `finalizeFailure`，它的 CAS 要求 `status='running'` → changes===0 → 不退额、
+    // 状态不动，消息停在 canceling、任务停在「正在停止生成」（canceling 属 ACTIVE，读取自愈刻意
+    // 不落定）→ 重新提交一直 409，直到租约过期（LEASE_MS=30min）才由回收路径兜底 —— 正是 #93
+    // 要消灭的症状。本进程**就是执行者**（取消接口只把 running 翻成 canceling），故直接走取消收尾
+    // （`finishCancel` → `finalizeCancel`，不要求租约过期）。
+    //
+    // 身份守卫 `workerId === deps.workerId`：`canceling` 的唯一生产写入口 `markMessageCanceling`
+    // 只改状态、**保留 worker_id**，故该值恒等于持有租约的执行者。若它不等于本进程，说明租约已被
+    // 回收并可能被**另一进程**重新认领（单次 generate 跨过 30 分钟租约的极端情形）—— 此时收尾权
+    // 归那位执行者，本进程不得代它退额（否则会按「本进程看到已出图数」多退，因为对方可能还在出图）。
+    // 落到下面的 `finalizeFailure` 即可：身份不匹配 → CAS 落空 → 退化为 no-op。
+    const current = store.getMessage(messageId)
+    if (current && current.status === 'canceling' && current.workerId === deps.workerId) {
+      // 「用户取消」不是「生成失败」：这条路径按 info 记「取消收尾」，避免排障时把正常取消误读成故障
+      // （原始错误仍带在日志里，便于定位是哪次 generate 抛的错）。
+      console.info('[motif] 取消收尾（生成期间被用户取消）:', raw)
+      // 身份守卫同时**下沉进** `finalizeCancel`（`opts.workerId`）：即便这里的「状态 + 身份」预检将来被
+      // 改动绕过，store 层的 CAS 仍会挡住「身份已换人却代它退额」。
+      finishCancel(store, msg, { workerId: deps.workerId })
+      return
+    }
     console.error('[motif] 生成失败:', raw)
-    store.setMessageStatus(messageId, 'failed', friendlyGenerateError(raw, refund))
-    store.syncTopicStatus(msg.topicId, null, null, 'failed')
+    // 否则走失败收尾：退额 + 落 failed + 任务回 idle 全部下沉到 store 的原子 CAS（`finalizeFailure`）：
+    // 只有把状态从 running（且执行者身份匹配）翻走的那一方退额。这堵掉「单次 provider.generate 跨过
+    // 30 分钟租约、被回收重排（甚至被另一进程重新认领）后，本进程迟到的 catch 又退一次」的双退窗口 ——
+    // 与 `finalizeCancel` 同构：谁先翻走状态谁收尾，另一方退化为 no-op。
+    store.finalizeFailure(messageId, {
+      workerId: deps.workerId,
+      buildError: (refund) => friendlyGenerateError(raw, refund),
+    })
   }
 }
 
@@ -470,11 +506,25 @@ export function friendlyGenerateError(raw: string, refund: number): string {
   return `生成失败：${raw.slice(0, 60)}${refunded}`
 }
 
-export function finishCancel(store: MotifStore, msg: { id: string; topicId: string; requestedCount: number }, done: number): void {
-  const refund = msg.requestedCount - done
-  if (refund > 0) store.addCredits(store.getMessage(msg.id)!.userId, refund, { source: 'generation_refund', refId: msg.id, note: '取消退额' })
-  store.setMessageStatus(msg.id, 'canceled')
-  store.syncTopicStatus(msg.topicId, null, null, 'canceled')
+/**
+ * 取消收尾：按「请求张数 − 已落库张数」退还剩余额度，消息落 `canceled`、任务回 idle。
+ *
+ * ⚠️ 只是 `store.finalizeCancel` 的**薄封装** —— 退额的唯一实现下沉在 store 里，因为租约回收
+ * （`requeueExpiredLeases` 同时捞过期的 canceling，#93）也在那一层：两边必须共用同一份收尾逻辑
+ * 与同一个「谁先把状态从 canceling 翻走谁退额」的原子 CAS，否则两份实现必然漂移、且可能双退。
+ * 这里刻意不再自己算 `requestedCount - done`：让 store 在 CAS 命中的同一个事务里现算，
+ * 避免调用方传入一个已过期的 `done` 造成退额数漂移。
+ *
+ * @param opts.workerId 执行者身份（worker 的两条收尾路径都传）：并进 `finalizeCancel` 的 CAS，
+ *   身份不匹配则整体 no-op。**不传 = 不做身份校验** —— 只有租约回收路径（`requeueExpiredLeases`）
+ *   会不传，因为它本来就是替「已消失的执行者」收尾。
+ */
+export function finishCancel(
+  store: MotifStore,
+  msg: { id: string },
+  opts: { workerId?: string } = {}
+): void {
+  store.finalizeCancel(msg.id, { workerId: opts.workerId })
 }
 
 // ---------- 参考图上传（暂存制：不入画布，开始生成时转正） ----------

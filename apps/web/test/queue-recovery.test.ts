@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { enqueueGeneration, executeMessage, type WorkerDeps } from '@/server/services'
+import { enqueueGeneration, executeMessage, finishCancel, type WorkerDeps } from '@/server/services'
 import { startWorker, stopWorker } from '@/server/worker'
 import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { MotifStore } from '@motif/db'
@@ -52,6 +52,41 @@ function seedGenerated(messageId: string, userId: string, topicId: string, n: nu
   }
 }
 
+/**
+ * 认领消息 —— **与生产同序**：`runWorkerTick` 先 `leaseNextMessage(state.workerId)` 再 `executeMessage`。
+ *
+ * ⚠️ 成功收尾（`finalizeSuccess`）与失败收尾（`finalizeFailure`）都带「状态 running + 执行者身份
+ * 匹配」的 CAS 守卫；夹具若跳过认领（消息停在 queued、worker_id 为 NULL），CAS 必然落空、状态不会
+ * 变成 completed —— 这不是断言太严，而是夹具与生产形态不一致。修法是给夹具补上认领步骤。
+ */
+function claim(messageId: string): void {
+  const leased = store.leaseNextMessage('worker-test', 60_000)
+  if (!leased) throw new Error('夹具错误：队列里没有可认领的消息')
+  // 加固：每个用例的库里只有一条 queued，故「租到的」必须就是目标消息。不校验的话，夹具可能悄悄
+  // 认领了别的消息、而断言仍在错误的形态下通过（认领错对象 = 消息没进 running，收尾 CAS 必然落空）。
+  if (leased.id !== messageId) throw new Error(`夹具错误：认领到 ${leased.id}，期望 ${messageId}`)
+}
+
+/** 把消息租约改成已过期（模拟执行者消失，供回收路径兜底） */
+function expireLease(messageId: string): void {
+  store.db
+    .prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?')
+    .run('2000-01-01T00:00:00.000Z', messageId)
+}
+
+/**
+ * 造「已认领 + 已取消」的生产形态：先 `claim`（running + worker_id=worker-test），再由取消接口那条
+ * 写入路径 `markMessageCanceling` 翻成 canceling —— 它**只改状态、保留 worker_id**。
+ *
+ * ⚠️ 不要用 `setMessageStatus(id, 'canceling')` 造这个夹具：它会顺手把 worker_id 清成 NULL，
+ * 而收尾的 CAS 现在带「执行者身份」守卫（`finalizeCancel` 的 `opts.workerId`）—— 身份为 NULL 时
+ * 收尾会整体 no-op，夹具就与生产形态不一致了。
+ */
+function claimThenCancel(messageId: string): void {
+  claim(messageId)
+  store.markMessageCanceling(messageId)
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-resume-'))
   store = new MotifStore(join(dir, 't.db'))
@@ -66,6 +101,7 @@ describe('断点续跑（崩溃恢复）', () => {
   it('已生成 1/2 张：重跑只补 1 张、状态 completed、全程无退额', async () => {
     const { user, messageId, topicId } = await enqueue(2) // 8 - 2 = 6
     seedGenerated(messageId, user.id, topicId, 1)
+    claim(messageId)
     const calls: number[] = []
     await executeMessage(makeDeps(countingProvider(calls)), messageId)
     expect(calls).toEqual([1]) // indexInBatch 从已生成数 1 起续跑
@@ -77,6 +113,7 @@ describe('断点续跑（崩溃恢复）', () => {
   it('已生成 2/2 张（生成完但未及落状态即崩溃）：重跑 0 次生图直接 completed', async () => {
     const { user, messageId, topicId } = await enqueue(2)
     seedGenerated(messageId, user.id, topicId, 2)
+    claim(messageId)
     const calls: number[] = []
     await executeMessage(makeDeps(countingProvider(calls)), messageId)
     expect(calls).toEqual([])
@@ -87,7 +124,7 @@ describe('断点续跑（崩溃恢复）', () => {
   it('续跑时已是 canceling：不再生图，按已生成数退额（2-1=1 张）', async () => {
     const { user, messageId, topicId } = await enqueue(2) // 6
     seedGenerated(messageId, user.id, topicId, 1)
-    store.setMessageStatus(messageId, 'canceling')
+    claimThenCancel(messageId) // 生产同序：先认领，再取消（保留 worker_id，收尾的身份守卫据此判定执行者）
     const calls: number[] = []
     await executeMessage(makeDeps(countingProvider(calls)), messageId)
     expect(calls).toEqual([])
@@ -97,6 +134,7 @@ describe('断点续跑（崩溃恢复）', () => {
 
   it('全新消息（0 已生成）：行为不变，全量生成', async () => {
     const { user, messageId } = await enqueue(2)
+    claim(messageId)
     const calls: number[] = []
     await executeMessage(makeDeps(countingProvider(calls)), messageId)
     expect(calls).toEqual([0, 1])
@@ -108,6 +146,9 @@ describe('断点续跑（崩溃恢复）', () => {
   it('续跑中失败：provider 抛错 → 按已生成数退额（2-1=1）且不落新图', async () => {
     const { user, messageId, topicId } = await enqueue(2) // 6
     seedGenerated(messageId, user.id, topicId, 1)
+    // 认领（running + worker_id=worker-test）：失败收尾的 CAS 守卫要求「状态 running + 执行者身份
+    // 匹配」，这正是生产里 executeMessage 被调用时的形态（worker 先 leaseNextMessage 再执行）。
+    store.leaseNextMessage('worker-test', 60_000)
     const calls: number[] = []
     const failing: ImageProvider = {
       name: 'failing-stub',
@@ -137,6 +178,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
   it('worker 出图落回计划槽坐标（左上角与骨架完全一致）', async () => {
     const { messageId, topicId } = await enqueue(3)
     const plan = store.getMessage(messageId)!.slotPlan
+    claim(messageId)
     const calls: number[] = []
     await executeMessage(makeDeps(countingProvider(calls)), messageId)
     const placements = store.listCanvasPlacements(topicId)
@@ -153,6 +195,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
       prompt: '横图', count: 2, size: 'auto', enhance: false, topicId: null, referenceCanvasImageIds: [],
     })
     const plan = store.getMessage(res.messageId)!.slotPlan
+    claim(res.messageId)
     const wide: ImageProvider = {
       name: 'wide-stub',
       generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 512 }),
@@ -170,6 +213,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     // 落位前的相交校验必须发现它并退回 allocateSlots（骨架跳位代价远小于压图）。
     const { user, messageId, topicId } = await enqueue(2)
     const plan = store.getMessage(messageId)!.slotPlan
+    claim(messageId)
     const draggedRect = { x: plan[0].x, y: plan[0].y, w: plan[0].w, h: plan[0].h }
     const dragged = store.insertCanvasImage({
       topicId, userId: user.id, messageId: null, origin: 'generated', name: '手拖图', imageKey: 'drag',
@@ -197,7 +241,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     // ⚠️ 本用例只钉「退额」一侧；「骨架摘除数 == 退额数」这条不变式由下一条用例合证。
     const { user, messageId, topicId } = await enqueue(12, 20)
     seedGenerated(messageId, user.id, topicId, 4)
-    store.setMessageStatus(messageId, 'canceling')
+    claimThenCancel(messageId)
     await executeMessage(makeDeps(countingProvider([])), messageId)
     expect(store.getMessage(messageId)!.status).toBe('canceled')
     expect(store.getUserById(user.id)!.credits).toBe(16) // 20 − 12 + 退 8
@@ -212,7 +256,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     const before = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
     expect(before).toHaveLength(8) // 活跃轮次：骨架数 = 未产出张数 = 12 − 4
 
-    store.setMessageStatus(messageId, 'canceling')
+    claimThenCancel(messageId)
     await executeMessage(makeDeps(countingProvider([])), messageId)
 
     const after = pendingSkeletonSlots([store.getMessage(messageId)!], countByMessage)
@@ -226,6 +270,7 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
   it('每落库一张就 touch 一次 topic —— watch 长轮询据此即时刷新，实现「出图就地填入」', async () => {
     // 不 touch 的话整批只会在收尾被看到一次，骨架与「N 张图片」直到最后才更新
     const { messageId, topicId } = await enqueue(3)
+    claim(messageId)
     const spy = vi.spyOn(store, 'touchTopic')
     await executeMessage(makeDeps(countingProvider([])), messageId)
     expect(spy).toHaveBeenCalledTimes(3)
@@ -262,5 +307,176 @@ describe('worker 启动', () => {
       delete process.env.IMAGE_API_BASE_URL
       delete process.env.IMAGE_API_KEY
     }
+  })
+})
+
+describe('过期 canceling 的租约回收（#93：worker 被重启后不再永久卡死）', () => {
+  it('回收退额后，worker 再走 finishCancel 不二次退额（两者共用同一份收尾）', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 已出 1 张 → 应退 2
+    // 认领 → 用户取消 → 租约过期（模拟 worker 在「下一张出图前」的取消检查点之前被重启）
+    store.leaseNextMessage('w1', 60_000)
+    store.db.prepare(`UPDATE messages SET status = 'canceling' WHERE id = ?`).run(messageId)
+    store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', messageId)
+
+    // 恢复路径：租约回收直接取消收尾（退额 + canceled + 任务回 idle）
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getTopic(topicId)!.status).toBe('idle')
+    expect(store.getUserById(user.id)!.credits).toBe(7) // 5 + 退 2
+
+    // 命门：worker 若仍活着走到收尾，绝不能二次退额（与回收共用同一份原子收尾）
+    finishCancel(store, { id: messageId })
+    expect(store.getUserById(user.id)!.credits).toBe(7)
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    // 额度守恒
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+})
+
+describe('失败分支的双退窗口（#93 同类：失败收尾也走原子 CAS）', () => {
+  it('租约被重排回 queued 后，原进程迟到的失败 catch 不再退额、不把任务误打成 failed', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 若误退会是 2
+    // 认领（running + worker_id=worker-test），再让租约过期 → 回收重排回 queued（不退额）
+    store.leaseNextMessage('worker-test', 60_000)
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', messageId)
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(messageId)!.status).toBe('queued')
+
+    // 原进程此刻才抛错（单次 provider.generate 跨过了整个租约）：catch 走 finalizeFailure，
+    // 但状态已不是 running → CAS 落空，不得退额、不得改状态（消息仍可被重新认领）。
+    const failing: ImageProvider = {
+      name: 'late-fail',
+      generate: async () => {
+        throw new Error('迟到失败')
+      },
+    }
+    await executeMessage(makeDeps(failing), messageId)
+
+    expect(store.getMessage(messageId)!.status).toBe('queued')
+    expect(store.getUserById(user.id)!.credits).toBe(5) // 一分未退
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+})
+
+describe('取消中 + provider 抛错（本批回归：曾卡 canceling 至租约过期）', () => {
+  it('生成期间被取消后抛错：立即走取消收尾（退额 + canceled + 任务回 idle），不等 30 分钟租约过期', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 已出 1 张 → 应退 2
+    claim(messageId) // 认领：running + worker_id=worker-test（生产同序）
+
+    // 交错：provider.generate 进行中用户点取消 —— 与 cancel 路由同序（先同步任务态，再置消息
+    // canceling；取消接口只把 running 翻成 canceling、**保留租约**），紧接着这次生成抛错（超时/5xx）。
+    const cancelThenFail: ImageProvider = {
+      name: 'cancel-then-fail',
+      generate: async () => {
+        store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+        store.markMessageCanceling(messageId)
+        throw new Error('生图请求超时')
+      },
+    }
+    await executeMessage(makeDeps(cancelThenFail), messageId)
+
+    // 立即收尾：消息落 canceled（而不是卡在 canceling）、任务回 idle（而不是「正在停止生成」）
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getTopic(topicId)!.status).toBe('idle')
+    expect(store.getTopic(topicId)!.activeMessageId).toBeNull()
+    // 退额 = requestedCount(3) − 已落库(1) = 2
+    expect(store.getUserById(user.id)!.credits).toBe(7)
+    // 额度守恒：账目与余额一致
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+    // 回归点：这一条**不依赖租约过期**（认领租约仍在 60s 之后），故只可能是 catch 走了取消收尾
+    expect(store.getMessage(messageId)!.leaseExpiresAt).toBeNull()
+  })
+
+  it('收尾后 worker 再走一次取消收尾不二次退额（与 catch 路径共用同一份 CAS）', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1)
+    claim(messageId)
+    const cancelThenFail: ImageProvider = {
+      name: 'cancel-then-fail',
+      generate: async () => {
+        store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+        store.markMessageCanceling(messageId)
+        throw new Error('网关 502')
+      },
+    }
+    await executeMessage(makeDeps(cancelThenFail), messageId)
+    expect(store.getUserById(user.id)!.credits).toBe(7)
+
+    // 迟到的收尾（回收或仍活着的 worker 再走一次）不得二次退额
+    finishCancel(store, { id: messageId })
+    expect(store.getUserById(user.id)!.credits).toBe(7)
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+  })
+
+  it('canceling 但 worker_id 已不是本进程：不代它收尾（留给真正的执行者），不误退额', async () => {
+    // 极端交错：本进程的租约被回收、消息被**另一进程**重新认领（worker_id 换人）后才被取消。
+    // 此时收尾权归那位执行者 —— 本进程迟到的 catch 若按自己的「已出图数」退额，会与对方并发出图
+    // 造成多退，故身份守卫必须挡住它。
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1)
+    claim(messageId)
+    const foreignCancel: ImageProvider = {
+      name: 'foreign-cancel',
+      generate: async () => {
+        store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+        store.db.prepare(`UPDATE messages SET status = 'canceling', worker_id = 'other' WHERE id = ?`).run(messageId)
+        throw new Error('网关 503')
+      },
+    }
+    await executeMessage(makeDeps(foreignCancel), messageId)
+
+    // 身份不匹配 → 两条收尾路径都 no-op：状态/额度不动，等真正的执行者收尾
+    expect(store.getMessage(messageId)!.status).toBe('canceling')
+    expect(store.getMessage(messageId)!.workerId).toBe('other')
+    expect(store.getTopic(topicId)!.status).toBe('canceling')
+    expect(store.getUserById(user.id)!.credits).toBe(5)
+
+    // 有界而非永久：本进程被身份守卫挡下后，这条 canceling 仍由**租约回收**兜底 ——
+    // 租约过期（= 执行侧确实没了）时退额 + 落 canceled + 任务回 idle，不会永久卡死、额度不会永久损失。
+    expireLease(messageId)
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getTopic(topicId)!.status).toBe('idle')
+    expect(store.getTopic(topicId)!.activeMessageId).toBeNull()
+    expect(store.getUserById(user.id)!.credits).toBe(7) // 5 + 退 2（requestedCount 3 − 已出 1）
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+})
+
+/**
+ * 循环正常收尾路径的身份守卫（本批重要修复）：`executeMessage` 的 `:446` 原先**没有**身份守卫 ——
+ * 单次 `executeMessage` 跨过 `LEASE_MS` 后租约被回收、消息被另一进程重新认领（`worker_id` 换人），
+ * 本进程的循环却可能**未抛错**正常跑完、读到 `canceling` 就无条件调 `finishCancel` → 按「本进程看到的
+ * 已出图数」多退额（对方仍在出图）。现在身份守卫下沉进 `finalizeCancel`，这条路径不再越权收尾。
+ */
+describe('循环正常收尾路径的身份守卫（:446 的守卫下沉）', () => {
+  it('循环跑完读到 canceling、但 worker_id 已换人：不代它退额（CAS 落空），停在 canceling 等真正执行者', async () => {
+    const { user, messageId, topicId } = await enqueue(3) // 8 − 3 = 5
+    seedGenerated(messageId, user.id, topicId, 1) // 已出 1 张；若误退会是 2
+    claim(messageId)
+    // 交错：本进程的租约被回收、消息被**另一进程**重新认领（worker_id 换人）后才被取消 ——
+    // 与 catch 那条用例不同，这里 provider **不抛错**，走的正是循环正常跑完后的 `:446` 收尾。
+    store.db.prepare(`UPDATE messages SET status = 'canceling', worker_id = 'other' WHERE id = ?`).run(messageId)
+    store.syncTopicStatus(topicId, messageId, 'p', 'canceling')
+
+    const calls: number[] = []
+    await executeMessage(makeDeps(countingProvider(calls)), messageId)
+
+    // 循环开头的取消检查点先 break（未触发生图），随后收尾因身份不匹配整体 no-op
+    expect(calls).toEqual([])
+    expect(store.getMessage(messageId)!.status).toBe('canceling')
+    expect(store.getMessage(messageId)!.workerId).toBe('other')
+    expect(store.getUserById(user.id)!.credits).toBe(5) // 一分未退
+    // 额度守恒：没有凭空多退
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
   })
 })

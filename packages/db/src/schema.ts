@@ -5,6 +5,10 @@ export function applySchema(db: Database): void {
   db.pragma('journal_mode = WAL')
   // 开启外键约束（better-sqlite3 默认关闭），保证 ON DELETE CASCADE 生效
   db.pragma('foreign_keys = ON')
+  // 跨进程写冲突（web 与独立 worker 共用同一 DB）时**等待**而非立刻抛 SQLITE_BUSY。
+  // WAL 允许多读单写，但两个进程同时写时，后到的会拿 SQLITE_BUSY；不设 busy_timeout 就是「直接抛」，
+  // 会让一次正常的并发写变成 500。5s 足够覆盖一次轻量事务的排队（本批把「跨进程竞争」写进了设计前提）。
+  db.pragma('busy_timeout = 5000')
 
   // ⚠️ 必须在建表之前探测：判据是「credit_ledger 在这次启动前不存在」。
   // 不能用「表里没有行」—— 那样任何把流水清空的情形（手工清理 / 测试造数 / 将来某个 bug）

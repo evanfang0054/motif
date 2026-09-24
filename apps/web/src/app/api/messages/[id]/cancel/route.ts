@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
 
     // 消息已开跑：标记 canceling，由 worker 在下一张出图前停止并按剩余退额
     store.syncTopicStatus(msg.topicId, id, msg.prompt, 'canceling')
-    store.db.prepare(`UPDATE messages SET status = 'canceling' WHERE id = ? AND status = 'running'`).run(id)
+    store.markMessageCanceling(id)
     return NextResponse.json({ ok: true, topic: store.getTopic(msg.topicId) })
   } catch (e) {
     return jsonError(e)

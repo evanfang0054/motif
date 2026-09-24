@@ -1162,13 +1162,51 @@ describe('话题状态派生与读取自愈', () => {
     ]
     expect(srcFiles.length).toBeGreaterThan(50) // 防止 glob 写错导致「零文件通过」
 
+    const STORE = 'packages/db/src/store.ts'
     const offenders: string[] = []
     for (const rel of srcFiles) {
       const text = readFileSync(join(root, rel), 'utf8')
       // 1) 除 store.ts 外，任何地方都不许调 setTopicActive
-      if (rel !== 'packages/db/src/store.ts' && text.includes('setTopicActive(')) offenders.push(`${rel}: setTopicActive`)
-      // 2) 任何地方都不许裸写 topics 的 status（settleStaleTopic 也只用 SET status = ?，不带字面量）
-      if (/UPDATE\s+topics\s+SET[^`]*status\s*=\s*'/i.test(text)) offenders.push(`${rel}: 裸写 topics.status`)
+      if (rel !== STORE && text.includes('setTopicActive(')) offenders.push(`${rel}: setTopicActive`)
+      // 2) 除 store.ts 外（存储层是唯一允许写 topics.status 的地方 —— `syncTopicStatus` 与
+      //    `settleStaleTopic` 都在其中，且都用绑定参数），任何地方都不许裸写 topics 的 status。
+      //    判据覆盖**两种形态**：字面量 `= '...'` 与绑定参数 `= ?` —— 只抓字面量的话，
+      //    `UPDATE topics SET status = ?` 这类写法会漏网，断言就与「写入必须落在 store.ts」不等价。
+      if (rel !== STORE && /UPDATE\s+topics\s+SET[^`]*status\s*=\s*['?]/i.test(text)) {
+        offenders.push(`${rel}: 裸写 topics.status`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('全仓源码里没有绕过 CAS 收尾的 messages.status 直写（计费路径的收口断言）', () => {
+    // 与上一条同款，对象换成 `messages.status`。判据（比「白名单方法名」更严、且不会随方法增删
+    // 悄悄变宽）：`messages.status` 的**任何**写入都必须落在 `packages/db/src/store.ts` 内 ——
+    //   ① 裸 SQL 字面量（`UPDATE messages SET ... status = '...'`）：会绕过 CAS 守卫与流水；
+    //   ①' 绑定参数形态（`UPDATE messages SET ... status = ?`）：同样绕过 CAS 守卫与流水，且旧正则
+    //      要求 `=` 后紧跟 `'`，这类写法根本不会被抓 —— 故字符类写成 `['?]`，两种形态一起覆盖；
+    //   ② 公开的无条件写入器 `setMessageStatus(`：它无条件写 + 清 worker_id/lease，正是本批
+    //      在 `executeMessage` 成功分支上修掉的那个缺陷的载体（当时它在 apps/web 侧被直接调用）。
+    // store.ts 内部的写入方法（finalizeCancel / finalizeFailure / finalizeSuccess / leaseNextMessage /
+    // requeueExpiredLeases / cancelQueuedMessage / markMessageCanceling / setMessageStatus）各自的
+    // 原子性与守卫由本文件的 #93 系列用例钉住。
+    // 为什么不做「方法名白名单」：白名单只约束「调了哪个方法」，挡不住「在 apps/web 里调 setMessageStatus」
+    // 或「内联一段裸 SQL」这两种形态；把写入点整体收进 store.ts 才能同时挡住，且新增写入方法时会
+    // 自然落在 store.ts 内、必须过审。
+    const root = fileURLToPath(new URL('../../..', import.meta.url))
+    const srcFiles = [
+      ...globSync('packages/*/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.ts', { cwd: root }),
+      ...globSync('apps/web/src/**/*.tsx', { cwd: root }),
+    ]
+    expect(srcFiles.length).toBeGreaterThan(50)
+
+    const STORE = 'packages/db/src/store.ts'
+    const offenders: string[] = []
+    for (const rel of srcFiles) {
+      const text = readFileSync(join(root, rel), 'utf8')
+      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*['?]/i.test(text)) offenders.push(`${rel}: 裸写 messages.status`)
+      if (rel !== STORE && text.includes('setMessageStatus(')) offenders.push(`${rel}: 调用 setMessageStatus`)
     }
     expect(offenders).toEqual([])
   })
@@ -1210,5 +1248,357 @@ describe('租约回收后的状态一致性（P1）', () => {
 
     expect(store.getMessage(m.id)?.status).toBe('running')
     expect(store.getTopic(t.id)?.status).toBe('running')
+  })
+})
+
+/**
+ * #93：消息卡在 canceling 时无恢复路径，未出图额度永久损失。
+ *
+ * 触发：worker 认领（running）→ 用户取消（canceling）→ worker 在跑到「下一张出图前」的
+ * 取消检查点**之前**被重启。此后原 `requeueExpiredLeases` 只回收 running，canceling 永远
+ * 没人管；读取自愈又刻意把 canceling 当「在跑」不落定。故这条路径必须由**租约过期**这个
+ * 既有信号来收尾：退额 + 消息 canceled + 任务回 idle。
+ */
+describe('过期 canceling 的租约回收（#93）', () => {
+  /** 造「已认领 + 已取消 + 租约可控」的消息（与生产同序：路由只改消息状态，保留租约列） */
+  function leasedCanceling(count: number, credits = 20) {
+    const u = store.createUser({ email: 'cx@b.co', passwordHash: 'h', name: 'cx', credits })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, count, { source: 'generation_charge' })
+    const m = store.createMessage({
+      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+    })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    store.leaseNextMessage('w1', 60_000) // 认领：running + 租约 60s（尚不过期）
+    store.db.prepare(`UPDATE messages SET status = 'canceling' WHERE id = ?`).run(m.id)
+    store.syncTopicStatus(t.id, m.id, 'p', 'canceling')
+    return { u, t, m }
+  }
+  function expireLease(id: string) {
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', id)
+  }
+  function seedGenerated(userId: string, topicId: string, messageId: string, n: number) {
+    for (let k = 0; k < n; k++) {
+      store.insertCanvasImage({
+        topicId, userId, messageId, origin: 'generated', name: `图 ${k}`, imageKey: `k-${k}`,
+        mimeType: 'image/png', bytes: 1, width: 1, height: 1,
+      })
+    }
+  }
+  function refundLedgerCount(userId: string): number {
+    return (store.db
+      .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
+      .get(userId) as { c: number }).c
+  }
+
+  it('① 过期 canceling 被回收：消息落 canceled、任务回 idle、按已出图数退额', () => {
+    const { u, t, m } = leasedCanceling(5) // 20 − 5 = 15
+    seedGenerated(u.id, t.id, m.id, 2) // 已出 2 张
+    expireLease(m.id)
+
+    store.requeueExpiredLeases([])
+
+    expect(store.getMessage(m.id)?.status).toBe('canceled')
+    // 任务回 idle（而不是被重排回 pending —— 那会违背用户「取消」的意图）
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+    expect(store.getTopic(t.id)?.activeMessageId).toBeNull()
+    // ④ 退额数 = requestedCount − 已落库张数 = 5 − 2 = 3
+    expect(store.getUserById(u.id)?.credits).toBe(15 + 3)
+    expect(refundLedgerCount(u.id)).toBe(1)
+    // 额度守恒：账目与余额一致
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('② 租约未过期的 canceling 不被回收（不误伤真正在取消中的任务）', () => {
+    const { u, t, m } = leasedCanceling(5) // 租约 60s，尚未过期
+    seedGenerated(u.id, t.id, m.id, 2)
+
+    store.requeueExpiredLeases([])
+
+    expect(store.getMessage(m.id)?.status).toBe('canceling')
+    expect(store.getTopic(t.id)?.status).toBe('canceling')
+    expect(store.getUserById(u.id)?.credits).toBe(15) // 未退额
+    expect(refundLedgerCount(u.id)).toBe(0)
+  })
+
+  it('③ 回收后 worker 再走一次收尾：退额只发生一次（CAS 互斥）', () => {
+    const { u, t, m } = leasedCanceling(3) // 20 − 3 = 17
+    seedGenerated(u.id, t.id, m.id, 1) // 已出 1 张 → 应退 2
+    expireLease(m.id)
+
+    store.requeueExpiredLeases([]) // 回收方先到：退 2
+    const afterReclaim = store.getUserById(u.id)!.credits
+    expect(afterReclaim).toBe(17 + 2)
+    expect(refundLedgerCount(u.id)).toBe(1)
+
+    // 模拟仍活着的 worker 跑到取消收尾（apps/web 的 finishCancel 即调本方法）
+    const again = store.finalizeCancel(m.id)
+    expect(again.finalized).toBe(false) // 没抢到 CAS
+    expect(again.refund).toBe(0)
+    expect(store.getUserById(u.id)!.credits).toBe(afterReclaim) // 未二次退额
+    expect(refundLedgerCount(u.id)).toBe(1)
+    expect(store.getMessage(m.id)?.status).toBe('canceled')
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+  })
+
+  it('③ 反向竞争：worker 先收尾（租约未过期）后回收再扫到也不二次退额', () => {
+    const { u, t, m } = leasedCanceling(3)
+    seedGenerated(u.id, t.id, m.id, 1)
+
+    // worker 正常收尾路径（租约还在，这正是 finishCancel 的调用形态）
+    const first = store.finalizeCancel(m.id)
+    expect(first.finalized).toBe(true)
+    expect(first.refund).toBe(2)
+    const afterWorker = store.getUserById(u.id)!.credits
+    expect(afterWorker).toBe(17 + 2)
+
+    // 稍后租约到期、回收再扫一遍：消息已是 canceled，根本不在候选集内
+    expireLease(m.id)
+    store.requeueExpiredLeases([])
+
+    expect(store.getUserById(u.id)!.credits).toBe(afterWorker)
+    expect(refundLedgerCount(u.id)).toBe(1)
+    expect(store.getMessage(m.id)?.status).toBe('canceled')
+  })
+
+  it('skipIds 里的过期 canceling 不被回收（本进程在跑，收尾由它自己走）', () => {
+    const { u, t, m } = leasedCanceling(3)
+    seedGenerated(u.id, t.id, m.id, 1)
+    expireLease(m.id)
+
+    store.requeueExpiredLeases([m.id])
+
+    expect(store.getMessage(m.id)?.status).toBe('canceling')
+    expect(store.getUserById(u.id)?.credits).toBe(17)
+    expect(refundLedgerCount(u.id)).toBe(0)
+  })
+})
+
+/**
+ * #93 同类双退窗口（失败分支）：`executeMessage` 的 catch 过去**自己算退额、自己写状态**，没有 CAS
+ * 守卫。一条消息若单次 `provider.generate` 跨过 30 分钟租约（LEASE_MS），另一进程的
+ * `requeueExpiredLeases` 可能已把它重排（甚至被重新认领），随后本进程迟到的 catch 会再退一次。
+ *
+ * 现在失败收尾与 `finalizeCancel` 同构：只有把状态从 `running`（且**执行者身份匹配**）翻走的
+ * 那一方退额，另一方退化为 no-op。守卫为什么不止 `status='running'`：重排回 queued 后消息可能被
+ * **另一个进程**重新认领成 running（worker_id 换人），只守状态会让原进程误伤别人的在跑轮次。
+ */
+describe('失败收尾的原子 CAS（finalizeFailure）', () => {
+  /** 造「已认领（running + worker_id=w1）」的消息，额度与请求张数可控 */
+  function running(count: number, credits = 20) {
+    const u = store.createUser({ email: 'ff@b.co', passwordHash: 'h', name: 'ff', credits })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, count, { source: 'generation_charge' })
+    const m = store.createMessage({
+      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+    })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    store.leaseNextMessage('w1', 60_000)
+    return { u, t, m }
+  }
+  function seedGenerated(userId: string, topicId: string, messageId: string, n: number) {
+    for (let k = 0; k < n; k++) {
+      store.insertCanvasImage({
+        topicId, userId, messageId, origin: 'generated', name: `图 ${k}`, imageKey: `ff-${k}`,
+        mimeType: 'image/png', bytes: 1, width: 1, height: 1,
+      })
+    }
+  }
+  function expireLease(id: string) {
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', id)
+  }
+  function refundRows(userId: string): number {
+    return (store.db
+      .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
+      .get(userId) as { c: number }).c
+  }
+  const buildError = (refund: number) => `生成失败${refund > 0 ? `，已退还 ${refund} 张额度` : ''}`
+
+  it('① 正常路径：running 失败 → 落 failed、按 requestedCount − 已出图数退额、账目==余额', () => {
+    const { u, t, m } = running(5) // 20 − 5 = 15
+    seedGenerated(u.id, t.id, m.id, 2) // 已出 2 张 → 应退 3
+
+    const res = store.finalizeFailure(m.id, { workerId: 'w1', buildError })
+
+    expect(res).toEqual({ finalized: true, refund: 3 })
+    expect(store.getMessage(m.id)?.status).toBe('failed')
+    expect(store.getMessage(m.id)?.error).toBe('生成失败，已退还 3 张额度')
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+    expect(store.getTopic(t.id)?.activeMessageId).toBeNull()
+    expect(store.getUserById(u.id)?.credits).toBe(15 + 3)
+    expect(refundRows(u.id)).toBe(1)
+    // 额度守恒：账目与余额一致
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('④ 守卫不误伤：状态仍是 running 且身份匹配 → 必须正常退额（别把正常路径挡掉）', () => {
+    const { u, t, m } = running(3) // 20 − 3 = 17
+    seedGenerated(u.id, t.id, m.id, 1) // 应退 2
+    // 租约即使已过期，只要**身份匹配且状态仍是 running**，失败收尾照样生效 —— 执行者就是当前持有者，
+    // 租约过期只意味着「可能被回收」，不代表它已不是执行者（回收真发生时会先把状态翻成 queued）。
+    expireLease(m.id)
+
+    const res = store.finalizeFailure(m.id, { workerId: 'w1', buildError })
+
+    expect(res).toEqual({ finalized: true, refund: 2 })
+    expect(store.getMessage(m.id)?.status).toBe('failed')
+    expect(store.getUserById(u.id)!.credits).toBe(17 + 2)
+  })
+
+  it('② 双退防护（正向）：租约重排把状态翻回 queued 后，原进程迟到的失败收尾不得退额', () => {
+    const { u, t, m } = running(4) // 20 − 4 = 16
+    seedGenerated(u.id, t.id, m.id, 1) // 若误退会是 3
+    expireLease(m.id)
+    store.requeueExpiredLeases([]) // 回收：**重排回 queued**（不退额）
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+
+    // 原进程此刻才抛错（单次 generate 跨过了整个租约）：状态已不是 running → CAS 落空
+    const res = store.finalizeFailure(m.id, { workerId: 'w1', buildError })
+
+    expect(res).toEqual({ finalized: false, refund: 0 })
+    expect(store.getMessage(m.id)?.status).toBe('queued') // 保持可被重新认领，任务不被误打成 failed
+    expect(store.getTopic(t.id)?.status).toBe('pending')
+    expect(store.getUserById(u.id)?.credits).toBe(16) // 一分未退
+    expect(refundRows(u.id)).toBe(0)
+  })
+
+  it('② 变体：重排后被另一进程重新认领，原进程迟到的失败收尾不得退额/改状态（身份守卫）', () => {
+    const { u, t, m } = running(4)
+    seedGenerated(u.id, t.id, m.id, 1)
+    expireLease(m.id)
+    store.requeueExpiredLeases([]) // → queued
+    expect(store.leaseNextMessage('w2', 60_000)?.id).toBe(m.id) // 另一进程接管 → running, worker_id=w2
+
+    // 原进程 w1 的迟到 catch：状态虽是 running，但身份不是它 → 必须被身份守卫挡住
+    const res = store.finalizeFailure(m.id, { workerId: 'w1', buildError })
+
+    expect(res).toEqual({ finalized: false, refund: 0 })
+    expect(store.getMessage(m.id)?.status).toBe('running') // 新执行者的轮次不被误伤
+    expect(store.getMessage(m.id)?.workerId).toBe('w2')
+    expect(store.getTopic(t.id)?.status).toBe('running')
+    expect(store.getUserById(u.id)?.credits).toBe(16)
+    expect(refundRows(u.id)).toBe(0)
+  })
+
+  it('③ 双退防护（反向）：先失败收尾退额，随后回收再扫到也不二次退额', () => {
+    const { u, t, m } = running(3) // 20 − 3 = 17
+    seedGenerated(u.id, t.id, m.id, 1) // 应退 2
+    const first = store.finalizeFailure(m.id, { workerId: 'w1', buildError })
+    expect(first).toEqual({ finalized: true, refund: 2 })
+    const after = store.getUserById(u.id)!.credits
+    expect(after).toBe(17 + 2)
+
+    // 稍后租约过期、回收再扫一遍：消息已是 failed，既不在 running 候选集、也不在 canceling 候选集
+    expireLease(m.id)
+    store.requeueExpiredLeases([])
+
+    expect(store.getUserById(u.id)!.credits).toBe(after)
+    expect(refundRows(u.id)).toBe(1)
+    expect(store.getMessage(m.id)?.status).toBe('failed')
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('幂等：对同一 running 消息重复调用，退额只发生一次', () => {
+    const { u, m } = running(2) // 20 − 2 = 18
+    expect(store.finalizeFailure(m.id, { workerId: 'w1', buildError })).toEqual({ finalized: true, refund: 2 })
+    expect(store.finalizeFailure(m.id, { workerId: 'w1', buildError })).toEqual({ finalized: false, refund: 0 })
+    expect(store.getUserById(u.id)!.credits).toBe(18 + 2)
+    expect(refundRows(u.id)).toBe(1)
+  })
+
+  it('守卫身份不匹配（worker_id 不同）时不退额、状态不动', () => {
+    const { u, m } = running(2)
+    const res = store.finalizeFailure(m.id, { workerId: 'other', buildError })
+    expect(res).toEqual({ finalized: false, refund: 0 })
+    expect(store.getMessage(m.id)?.status).toBe('running')
+    expect(store.getUserById(u.id)!.credits).toBe(18)
+    expect(refundRows(u.id)).toBe(0)
+  })
+})
+
+/**
+ * 成功收尾的原子 CAS（finalizeSuccess）：成功分支过去是**无条件**写入 + 清租约，会覆盖并发的
+ * `canceling/failed`，并让另一位执行者的 CAS 静默 no-op。现在与失败/取消收尾同构：守卫
+ * 「状态 running + 执行者身份匹配」，命中才落 completed + 清租约 + 任务回 idle。
+ */
+describe('成功收尾的原子 CAS（finalizeSuccess）', () => {
+  function running(count: number, credits = 20) {
+    const u = store.createUser({ email: 'fs@b.co', passwordHash: 'h', name: 'fs', credits })
+    const t = store.createTopic(u.id, 'T')
+    store.deductCredits(u.id, count, { source: 'generation_charge' })
+    const m = store.createMessage({
+      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+    })
+    store.syncTopicStatus(t.id, m.id, 'p', 'queued')
+    store.leaseNextMessage('w1', 60_000)
+    return { u, t, m }
+  }
+  function expireLease(id: string) {
+    store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', id)
+  }
+
+  it('① 正常路径：running + 身份匹配 → completed、清租约、任务回 idle、无流水', () => {
+    const { u, t, m } = running(2) // 20 − 2 = 18
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: true })
+    expect(store.getMessage(m.id)?.status).toBe('completed')
+    expect(store.getMessage(m.id)?.workerId).toBeNull()
+    expect(store.getMessage(m.id)?.leaseExpiresAt).toBeNull()
+    expect(store.getTopic(t.id)?.status).toBe('idle')
+    expect(store.getTopic(t.id)?.activeMessageId).toBeNull()
+    // 成功不产生流水（额度守恒：账目 == 余额）
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+    const ov = store.overviewStats()
+    expect(ov.credits.ledgerSum).toBe(ov.credits.balance)
+  })
+
+  it('② 身份不匹配（worker_id 不同）→ no-op，不把别人的在跑轮次标成 completed', () => {
+    const { u, t, m } = running(2)
+    const res = store.finalizeSuccess(m.id, { workerId: 'other' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('running')
+    expect(store.getMessage(m.id)?.workerId).toBe('w1')
+    expect(store.getTopic(t.id)?.status).toBe('running')
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+  })
+
+  it('③ 租约被重排回 queued 后，原进程迟到的成功收尾 no-op（不覆盖重排、不误标完成）', () => {
+    const { u, t, m } = running(2)
+    expireLease(m.id)
+    store.requeueExpiredLeases([])
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('queued')
+    expect(store.getTopic(t.id)?.status).toBe('pending')
+    expect(store.getUserById(u.id)?.credits).toBe(18)
+  })
+
+  it('⚠️ 回归：并发的 canceling 不被成功收尾覆盖（旧的无条件写入会把它标成 completed）', () => {
+    const { u, t, m } = running(3) // 20 − 3 = 17
+    // 生成进行中用户取消（保留租约）——与 cancel 路由同序
+    store.syncTopicStatus(t.id, m.id, 'p', 'canceling')
+    expect(store.markMessageCanceling(m.id)).toBe(true)
+
+    const res = store.finalizeSuccess(m.id, { workerId: 'w1' })
+
+    expect(res).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('canceling') // 未被覆盖
+    expect(store.getTopic(t.id)?.status).toBe('canceling')
+    expect(store.getUserById(u.id)?.credits).toBe(17)
+  })
+
+  it('幂等：对同一 running 消息重复调用，只有第一次落 completed', () => {
+    const { m } = running(1)
+    expect(store.finalizeSuccess(m.id, { workerId: 'w1' })).toEqual({ finalized: true })
+    expect(store.finalizeSuccess(m.id, { workerId: 'w1' })).toEqual({ finalized: false })
+    expect(store.getMessage(m.id)?.status).toBe('completed')
   })
 })
