@@ -1,3 +1,15 @@
+# Motif 一键部署（Docker Compose）
+#
+# 用法：
+#   1) cp .env.docker.example .env      # 填 IMAGE_API_BASE_URL / IMAGE_API_KEY
+#   2) docker compose up -d --build     # → http://localhost:3100
+#
+# ⚠️ 这里的环境变量只在**首次启动**时播种进数据库（settings 表）。之后改 .env 不再生效，
+#    请到「管理后台 → 系统设置」改（保存即热生效，不用重启）。
+#    例外：MOTIF_DATA_DIR / MOTIF_DB_FILE 与引导类参数只认环境变量。
+#
+# ⚠️ 不填 IMAGE_API_BASE_URL / IMAGE_API_KEY 也能启动（配置是懒校验的），
+#    但首次生图会报错；也可以先起来、登录管理员后在「系统设置 → 生图网关」里填。
 services:
   motif:
     build: .
@@ -8,14 +20,47 @@ services:
       # SQLite + 生成图片持久化：目录映射到宿主机 ./data
       - ./data:/app/apps/web/.data
     environment:
-      # 真实生图网关（OpenAI 兼容，必需）——替换为你的网关地址与令牌
-      - IMAGE_API_BASE_URL=http://your-gateway-host:3000/v1
-      - IMAGE_API_KEY=sk-替换为你的令牌
-      - IMAGE_MODEL=gpt-image-2
-      # 本地联调才开（注册验证码直出），生产保持注释
+      # —— 生图网关（必需，可从 .env 读，也可起来后在管理后台填）——
+      - IMAGE_API_BASE_URL=${IMAGE_API_BASE_URL:-}
+      - IMAGE_API_KEY=${IMAGE_API_KEY:-}
+      - IMAGE_MODEL=${IMAGE_MODEL:-gpt-image-2}
+
+      # —— 站点对外地址：支付回调 / 支付完成跳转 / 找回密码邮件里的直达链接都由它拼接 ——
+      # - SITE_URL=https://motif.example.com
+
+      # —— HTTPS 部署时开启（会话 Cookie 加 Secure 标记）；本地 http 联调勿开 ——
+      # - MOTIF_COOKIE_SECURE=1
+
+      # —— 图片存储切 S3 / MinIO（默认 local，存 dataDir/storage）——
+      # - STORAGE_DRIVER=s3
+      # - S3_ENDPOINT=https://s3.example.com
+      # - S3_BUCKET=motif
+      # - S3_ACCESS_KEY_ID=...
+      # - S3_SECRET_ACCESS_KEY=...
+      # - S3_FORCE_PATH_STYLE=true        # 自建 MinIO 需开
+      # - S3_PUBLIC_BASE_URL=https://cdn.example.com   # 想让图片直连 CDN 时填（需先跑完搬迁）
+
+      # —— 队列 worker 进程内/独立进程（默认进程内；改后需重启容器）——
+      # - MOTIF_INPROC_WORKER=false
+
+      # —— 提示词增强（可选，需同时配端点与密钥才生效）——
+      # - LLM_ENHANCE_ENABLED=true
+      # - LLM_API_BASE_URL=https://api.example.com/v1
+      # - LLM_API_KEY=sk-...
+
+      # —— 邮件发信（默认 console：验证码打进容器日志，便于本地/内网试用）——
+      # - MOTIF_MAILER=smtp
+      # - SMTP_HOST=smtp.qq.com
+      # - SMTP_PORT=465
+      # - SMTP_USER=you@qq.com
+      # - SMTP_PASS=授权码
+      # - MAIL_FROM=you@qq.com
+
+      # —— 仅本地联调：注册验证码随接口直出。生产务必保持注释 ——
       # - MOTIF_EXPOSE_DEV_CODE=1
     restart: unless-stopped
     healthcheck:
+      # 这个端点不需要登录（公开配置），故可直接当存活探针
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/billing/packages').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s

@@ -11,3 +11,11 @@ node_modules
 .git
 *.log
 .DS_Store
+
+# 与构建无关的重目录（在源码里只出现在注释中，无代码引用）：排掉可显著加快上下文传输
+dogfood-output
+dsh-image-gen
+.heroui-docs
+.infinite-canvas-ref
+docs
+e2e
