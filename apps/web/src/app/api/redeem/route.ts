@@ -8,7 +8,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const user = requireUser(req)
     const { code } = await readJson<{ code: string }>(req)
-    const updated = redeem(getRuntime().store, user, code ?? '')
+    const updated = redeem(getRuntime().store, process.env, user, code ?? '')
     return NextResponse.json({ user: updated })
   } catch (e) {
     return jsonError(e)

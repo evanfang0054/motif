@@ -716,11 +716,15 @@ export function resolvePackages(store: MotifStore, env: Record<string, string | 
 /**
  * 校验 CDK 并到账。失败原因分三类给文案，让用户能分清「输错了 / 被作废了 / 已用过了」。
  *
+ * 开关（默认开）拦在**最前面**：关掉后连「CDK 无效」这类信息都不再回，避免把兑换能力
+ * 变相留在接口上（前端隐藏入口只是体验，这里才是防线）。已发出的码不受影响，重开即能兑。
+ *
  * 注意：这里的前置查询**只负责文案**。真正的裁决永远是 `store.redeemCdk` 内的条件 UPDATE，
  * 并发下仍只有一个请求能把 redeemed_by 从 NULL 写成自己 —— 前置查询与写入之间不存在
  * 「先查后写」的竞态漏洞（最坏情况是文案退化为「已被使用」，不会重复到账）。
  */
-export function redeem(store: MotifStore, user: User, code: string): User {
+export function redeem(store: MotifStore, env: Record<string, string | undefined>, user: User, code: string): User {
+  if (!resolveBool(store, env, 'CDK_REDEEM_ENABLED', true)) throw new ServiceError(403, '本站未开放 CDK 兑换。')
   if (!code || !code.trim()) throw new ServiceError(400, '请输入 CDK。')
   const target = code.trim().toUpperCase()
   const cdk = store.getCdk(target)
@@ -760,6 +764,9 @@ const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问�
  * 行为上对存量订单的回调依然友好（但凭据被替换后旧单回调会验签失败，换密钥需留意在途订单）。
  */
 export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
+  // 充值开关（默认关）：只拦**新订单**。回调入账（creditPaidOrder 及三条 notify/webhook/return 路由）
+  // 刻意不受它影响 —— 关开关不能把用户已经付掉的钱吞掉。
+  if (!resolveBool(store, env, 'BILLING_ENABLED', false)) throw new ServiceError(403, '本站未开放充值。')
   const pkg = resolvePackages(store, env).find((p) => p.id === packageId)
   if (!pkg) throw new ServiceError(400, '套餐不存在。')
   const channel = paymentChannel(store)

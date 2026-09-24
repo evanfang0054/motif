@@ -36,13 +36,15 @@ describe('公开配置（面向未登录用户的白名单）', () => {
     for (const s of secrets) expect(PUBLIC_CONFIG_KEYS as readonly string[]).not.toContain(s)
   })
 
-  it('键未设置时回退默认值（邀请活动与提示词增强都默认关闭）', () => {
+  it('键未设置时回退默认值（邀请活动 / 提示词增强 / 充值默认关，CDK 兑换默认开）', () => {
     expect(readPublicConfig(store, {})).toEqual({
       inviteRewardEnabled: false,
       inviteRewardCredits: 3,
       inviteRewardMaxInvitees: 3,
       signupBonusCredits: 3,
       llmEnhanceEnabled: false,
+      billingEnabled: false,
+      cdkRedeemEnabled: true,
     })
   })
 
@@ -53,6 +55,8 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       { key: 'INVITE_REWARD_MAX_INVITEES', value: '9' },
       { key: 'SIGNUP_BONUS_CREDITS', value: '5' },
       { key: 'LLM_ENHANCE_ENABLED', value: 'true' },
+      { key: 'BILLING_ENABLED', value: 'true' },
+      { key: 'CDK_REDEEM_ENABLED', value: 'false' },
     ])
     expect(readPublicConfig(store, {})).toEqual({
       inviteRewardEnabled: true,
@@ -60,7 +64,18 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       inviteRewardMaxInvitees: 9,
       signupBonusCredits: 5,
       llmEnhanceEnabled: true,
+      billingEnabled: true,
+      cdkRedeemEnabled: false,
     })
+  })
+
+  it('两个功能开关的兜底值必须与配置注册表的 defaultHint 一致（前端入口与服务端拒绝不能各说各话）', () => {
+    // 钉的是「三处各写一份」的漂移：SETTING_DEFS 的 defaultHint / readPublicConfig 的兜底 /
+    // services 里 startCheckout、redeem 的 resolveBool 兜底。任一处被单边改掉，这里就红。
+    const byKey = new Map(SETTING_DEFS.map((d) => [d.key, d]))
+    const cfg = readPublicConfig(store, {})
+    expect(byKey.get('BILLING_ENABLED')!.defaultHint).toBe(String(cfg.billingEnabled))
+    expect(byKey.get('CDK_REDEEM_ENABLED')!.defaultHint).toBe(String(cfg.cdkRedeemEnabled))
   })
 
   it('库中数值非法时回退默认值（脏配置不影响注册链路）', () => {

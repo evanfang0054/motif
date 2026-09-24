@@ -57,6 +57,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   // 四项一律非 danger：它们只决定发放多少，不削弱安全基线。
   // ⚠️ 邀请活动**默认关闭**：改动前奖励是默认生效的，故未配置新键的现有部署升级后会失去邀请奖励
   //    （入口隐藏、不再发奖）。这是需求明确接受的口径，升级须知写在对应 PR 描述里。
+  // ⚠️ CDK 兑换**默认开启**（用户裁决）：它是「不接支付渠道也能发额度」的唯一手段，
+  //    关掉它等于把自建部署的额度来源全部切断。
+  { key: 'CDK_REDEEM_ENABLED', group: 'credits', label: '开放 CDK 兑换', kind: 'boolean', defaultHint: 'true', hint: '关闭后工作台不再显示 CDK 兑换入口，兑换接口一并拒绝（已发出的码仍有效，重新开启即可兑换）。' },
   { key: 'INVITE_REWARD_ENABLED', group: 'credits', label: '邀请好友送额度', kind: 'boolean', defaultHint: 'false', hint: '关闭后工作台不再显示邀请入口，且注册时不再建立邀请关系、不发奖励。' },
   { key: 'INVITE_REWARD_CREDITS', group: 'credits', label: '每邀请 1 人赠送额度', kind: 'number', defaultHint: '3', hint: '单位：张。仅在活动开启时生效。' },
   { key: 'INVITE_REWARD_MAX_INVITEES', group: 'credits', label: '最多奖励人数', kind: 'number', defaultHint: '3', hint: '超过此人数后继续邀请不再发放奖励，但邀请关系仍建立。' },
@@ -97,6 +100,11 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
   // 不进 runtime 缓存，保存即热生效，无需重建 provider / mailer。
+  // ⚠️ 充值开关**默认关闭**（用户裁决）：这是给「自建部署、不接支付渠道」用的默认形态 ——
+  //    额度只靠注册赠送 / 邀请 / CDK。要卖额度就显式打开它（管理后台「系统设置 → 支付与套餐」）。
+  //    关闭只拦「新订单」与前端入口：已下单的回调（notify / webhook / return）照常入账，
+  //    否则关开关会把用户已付的钱吞掉。
+  { key: 'BILLING_ENABLED', group: 'payment', label: '开放充值（购买额度）', kind: 'boolean', defaultHint: 'false', hint: '关闭后工作台不再显示充值入口、下单接口拒绝新订单；已支付订单的回调不受影响。' },
   { key: 'SITE_URL', group: 'payment', label: '站点地址', kind: 'url', hint: '如 https://motif.example.com；支付回调与支付完成跳转，以及找回密码邮件里的一键直达链接都由它拼接；真实渠道必填，未配时该邮件只发验证码' },
   { key: 'BILLING_CURRENCY', group: 'payment', label: '套餐币种', kind: 'enum', options: ['cny', 'usd', 'hkd', 'eur', 'gbp'], defaultHint: 'hkd', hint: '全局单币种，不含零小数货币（jpy 会与按分计价冲突放大 100 倍金额）；易支付网关基本仅支持 cny' },
   { key: 'PRICE_CREDITS_50', group: 'payment', label: '50 张价格（所选币种）', kind: 'money', defaultHint: '68.00', hint: '单位跟随套餐币种主单位；两位小数、单档 ≤99999.99；需高于渠道最低收款额（Stripe 按币种 USD0.50/HKD4.00…，易支付站点常见 ≥1 元）；下单按分落库' },

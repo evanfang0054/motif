@@ -172,11 +172,29 @@ html[data-theme="dark"] {
  * 表单控件令牌桥接（补充）：HeroUI 输入件的静默/悬停/聚焦底色与边框
  * 默认走中性白黑系，与暖米面板存在色调落差（用户反馈：聚焦前后底色不一致）。
  * 统一桥接到项目表面系；聚焦边框 = 珊瑚（DESIGN.md text-input-focused 规范）。
+ *
+ * ⚠️ `--border-width-field` 必须在这里显式给 1px（2026-09-24 用户裁决：全站输入框统一有边框）。
+ * HeroUI 主题里是 `--field-border-width: 0px`，而 `--border-width-field: var(--field-border-width, …)`
+ * —— 于是字段默认**宽度为 0**（靠阴影表达层级），在暖米底上几乎看不出输入区的边界。
+ * 2026-09-21 那次只加在 `.ws-panel` 上，结果只有画布右侧面板的输入框有边框。
+ *
+ * ⚠️ 必须直接覆盖 `--border-width-field` 而不是 `--field-border-width`：
+ * 后者在 `:root`（HeroUI 的 @layer theme）就被 `--border-width-field` 消费掉了
+ * （自定义属性继承的是**代入后的计算值**，在更外层改源头对后代无效）。
+ *
+ * ⚠️ `--field-border-hover` / `-focus` 同理必须一起覆盖：
+ * 它们在 HeroUI 主题里用 `--field-border`（transparent）算好了，只改 `--field-border` 的话
+ * 悬停/聚焦时边框反而会变透明（等于「一 hover 边框就消失」）。
+ *
+ * 影响面：`.input` / `.textarea` / `number-field` / `input-group` / `input-otp` /
+ * `search-field` / `select` / `autocomplete` / `checkbox` / `radio` 都消费这个令牌 ——
+ * 复选框与单选框会一并从「无边框」变成 1px 细边（统一口径的一部分）。
  */
 :root,
 [data-theme="light"] {
   --field-background: var(--surface-primary);
   --field-focus: var(--surface-primary);
+  --border-width-field: 1px;
   --field-border: var(--border);
   --field-border-hover: var(--border-strong);
   --field-border-focus: var(--brand-warm);
@@ -187,6 +205,7 @@ html[data-theme="dark"] {
 html[data-theme="dark"] {
   --field-background: var(--surface-primary);
   --field-focus: var(--surface-primary);
+  --border-width-field: 1px;
   --field-border: var(--border);
   --field-border-hover: var(--border-strong);
   --field-border-focus: var(--brand-warm);
@@ -853,22 +872,11 @@ html[data-theme="dark"] .lp-hero {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-
-  /* 输入框可见边框（2026-09-21 用户裁决：面板里的输入框要有边框）。
-     HeroUI 的字段默认 border-width: 0px + border-color: transparent（靠阴影表达层级），
-     在暖米底上几乎看不出输入区的边界。这里只**覆盖令牌**、不碰组件内部样式。
-
-     ⚠️ 必须直接覆盖 --border-width-field 而不是 --field-border-width：
-     后者在 :root 就被 --border-width-field 消费掉了（`--border-width-field: var(--field-border-width, …)`），
-     自定义属性继承的是**代入后的计算值**，在 .ws-panel 改源头对后代无效。
-
-     ⚠️ --field-border-hover / -focus 同理必须一起覆盖：
-     它们在 :root 用 --field-border（transparent）算好了，只改 --field-border 的话
-     悬停/聚焦时边框反而会变透明（等于「一 hover 边框就消失」）。 */
-  --border-width-field: 1px;
-  --field-border: var(--border);
-  --field-border-hover: var(--border-strong);
-  --field-border-focus: var(--border-strong);
+  /* 输入框边框**不再在这里定义**（2026-09-24 起全站统一）：
+     原先只有本面板覆盖了 --border-width-field，导致「只有画布右侧的输入框有边框」。
+     现在这四个令牌统一在文件上方的「表单控件令牌桥接」段里给（含为什么必须直接覆盖
+     --border-width-field 的说明）。本块刻意留空这一处注释：谁想再给面板单独加回边框，
+     先去那段读清楚「为什么不能只改 --field-border」。 */
 }
 
 /* 面板头（状态 / 标题 + 操作）：不参与滚动 */
