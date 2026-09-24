@@ -43,8 +43,10 @@ COPY --from=builder /app/apps/web/node_modules /app/apps/web/node_modules
 COPY --from=builder /app/apps/web/.next /app/apps/web/.next
 COPY --from=builder /app/apps/web/public /app/apps/web/public
 COPY --from=builder /app/apps/web/package.json /app/apps/web/package.json
-# next.config.ts 必须在场：`next start` 会读它（serverExternalPackages / 未来的 headers、rewrites 等）。
-# 漏掉它不会立刻报错，但会让「本地能跑、容器里少一层行为」这种问题静默发生。
+# next.config.ts：`next start` 会读它（容器启动日志里有 `✓ Running next.config.ts`）。
+# 目前里面只有构建期选项（outputFileTracingRoot / serverExternalPackages / transpilePackages），
+# 少它不会立刻报错 —— 但将来加 headers / rewrites / redirects 这类**运行时**配置后，
+# 缺这一层会变成「本地能跑、容器里行为缺失且不报错」，所以现在就补齐。
 COPY --from=builder /app/apps/web/next.config.ts /app/apps/web/next.config.ts
 COPY --from=builder /app/packages /app/packages
 COPY --from=builder /app/package.json /app/package.json

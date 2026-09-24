@@ -227,9 +227,10 @@ docker compose up -d --build     # ② 构建并启动 → http://localhost:3100
 docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # ③ 取管理员初始密码
 ```
 
-- 首次启动自动**建库 → 建超级管理员 → 启动生成队列**，不需要额外初始化步骤；
+- 首次启动自动完成初始化（建库 → 播种配置 → 启动生成队列 → 建超级管理员），不需要额外初始化步骤；
   同一份凭据也会写入 `./data/admin-credentials.txt`（权限 600）
-- 数据（SQLite + 生成图片）持久化在宿主机 `./data/`，容器重建不丢
+- 数据持久化在宿主机 `./data/`，容器重建不丢：SQLite 与管理员凭据始终在里面，
+  图片在**默认的 local 存储**下也在里面（切 `s3` 后图片转由对象存储承载）
 - 自带健康检查（每 30s 探一次公开的套餐接口 `/api/billing/packages`），`docker compose ps` 显示 `healthy` 即正常
 - 构建期已把 npm 源指向 npmmirror、原生依赖（better-sqlite3 / sharp）也在构建期装好 ——
   运行时镜像不带编译器，国内网络无需额外配代理
@@ -256,8 +257,12 @@ docker compose exec motif node /app/scripts/cdk.mjs --list          # 查看全�
 
 ```bash
 git pull && docker compose up -d --build          # 升级：重建镜像；./data 里的数据不受影响
-tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：整个 ./data 就是全部状态（库 + 图片 + 管理员凭据）
+tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存储）下 ./data 就是全部状态
 ```
+
+> 上面的备份命令对应**默认的 local 存储**：数据库、生成图片（`./data/storage/`）、管理员凭据都在
+> `./data` 里。若已把「系统设置 → 图片存储」切到 `s3`，图片在远端桶里，`./data` 只剩库与凭据 ——
+> 桶要另行备份（`mc mirror` / `aws s3 sync` 之类）。
 
 **HTTPS 部署**：前面挂一层反向代理（Caddy / Nginx / Traefik），并在 `.env` 里设
 `SITE_URL=https://你的域名` 与 `MOTIF_COOKIE_SECURE=1`（会话 Cookie 加 Secure）。
