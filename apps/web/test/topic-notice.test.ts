@@ -27,6 +27,7 @@ function makeMessage(over: Partial<Message> = {}): Message {
     requestedCount: 4,
     enhancePrompt: false,
     referenceIds: [],
+    slotPlan: [],
     status: 'completed',
     workerId: null,
     lockedAt: null,

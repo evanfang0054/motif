@@ -15,6 +15,7 @@ import { CanvasEmptyGuide } from './CanvasEmptyGuide'
 import { CanvasStage } from '@/components/canvas/CanvasStage'
 import { deleteImageConfirmText } from './canvas-geometry'
 import { planRegenerateFromImage } from '@/lib/canvas/regenerate'
+import { pendingSkeletonSlots } from '@/lib/canvas/skeleton'
 import { TaskPanel } from './TaskPanel'
 import { TopicPanel } from './TopicPanel'
 import { BillingDialog, FeedbackDialog, InviteDialog, ProfileDialog, RedeemDialog } from './dialogs'
@@ -539,6 +540,24 @@ function Workspace({ initialUser }: { initialUser: User }) {
   )
 
   /**
+   * 待产出骨架槽（#88）：由「活跃轮次的槽位计划 − 已落库张数」推出，**一处计算两处用**：
+   * ① 决定「一张图都没有时也要渲染画布」——否则首轮提交后骨架无处显示（原先只在有图时渲染）；
+   * ② 传给 `CanvasStage` 渲染。
+   *
+   * 骨架不进 `canvasImages`，故不影响「N 张图片」计数、归档导出与整理布局（那些读的都是图片集合）。
+   * 已落库张数按 `messageId` 统计 —— 服务端下发的槽位计划与出图共用同一坐标，
+   * 故「第 k 张已落库」恰好对应「前 k 个槽已填、后面还空着」。
+   */
+  const skeletons = useMemo(() => {
+    if (!detail) return []
+    const generatedByMessage: Record<string, number> = {}
+    for (const img of detail.canvasImages) {
+      if (img.messageId) generatedByMessage[img.messageId] = (generatedByMessage[img.messageId] ?? 0) + 1
+    }
+    return pendingSkeletonSlots(detail.messages, generatedByMessage)
+  }, [detail])
+
+  /**
    * 失败轮次（当前活跃消息且已失败）。失败卡片进画布（#73-1.5）与重试入口共用这一个判据 ——
    * 两处各判一次，将来改一处就会出现「画布上有卡片、点重试却说没有可重试的轮次」。
    */
@@ -925,12 +944,13 @@ function Workspace({ initialUser }: { initialUser: User }) {
               重试
             </Button>
           </div>
-        ) : detail && detail.canvasImages.length > 0 ? (
+        ) : detail && (detail.canvasImages.length > 0 || skeletons.length > 0) ? (
           <CanvasStage
             key={detail.topic.id}
             topicId={detail.topic.id}
             images={detail.canvasImages}
             messages={detail.messages}
+            skeletons={skeletons}
             onRemoveImages={(imgs) => setConfirmDelete({ kind: 'image', ids: imgs })}
             onAddReferences={addReferencesFromCanvas}
             onRegenerate={regenerateFrom}
@@ -956,7 +976,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
                 </Button>
               </div>
             ) : null}
-            {/* 生成进行中的全局提示：画布暂无占位卡片，用一条轻量状态条告知「正在发生什么」 */}
+            {/* 生成进行中的全局提示：骨架已随首轮提交出现在画布上（#88），这条状态条
+                补充「状态机在跑」这一层语义（含排队中尚无骨架可显示的短暂窗口）。 */}
             {busy ? (
               <div role="status" aria-live="polite" className="ws-canvas-notice" style={{ color: 'var(--foreground)' }}>
                 <Spinner size="sm" />

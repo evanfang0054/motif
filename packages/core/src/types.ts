@@ -1,5 +1,7 @@
 /** Motif 领域类型 —— 与服务端 API 契约保持一致 */
 
+import type { CanvasRect } from './canvas'
+
 export type UserRole = 'user' | 'admin' | 'root'
 
 /** 账号启用状态：禁用后不可登录，既有会话失效；不影响正在执行的生成轮次 */
@@ -58,6 +60,12 @@ export interface Message {
   enhancePrompt: boolean
   /** 本轮生成引用的参考图 ID 列表（真实图生图 edits 输入） */
   referenceIds: string[]
+  /**
+   * 入队时算好的待生成槽位计划（#88）：第 i 个槽 ↔ 本轮第 i 张产出。
+   * 骨架渲染与 worker 出图落位**共用这份坐标**，故出图就地填入不跳动。
+   * 挂在 message 的 JSON 字段上（零新表）；升级库的老消息为 `[]`（无骨架、退回现场分配）。
+   */
+  slotPlan: CanvasRect[]
   status: MessageStatus
   workerId: string | null
   lockedAt: string | null

@@ -7,6 +7,7 @@ import {
   normalizeCanvasMeta,
   parseCanvasMeta,
   placementRect,
+  planSlotRects,
   rectToPlacement,
   viewportOrigin,
 } from '../src/index'
@@ -96,6 +97,46 @@ describe('allocateSlots', () => {
     const occupied = [{ x: 0, y: 0, w: 240, h: 240 }]
     const slots = allocateSlots(occupied, [{ width: 240, height: 240 }], { x: 0, y: 0 })
     expect(slots[0]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
+  })
+})
+
+describe('planSlotRects（#88 骨架槽位计划）', () => {
+  const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+  it('数量 = 请求张数，且从视口原点起 4 列排布、互不重叠', () => {
+    const slots = planSlotRects([], '1024x1024', 4, { x: 0, y: 0 })
+    expect(slots).toHaveLength(4)
+    expect(slots[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+    expect(slots[1]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
+    expect(slots[4]).toBeUndefined()
+    for (let i = 0; i < slots.length; i += 1) {
+      for (let j = i + 1; j < slots.length; j += 1) expect(overlaps(slots[i], slots[j])).toBe(false)
+    }
+  })
+
+  it('auto 一律按 1:1 占位（D13）', () => {
+    // resolveSize('auto') → 1024×1024 → displaySize → 240×240（正方形）
+    const slots = planSlotRects([], 'auto', 3, { x: 0, y: 0 })
+    expect(slots.every((s) => s.w === 240 && s.h === 240)).toBe(true)
+  })
+
+  it('已知尺寸按各自比例占位（竖图 2:3 / 横图 3:2）', () => {
+    expect(planSlotRects([], '1024x1536', 1, { x: 0, y: 0 })[0]).toEqual({ x: 0, y: 0, w: 160, h: 240 })
+    expect(planSlotRects([], '1536x1024', 1, { x: 0, y: 0 })[0]).toEqual({ x: 0, y: 0, w: 240, h: 160 })
+  })
+
+  it('与「同尺寸逐个 allocateSlots」结果一致（出图不跳位的保证）', () => {
+    const occupied = [{ x: 0, y: 0, w: 240, h: 240 }]
+    const plan = planSlotRects(occupied, '1024x1024', 3, { x: 10, y: 20 })
+    const stepwise: Array<{ x: number; y: number; w: number; h: number }> = []
+    const acc = [...occupied]
+    for (let i = 0; i < 3; i += 1) {
+      const [s] = allocateSlots(acc, [{ width: 240, height: 240 }], { x: 10, y: 20 })
+      acc.push(s)
+      stepwise.push(s)
+    }
+    expect(plan).toEqual(stepwise)
   })
 })
 

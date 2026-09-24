@@ -1007,6 +1007,26 @@ html[data-theme="dark"] .lp-hero {
   pointer-events: none;
 }
 
+/* 新落库的图片淡入（#88）：出图就落在骨架原坐标上，只淡入、不位移，避免「跳一下」。
+   ⚠️ 属于画布图像渲染例外层（与 .canvas-img-card 同族），不是自研控件 ——
+   骨架本体用 HeroUI 的 Skeleton，这里只补一个画布专属的入场动画。
+   ⚠️ 与抽屉升场同约定：动画只在 `prefers-reduced-motion: no-preference` 下播放，
+   用户要求减少动效时图片直接可见（不套 animation，opacity 保持默认 1）。 */
+@keyframes canvas-img-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .canvas-img-in {
+    animation: canvas-img-in 0.22s ease-out both;
+  }
+}
+
 .canvas-img-label {
   position: absolute;
   left: 8px;

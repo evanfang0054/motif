@@ -21,7 +21,7 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, Skeleton, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import {
   Archive,
@@ -61,6 +61,7 @@ import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
 import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, type ToolbarPanelRect } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
+import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
 
 const CLICK_THRESHOLD = 3
@@ -133,6 +134,12 @@ interface Props {
   images: CanvasImage[]
   /** 本任务的全部生成轮次：溯源推导（id + referenceIds）与「再生成」取原始提示词（id + prompt）都要用 */
   messages: Message[]
+  /**
+   * 待产出骨架槽（#88）：由父级从「消息的槽位计划 + 已落库张数」推出。
+   * 传进来的理由有二：① 父级要用它决定「一张图都没有时也渲染画布」（否则首轮骨架无处显示）；
+   * ② 只算一次，避免父子各算一份漂移。骨架**不是图片**，不进下面的图片渲染与统计。
+   */
+  skeletons: PendingSkeleton[]
   onRemoveImages: (imgs: CanvasImage[]) => void
   /** 加入参考图（单张与批量共用；批量时一次写多句 #编号） */
   onAddReferences: (imgs: CanvasImage[]) => void
@@ -140,7 +147,7 @@ interface Props {
   onRegenerate: (img: CanvasImage) => void
 }
 
-function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReferences, onRegenerate }: Props) {
+function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onAddReferences, onRegenerate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<CanvasImage | null>(null)
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -1028,6 +1035,32 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
               ))}
             </svg>
           )}
+          {/* 待生成骨架槽（#88）：服务端下发的计划槽，与出图落位**同坐标** → 出图就地填入不跳动。
+              骨架**不是画布图片**：不进 `placements` / `images`，故不参与选中、框选、删除、灯箱、
+              归档导出、「N 张图片」统计与整理布局；`pointer-events: none` 让它不响应手势。
+              过渡口径（D13）：出图落在同一左上角、以淡入换入（见 `.canvas-img-in`），
+              故即使出图比例 ≠ 占位比例也不会「跳位」；尺寸变化被槽距 280 兜住（displaySize ≤240），
+              绝不会压到相邻图 —— 这里**刻意不给骨架加 width/height transition**：
+              骨架挂载期间尺寸恒定，那个 transition 是死代码（会误导后来人以为尺寸在动）。 */}
+          {skeletons.map((s) => (
+            <figure
+              key={`sk-${s.messageId}-${s.index}`}
+              className="canvas-img-card"
+              style={{
+                left: s.rect.x,
+                top: s.rect.y,
+                width: s.rect.w,
+                height: s.rect.h,
+                margin: 0,
+                pointerEvents: 'none',
+              }}
+              aria-busy="true"
+              aria-label={`正在生成第 ${s.ordinal} 张`}
+            >
+              {/* 骨架本体用 HeroUI 的 Skeleton（shimmer），不自研控件 */}
+              <Skeleton className="h-full w-full rounded-[10px]" />
+            </figure>
+          ))}
           {images.map((img) => {
             const p = placements[img.id]
             if (!p) return null
@@ -1035,7 +1068,7 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             return (
               <figure
                 key={img.id}
-                className={`canvas-img-card${isSel ? ' canvas-img-card-selected' : ''}`}
+                className={`canvas-img-card canvas-img-in${isSel ? ' canvas-img-card-selected' : ''}`}
                 style={{ left: p.x, top: p.y, width: p.w, margin: 0, cursor: 'grab' }}
                 onPointerDown={(e) => startCardDrag(e, img)}
                 onPointerMove={onCardPointerMove}
@@ -1206,6 +1239,16 @@ function CanvasStage({ topicId, images, messages, onRemoveImages, onAddReference
             「本地草稿」是数据来源警示；「已选 N」带一个清空按钮 */}
         <div className="canvas-status">
           <InlineText type="body-sm" className="canvas-status-count">{images.length} 张图片</InlineText>
+          {/* 待生成张数（#88）：与「N 张图片」分列 —— 骨架**不计入**图片统计，
+              这条读数才是「还有几张在生成」，让「4 张在生成、已出来 2 张」一眼可见。 */}
+          {skeletons.length > 0 && (
+            <>
+              <span className="canvas-status-divider" />
+              <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }} data-testid="canvas-pending-count">
+                生成中 {skeletons.length} 张
+              </InlineText>
+            </>
+          )}
           {source === 'local' && (
             <>
               <span className="canvas-status-divider" />

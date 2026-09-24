@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -119,6 +119,68 @@ describe('断点续跑（崩溃恢复）', () => {
     expect(store.getMessage(messageId)!.status).toBe('failed')
     expect(store.countGeneratedInMessage(messageId)).toBe(1) // 失败不写图
     expect(store.getUserById(user.id)!.credits).toBe(7) // 6 + 退 1
+  })
+})
+
+describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填入不跳动）', () => {
+  it('入队即生成 N 个计划槽，auto 一律按 1:1 占位（D13）', async () => {
+    const { messageId } = await enqueue(3)
+    const plan = store.getMessage(messageId)!.slotPlan
+    expect(plan).toHaveLength(3)
+    expect(plan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
+    expect(plan[1]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
+    expect(plan.every((s) => s.w === 240 && s.h === 240)).toBe(true)
+  })
+
+  it('worker 出图落回计划槽坐标（左上角与骨架完全一致）', async () => {
+    const { messageId, topicId } = await enqueue(3)
+    const plan = store.getMessage(messageId)!.slotPlan
+    const calls: number[] = []
+    await executeMessage(makeDeps(countingProvider(calls)), messageId)
+    const placements = store.listCanvasPlacements(topicId)
+    expect(placements).toHaveLength(3)
+    for (let i = 0; i < 3; i += 1) {
+      expect({ x: placements[i].canvasX, y: placements[i].canvasY }).toEqual({ x: plan[i].x, y: plan[i].y })
+    }
+  })
+
+  it('出图比例与占位不同：只变尺寸、左上角不动，且不压相邻槽', async () => {
+    // 请求 auto（1:1 占位），实际出横图 2:1 —— 平滑过渡到 240×120，坐标钉在计划槽
+    const user = store.createUser({ email: 'wide@b.co', passwordHash: 'h', name: 'w', credits: 4 })
+    const res = await enqueueGeneration(store, countingProvider([]), dir, user, {
+      prompt: '横图', count: 2, size: 'auto', enhance: false, topicId: null, referenceCanvasImageIds: [],
+    })
+    const plan = store.getMessage(res.messageId)!.slotPlan
+    const wide: ImageProvider = {
+      name: 'wide-stub',
+      generate: async () => ({ buffer: Buffer.from('x'), mimeType: 'image/png', width: 1024, height: 512 }),
+    }
+    await executeMessage(makeDeps(wide), res.messageId)
+    const placements = store.listCanvasPlacements(res.topic.id)
+    expect({ x: placements[0].canvasX, y: placements[0].canvasY }).toEqual({ x: plan[0].x, y: plan[0].y })
+    expect([placements[0].canvasWidth, placements[0].canvasHeight]).toEqual([240, 120])
+    // 槽步长 280：右缘 240 < 下一槽 x=280，横图不会压到相邻图
+    expect(placements[0].canvasX + placements[0].canvasWidth).toBeLessThanOrEqual(plan[1].x)
+  })
+
+  it('取消：退额数 = requestedCount − 已落库张数（与骨架摘除数同源）', async () => {
+    // 12 张里已落 4 张 → 退 8；取消前活跃轮次的骨架也恰好剩 8 个（见 canvas-skeleton 单测）
+    const { user, messageId, topicId } = await enqueue(12, 20)
+    seedGenerated(messageId, user.id, topicId, 4)
+    store.setMessageStatus(messageId, 'canceling')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+    expect(store.getMessage(messageId)!.status).toBe('canceled')
+    expect(store.getUserById(user.id)!.credits).toBe(16) // 20 − 12 + 退 8
+  })
+
+  it('每落库一张就 touch 一次 topic —— watch 长轮询据此即时刷新，实现「出图就地填入」', async () => {
+    // 不 touch 的话整批只会在收尾被看到一次，骨架与「N 张图片」直到最后才更新
+    const { messageId, topicId } = await enqueue(3)
+    const spy = vi.spyOn(store, 'touchTopic')
+    await executeMessage(makeDeps(countingProvider([])), messageId)
+    expect(spy).toHaveBeenCalledTimes(3)
+    expect(spy.mock.calls.every(([id]) => id === topicId)).toBe(true)
+    spy.mockRestore()
   })
 })
 
