@@ -302,6 +302,9 @@ export const api = {
   adminOverview: () => call<AdminOverview>('/api/admin/overview'),
   adminListUsers: (params: { q?: string; role?: string; status?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: User[]; total: number; page: number; pageSize: number }>(`/api/admin/users${toQuery(params)}`),
+  /** 后台建号：返回的 password 是**一次性明文**，只此一次，不落任何持久化位置 */
+  adminCreateUser: (input: { email: string; name: string; credits?: number; role?: 'user' | 'admin' }) =>
+    call<{ user: User; password: string }>('/api/admin/users', { method: 'POST', body: JSON.stringify(input) }),
   adminAdjustCredits: (input: { userId: string; delta: number; reason: string }) =>
     call<{ user: User }>('/api/admin/users/credits', { method: 'POST', body: JSON.stringify(input) }),
   adminSetUserStatus: (userId: string, status: 'active' | 'disabled') =>

@@ -36,6 +36,10 @@ export default function AdminUsersPage() {
   const [adjust, setAdjust] = useState<{ user: User; delta: string; reason: string } | null>(null)
   // 一次性密码弹窗（只此一次，不落任何持久化位置）
   const [reset, setReset] = useState<{ name: string; password: string } | null>(null)
+  // 建号抽屉：表单 → 提交后切到「凭据一次性展示」视图
+  const [create, setCreate] = useState<{ email: string; name: string; credits: string; role: 'user' | 'admin' } | null>(null)
+  // 建号成功后的一次性凭据（与重置密码共用同一份展示形态）
+  const [created, setCreated] = useState<{ name: string; password: string } | null>(null)
 
   const isRoot = me?.role === 'root'
 
@@ -134,6 +138,30 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function submitCreate() {
+    if (!create) return
+    const credits = create.credits === '' ? 0 : Number(create.credits)
+    if (!Number.isInteger(credits) || credits < 0) return setActionErr('初始额度需为非负整数。')
+    setBusy(true)
+    setActionErr(null)
+    try {
+      const r = await api.adminCreateUser({
+        email: create.email.trim(),
+        name: create.name.trim(),
+        credits,
+        role: create.role,
+      })
+      setCreate(null)
+      setCreated({ name: r.user.name, password: r.password })
+      setMsg(`已创建 ${r.user.name}`)
+      await load()
+    } catch (e) {
+      setActionErr(describeAdminError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="admin-panel">
       <Typography type="h1" className="admin-title">用户</Typography>
@@ -184,6 +212,12 @@ export default function AdminUsersPage() {
         {/* 错误态不显示数字：此时没有可信的 total，但保留计数位并写明「暂不可用」，
             既不会误导成「共 0 个」，也不会让工具栏跳一下 */}
         <ListCount loading={loading} total={total} unit="个" errored={!!listErr} />
+        <button
+          className="admin-btn-primary"
+          onClick={() => { setActionErr(null); setCreate({ email: '', name: '', credits: '0', role: 'user' }) }}
+        >
+          创建用户
+        </button>
       </div>
 
       {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
@@ -288,6 +322,78 @@ export default function AdminUsersPage() {
         </>
       )}
 
+      <Drawer.Backdrop isOpen={create !== null} onOpenChange={(o) => { if (!o) setCreate(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>创建用户</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭" />
+            </Drawer.Header>
+            <Drawer.Body>
+              {create && (
+                <>
+                  <Typography type="body" className="admin-muted">
+                    提交后会生成一次性密码，只显示一次。新用户首次登录必须修改密码。
+                  </Typography>
+                  <label className="admin-field">
+                    邮箱
+                    <TextField className="w-full" value={create.email} onChange={(v) => setCreate({ ...create, email: v })}>
+                      <Input placeholder="如 teammate@example.com" />
+                    </TextField>
+                  </label>
+                  <label className="admin-field">
+                    昵称
+                    <TextField className="w-full" value={create.name} onChange={(v) => setCreate({ ...create, name: v })} maxLength={40}>
+                      <Input placeholder="如 设计小王" />
+                    </TextField>
+                  </label>
+                  <label className="admin-field">
+                    初始额度
+                    <NumberField
+                      className="w-full"
+                      value={create.credits === '' ? undefined : Number(create.credits)}
+                      onChange={(v) => setCreate({ ...create, credits: v === undefined ? '' : String(v) })}
+                    >
+                      <NumberField.Group>
+                        <NumberField.Input placeholder="默认 0" />
+                      </NumberField.Group>
+                    </NumberField>
+                  </label>
+                  {/* 「管理员」项仅 root 可见 —— 与服务端 403 同口径（服务端才是权威，这里只是不给出入口） */}
+                  {isRoot && (
+                    <label className="admin-field">
+                      角色
+                      <Select value={create.role} onChange={(v) => setCreate({ ...create, role: v as 'user' | 'admin' })}>
+                        <Select.Trigger>
+                          <Select.Value />
+                          <Select.Indicator />
+                        </Select.Trigger>
+                        <Select.Popover>
+                          <ListBox>
+                            <ListBox.Item key="user" id="user">普通用户</ListBox.Item>
+                            <ListBox.Item key="admin" id="admin">管理员</ListBox.Item>
+                          </ListBox>
+                        </Select.Popover>
+                      </Select>
+                    </label>
+                  )}
+                  <div className="admin-actions">
+                    <button
+                      className="admin-btn-primary"
+                      disabled={busy || !create.email.trim() || !create.name.trim()}
+                      onClick={() => void submitCreate()}
+                    >
+                      创建
+                    </button>
+                    <button disabled={busy} onClick={() => setCreate(null)}>取消</button>
+                  </div>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+
       <Drawer.Backdrop isOpen={adjust !== null} onOpenChange={(o) => { if (!o) setAdjust(null) }}>
         <Drawer.Content placement="right">
           <Drawer.Dialog>
@@ -354,6 +460,33 @@ export default function AdminUsersPage() {
                       复制
                     </button>
                     <button onClick={() => setReset(null)}>我已记录，关闭</button>
+                  </div>
+                </>
+              )}
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+
+      <Drawer.Backdrop isOpen={created !== null} onOpenChange={(o) => { if (!o) setCreated(null) }}>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>一次性密码 · {created?.name}</Drawer.Heading>
+              <Drawer.CloseTrigger aria-label="关闭" />
+            </Drawer.Header>
+            <Drawer.Body>
+              {created && (
+                <>
+                  <Typography type="body" className="admin-alert-err" role="alert" style={{ display: 'block' }}>
+                    关闭后不再显示。请立刻通过安全渠道转交，并要求对方登录后立即修改。
+                  </Typography>
+                  <pre className="admin-detail">{created.password}</pre>
+                  <div className="admin-actions">
+                    <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(created.password).catch(() => undefined)}>
+                      复制
+                    </button>
+                    <button onClick={() => setCreated(null)}>我已记录，关闭</button>
                   </div>
                 </>
               )}
