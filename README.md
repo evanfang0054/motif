@@ -44,7 +44,7 @@ motif/
 │   │                          #   · messages/cancel · admin
 │   ├── src/components/        # landing / workspace / canvas（交互画布）/ ui（IconButton 等）/ admin
 │   ├── src/server/            # 会话、业务服务、队列 worker、Mailer、支付渠道适配层、提示词代理
-│   ├── src/lib/               # 模板定义（原创文案）· 提示词源清单 · 画布内核 · API client
+│   ├── src/lib/               # 提示词源清单与内置条目 · 画布内核 · 尺寸预设 · API client
 │   └── src/stores/            # zustand store（画布视口 / 摆放 / 选择 / 撤销栈）
 ├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 画布几何 · 校验
 ├── packages/db/               # SQLite 存储层（15 张表 + 仓储）
@@ -75,7 +75,9 @@ motif/
 - 张数 1–12；提示词上限 4000 字；云端排队生成，前端 watch 长轮询实时感知
 - **提示词库**：可检索的现成提示词——服务端代理 5 个上游开源提示词源（只留 GPT 系）并落库缓存，
   8 个内置模板并入「系统自带」源（本地播种、永不抓取）；首次打开不阻塞（后台抓取 + 前端轮询），
-  失败源 5 分钟内不自动重试；选中即填，改改就能用
+  失败源 5 分钟内不自动重试；选中即填，改改就能用。
+  **抓取失败只在管理后台「系统设置 → 提示词库」可见**（哪几个源挂了、上次错误原文、立即刷新），
+  用户侧静默 —— 内容照常能挑能用，不出现失败横幅与重试按钮
 
 ### 任务系统（真实）
 - 任务（Topic）增删改查、重命名、状态机七态（空闲/排队中/生成中/正在停止生成/已完成/失败/已取消）
@@ -120,13 +122,15 @@ motif/
   幂等依据是**数据库而非凭据文件** —— 重复启动不会重建账号，也不会覆盖你已改过的密码
 - **管理面守卫**：`/admin` 对未登录 / 被禁用 / 角色不足一律返回 404（不泄露管理面存在性）；
   `/api/admin/*` 区分 401（未登录）与 403（权限不足）
-- **运营页面**：概览看板（六组运营指标直接读流水）、用户（调整额度 / 禁用启用 / 修改角色 /
+- **运营页面**：概览看板（六组运营指标直接读流水）、用户（**创建账号**——填邮箱 / 昵称 /
+  初始额度 / 角色，创建后展示**只出现一次**的明文密码；另有调整额度 / 禁用启用 / 修改角色 /
   一次性重置密码）、CDK 管理、订单、反馈、生成日志（跨用户查询、按天清理——仅终态记录，
   不删画布资产与流水）、审计日志（仅超级管理员可见）
 - **系统设置**：运行配置以 `settings` 表为唯一真相（首启播种，之后改库生效）；密钥类键只写不读
   （界面回显掩码）、数据位置只读展示；危险区开关需二次确认并留痕审计；
   保存后 provider / mailer **热重载**，无需重启进程
-- **角色保护**：管理员不可修改或授予超级管理员角色；系统不允许失去最后一个超级管理员
+- **角色保护**：管理员不可修改或授予超级管理员角色，也**不能创建管理员**（只有超级管理员能）；
+  系统不允许失去最后一个超级管理员
 - **渠道快速接入**（#14 / #15）：「支付与套餐」配置币种价格与渠道凭据（易支付三件套 /
   Stripe 密钥），「邮件发信」内嵌申请引导卡（二维码直达）；发送测试邮件一键验证；
   危险区切换支付渠道需二次确认，配置保存即热生效
@@ -135,7 +139,7 @@ motif/
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · **1221 个单元测试**（core 90 · db 141 · provider 8 · web 982）
+- pnpm monorepo · TypeScript strict · **1232 个单元测试**（core 90 · db 141 · provider 8 · web 993）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
@@ -238,7 +242,7 @@ docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # 
   图片在**默认的 local 存储**下也在里面（切 `s3` 后图片转由对象存储承载）
 - 自带健康检查（每 30s 探一次公开的套餐接口 `/api/billing/packages`），`docker compose ps` 显示 `healthy` 即正常
 - 要**钉版本**（可复现）：把 `docker-compose.yml` 里的 `:latest` 换成具体版本，如
-  `ghcr.io/evanfang0054/motif:v0.6.0`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
+  `ghcr.io/evanfang0054/motif:v0.6.1`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
 
 > ⚠️ **拉镜像报 `unauthorized` / `denied` 时**：说明 GHCR 上这个 package 不是公开的。GitHub 的
 > container package **可能**默认私有（即使仓库是 public），匿名 `docker pull` 会 403。
@@ -337,7 +341,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 1221 个单元测试（core 90 · db 141 · provider 8 · web 982）
+pnpm test             # 1232 个单元测试（core 90 · db 141 · provider 8 · web 993）
 pnpm typecheck        # 严格类型检查
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–G（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布 · 骨架
