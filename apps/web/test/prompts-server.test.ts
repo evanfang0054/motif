@@ -95,6 +95,21 @@ describe('首次打开不阻塞', () => {
     await refreshPromptSources(store, undefined, impl)
     expect(fetchableSources().every((s) => s.lastError === 'fetch failed')).toBe(true)
   })
+
+  it('响应体不含 failures 键：5 个源全失败时用户面也拿不到失败信息', async () => {
+    // 这里刻意选「全失败」这个场景：旧实现下它正是 `failures` 非空的那种输入，
+    // 所以「键不存在」在这个输入上才是有判别力的断言（成功场景本来就没失败可报）。
+    const { impl } = fakeFetch(() => new Error('fetch failed'))
+    const r = await loadPromptLibrary(store, query, impl)
+    // 路由（`api/prompts/route.ts`）把本对象原样交给 `NextResponse.json`，不挑字段，
+    // 故断言它等价于断言响应体。
+    expect('failures' in r).toBe(false)
+    expect(Object.keys(r).sort()).toEqual(['items', 'pending', 'sources', 'tags', 'total'])
+    // 反向兜底：失败信息只能从管理端拿，用户侧连「有没有源失败」都读不出来
+    await refreshPromptSources(store, undefined, impl)
+    const admin = await loadPromptLibrary(store, query, impl)
+    expect('failures' in admin).toBe(false)
+  })
 })
 
 describe('抓取与落库', () => {

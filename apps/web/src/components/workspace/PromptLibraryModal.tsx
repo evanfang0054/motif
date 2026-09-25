@@ -190,6 +190,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [pending, setPending] = useState(false)
+  // 轮询预算用尽后不再对外声称「还在加载」：源抓取失败会让 `pending` 一直为真，
+  // 不额外收口的话底部提示与空态骨架都会永久驻留（转圈永远转不完）
+  const [pollExhausted, setPollExhausted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [brokenCovers, setBrokenCovers] = useState<string[]>([])
   const [detailEntry, setDetailEntry] = useState<PromptLibraryEntry | null>(null)
@@ -245,13 +248,17 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   }, [load])
 
   // 首次抓取进行中：每 2 秒重取一次，最多 5 次（用 ref 调最新 load，避免闭包取到旧筛选条件）
+  // ⚠️ 预算用尽必须**同时**收掉指示（置 `pollExhausted`）—— 服务端的 `pending` 只看「还有陈旧源」，
+  // 源一直抓不到时它不会自己变假，光停轮询会留下一个永不消失的「正在加载提示词…」。
   useEffect(() => {
     if (!pending) return
+    setPollExhausted(false)
     let polls = 0
     const timer = setInterval(() => {
       polls += 1
       if (polls > PENDING_MAX_POLLS) {
         clearInterval(timer)
+        setPollExhausted(true)
         return
       }
       void loadRef.current(1, 'replace')
@@ -269,17 +276,20 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   }
 
   const hasFilter = Boolean(debouncedKeyword) || tags.length > 0 || source !== ALL_PROMPTS_OPTION
+  /** 「还有源在后台抓」且**轮询预算没用完**才算加载中 —— 预算用尽后 `pending` 可能仍为真（死源），
+   *  但那时不该再让用户等：列表非空就照常看内容，列表为空就如实说「还没有内容」。 */
+  const showPending = pending && !pollExhausted
   /**
    * 内容为空时区分成因（按优先级判）：
-   * 1. 还有源正在后台抓（`pending`）⇒ 加载态，不能显示成「拉不到」
+   * 1. 还有源正在后台抓（`showPending`）⇒ 加载态，不能显示成「拉不到」
    * 2. 抓完了、只是当前筛选没命中 / 库里确实没内容
    *
    * ⚠️ 这里**不再有**「抓取失败」这一类：上游源的抓取失败是运维信息，不进用户面 ——
    * 失败时用户就是「看到上次成功的内容」或「还没有内容」，与正常情况无差别。
-   * 注意「系统自带」是本地播种的源，所以**列表几乎不会真的为空**；`pending` 为真时
+   * 注意「系统自带」是本地播种的源，所以**列表几乎不会真的为空**；`showPending` 为真时
    * 内容区照常显示已有条目，只在底部计数行提示「正在加载提示词…」，并继续轮询。
    */
-  const emptyKind: 'fetching' | 'filtered' | 'empty' = pending ? 'fetching' : hasFilter ? 'filtered' : 'empty'
+  const emptyKind: 'fetching' | 'filtered' | 'empty' = showPending ? 'fetching' : hasFilter ? 'filtered' : 'empty'
 
   return (
     <WorkspaceModal title="提示词库" onClose={onClose} dialogClassName="max-w-[min(960px,94vw)]">
@@ -391,7 +401,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               ) : (
                 <>
                   <InlineText color="muted" type="body-xs">{loadingMore ? '正在加载更多…' : `共 ${total} 条`}</InlineText>
-                  {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在加载提示词…）</InlineText>}
+                  {showPending && <InlineText color="muted" type="body-xs" className="ms-2">（正在加载提示词…）</InlineText>}
                 </>
               )}
             </div>
