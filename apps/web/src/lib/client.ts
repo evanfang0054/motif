@@ -167,13 +167,16 @@ export interface PromptLibraryEntry {
   images: string[]
 }
 
-/** 提示词库检索结果：内容 + 分面 + 失败源 + 「首次抓取中」标记 */
+/**
+ * 提示词库检索结果：内容 + 分面 + 「还有源在抓」标记。
+ *
+ * ⚠️ 刻意**不含**任何「哪个源失败了」的信息：上游抓取失败属运维信息，只在管理端可见。
+ */
 export interface PromptLibraryResponse {
   items: PromptLibraryEntry[]
   total: number
   tags: string[]
   sources: Array<{ id: string; name: string; homepage: string; entryCount: number }>
-  failures: Array<{ sourceId: string; sourceName: string; error: string }>
   pending: boolean
 }
 
@@ -303,6 +306,9 @@ export const api = {
   adminOverview: () => call<AdminOverview>('/api/admin/overview'),
   adminListUsers: (params: { q?: string; role?: string; status?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: User[]; total: number; page: number; pageSize: number }>(`/api/admin/users${toQuery(params)}`),
+  /** 后台建号：返回的 password 是**一次性明文**，只此一次，不落任何持久化位置 */
+  adminCreateUser: (input: { email: string; name: string; credits?: number; role?: 'user' | 'admin' }) =>
+    call<{ user: User; password: string }>('/api/admin/users', { method: 'POST', body: JSON.stringify(input) }),
   adminAdjustCredits: (input: { userId: string; delta: number; reason: string }) =>
     call<{ user: User }>('/api/admin/users/credits', { method: 'POST', body: JSON.stringify(input) }),
   adminSetUserStatus: (userId: string, status: 'active' | 'disabled') =>
@@ -349,18 +355,6 @@ export const api = {
         page: params.page,
         pageSize: params.pageSize,
       })}`
-    ),
-  /** 抓取失败时用户自己重来一次：服务端会绕过失败重试节奏，只抓失败/陈旧的源 */
-  retryPrompts: (params: { q?: string; tags?: string[]; source?: string; page?: number; pageSize?: number } = {}) =>
-    call<PromptLibraryResponse & { retried: number; succeeded: number }>(
-      `/api/prompts/retry${toQuery({
-        q: params.q,
-        tags: params.tags?.length ? params.tags.join(',') : undefined,
-        source: params.source,
-        page: params.page,
-        pageSize: params.pageSize,
-      })}`,
-      { method: 'POST' }
     ),
   /** 把某条提示词的第 index 张示例图带进表单的参考图区（服务端抓取 → 落成暂存参考） */
   attachPromptImage: (input: { topicId: string; sourceId: string; entryId: string; index: number }) =>

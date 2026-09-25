@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hashPassword, verifyPassword } from '@/server/auth'
+import { ConfigError } from '@/server/config-error'
 import {
   enqueueGeneration,
   friendlyGenerateError,
@@ -11,6 +12,7 @@ import {
   register,
   sendCode,
   ServiceError,
+  userFacingGenerateError,
 } from '@/server/services'
 import { MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
@@ -376,6 +378,49 @@ describe('friendlyGenerateError（失败文案）', () => {
     expect(msg).toContain('已退还 2 张额度')
   })
   it('含中文的原因照旧拼进文案 —— 收口只挡英文，不能把已有中文原因也吃掉', () => {
+    expect(friendlyGenerateError('生图接口未返回图片数据', 0)).toBe('生成失败：生图接口未返回图片数据')
+  })
+})
+
+describe('userFacingGenerateError（配置类失败不外泄）', () => {
+  it('ConfigError 收敛成中性句，不含内部键名、不含「稍后重试」', () => {
+    const e = new ConfigError(
+      '[motif] 缺少生图网关配置：请在管理后台「系统设置 → 生图网关」填写 IMAGE_API_BASE_URL 与 IMAGE_API_KEY'
+    )
+    const msg = userFacingGenerateError(e, 3)
+    expect(msg).toBe('生成服务暂时不可用，已退还 3 张额度')
+    for (const leak of ['IMAGE_API_BASE_URL', 'IMAGE_API_KEY', '[motif]', '系统设置', '管理后台', '稍后重试']) {
+      expect(msg).not.toContain(leak)
+    }
+  })
+
+  it('无退款时不提退款', () => {
+    expect(userFacingGenerateError(new ConfigError('缺配置'), 0)).toBe('生成服务暂时不可用')
+  })
+
+  it('非 ConfigError 仍走原有分支（不吞掉既有可行动文案）', () => {
+    expect(userFacingGenerateError(new Error('生图接口失败（502）：{"error":"x"}'), 1)).toContain('网关 502')
+    expect(userFacingGenerateError(new Error('Request timeout after 120s'), 0)).toContain('超时')
+  })
+})
+
+describe('friendlyGenerateError 的内部特征守卫（兜底防线）', () => {
+  // ⚠️ 这几条的 raw **不是** ConfigError（走的是字符串分支）—— 否则会先命中上面
+  // userFacingGenerateError 的类型分支，守卫根本不会被执行，用例就测不到它。
+  it('含 SCREAMING_SNAKE 键名的 raw 不透传，且不承诺「稍后重试」', () => {
+    const msg = friendlyGenerateError('发送失败：缺少 SMTP_HOST 与 SMTP_PASS', 0)
+    expect(msg).not.toContain('SMTP_HOST')
+    expect(msg).not.toContain('SMTP_PASS')
+    expect(msg).not.toContain('稍后重试')
+  })
+
+  it('[motif] 前缀的 raw 不透传', () => {
+    const msg = friendlyGenerateError('[motif] 某个新写的配置错误', 0)
+    expect(msg).not.toContain('[motif]')
+    expect(msg).not.toContain('稍后重试')
+  })
+
+  it('不误伤普通中文原因（既有行为不变）', () => {
     expect(friendlyGenerateError('生图接口未返回图片数据', 0)).toBe('生成失败：生图接口未返回图片数据')
   })
 })

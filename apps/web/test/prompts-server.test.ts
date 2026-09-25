@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { MotifStore } from '@motif/db'
 import { BUILT_IN_PROMPT_ENTRIES, BUILT_IN_PROMPT_SOURCE } from '@/lib/prompt-builtins'
 import { BUILT_IN_PROMPT_SOURCES, REMOTE_PROMPT_SOURCES, isFetchableSource } from '@/lib/prompt-sources'
-import { attachPromptImage, isAttachableImage, isSafePublicAssetPath, loadPromptLibrary, refreshPromptSources, retryPromptLibrary } from '@/server/prompts'
+import { attachPromptImage, isAttachableImage, isSafePublicAssetPath, loadPromptLibrary, refreshPromptSources } from '@/server/prompts'
 import { resetRateLimiter } from '@/server/rate-limit'
 import { ServiceError } from '@/server/services'
 import { existsSync, readdirSync } from 'node:fs'
@@ -82,19 +82,32 @@ describe('首次打开不阻塞', () => {
     expect(r.pending).toBe(false)
   })
 
-  it('首次抓取全部失败时 pending 仍为 true 且 failures 报出每个源的原因', async () => {
-    const { impl } = fakeFetch(() => new Error('fetch failed'))
+  it('首次抓取全部失败时：内容照常可用，失败仍驱动后台重抓', async () => {
+    const { impl, calls } = fakeFetch(() => new Error('fetch failed'))
     const r = await loadPromptLibrary(store, query, impl)
     expect(r.pending).toBe(true)
     expect(r.items).toHaveLength(BUILTIN) // 系统自带照常可用，外部源还在抓
+    // ⚠️ 只断言 pending 是弱断言（它在后台刷新之前就算好、新库上恒为 true）——
+    // 必须同时证明「失败仍驱动了后台重抓」，否则这条用例即便一次都没抓也会绿。
+    await new Promise((res) => setTimeout(res, 0))
+    expect(calls.length).toBe(REMOTE)
+    // ⚠️ 管理端那条（lastError）必须仍是**原文** —— 运营要靠它看具体原因
     await refreshPromptSources(store, undefined, impl)
-    const after = await loadPromptLibrary(store, query, impl)
-    expect(after.failures).toHaveLength(REMOTE)
-    // #106：用户可见的 failures[].error 已收口成中文（旧行为是把底层的 `fetch failed` 原样交给前端）
-    expect(after.failures.every((f) => f.error === '网络不可达')).toBe(true)
-    expect(after.failures.some((f) => f.error.includes('fetch failed'))).toBe(false)
-    // ⚠️ 管理端那条（lastError）必须仍是**原文** —— 运营要靠它看具体原因（本仓刻意不改，见 #106）
     expect(fetchableSources().every((s) => s.lastError === 'fetch failed')).toBe(true)
+  })
+
+  it('响应体不含 failures 键：5 个源全失败时用户面也拿不到失败信息', async () => {
+    // 这里刻意选「全失败」这个场景：旧实现下它正是 `failures` 非空的那种输入，
+    // 所以「键不存在」在这个输入上才是有判别力的断言（成功场景本来就没失败可报）。
+    const { impl } = fakeFetch(() => new Error('fetch failed'))
+    const r = await loadPromptLibrary(store, query, impl)
+    // 路由（`api/prompts/route.ts`）把本对象原样交给 `NextResponse.json`，不挑字段，
+    // 故断言它等价于断言响应体。
+    expect('failures' in r).toBe(false)
+    expect(Object.keys(r).sort()).toEqual(['items', 'pending', 'sources', 'tags', 'total'])
+    // 失败信息不是被丢弃，只是**换了个面**：管理端仍能逐源读到原文
+    const admin = await refreshPromptSources(store, undefined, impl)
+    expect(admin.sources.filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id).every((s) => s.lastError === 'fetch failed')).toBe(true)
   })
 })
 
@@ -274,7 +287,6 @@ describe('检索结果组装', () => {
 
     const all = await loadPromptLibrary(store, { ...query, source: REMOTE_PROMPT_SOURCES[0].name }, impl)
     expect(all.sources.map((s) => s.id)).toEqual([REMOTE_PROMPT_SOURCES[0].id, BUILT_IN_PROMPT_SOURCE.id])
-    expect(all.failures).toHaveLength(REMOTE - 1)
 
     const tagged = await loadPromptLibrary(store, { ...query, source: REMOTE_PROMPT_SOURCES[0].name, tags: ['标签0'] }, impl)
     expect(tagged.total).toBe(2)
@@ -355,84 +367,12 @@ describe('外部依赖与超时配置', () => {
 })
 
 describe('错误原因文案', () => {
-  it('原因里不带源名（源名由 failures[].sourceName 单独给，界面按「源名：原因」拼）', async () => {
+  it('原因里不带源名（源名由结果里的 sourceName 单独给，便于管理端按「源名：原因」展示）', async () => {
     const { impl } = fakeFetch(() => ({ items: [] }))
     const r = await refreshPromptSources(store, undefined, impl)
     expect(r.summary.results[0].error).toBe('返回的不是提示词数组')
     expect(r.summary.results[0].error).not.toContain('源')
     expect(r.summary.results[0].sourceName).toBeTruthy()
-  })
-})
-
-describe('用户侧重试', () => {
-  it('失败后立刻重试：真的重新抓（绕过失败重试节奏），成功后 failures 清空、内容可用', async () => {
-    const bad = fakeFetch(() => new Error('挂了'))
-    await refreshPromptSources(store, undefined, bad.impl)
-    expect(fetchableSources().every((s) => s.lastError === '挂了')).toBe(true)
-
-    // 失败刚发生（在 5 分钟节奏内）——惰性路径不会重抓
-    const lazy = fakeFetch((url) => payloadFor(url, 2))
-    await loadPromptLibrary(store, query, lazy.impl)
-    await new Promise((r) => setTimeout(r, 20))
-    expect(lazy.calls).toHaveLength(0)
-
-    // 但用户点「重试」必须真的重抓
-    const good = fakeFetch((url) => payloadFor(url, 2))
-    const r = await retryPromptLibrary(store, query, 'u1', good.impl)
-    expect(good.calls).toHaveLength(REMOTE)
-    expect(r.retried).toBe(REMOTE)
-    expect(r.succeeded).toBe(REMOTE)
-    expect(r.failures).toEqual([])
-    expect(r.total).toBe(BUILTIN + REMOTE * 2)
-    expect(fetchableSources().every((s) => s.lastError === '')).toBe(true)
-  })
-
-  it('仍失败时如实返回失败原因，不假装成功', async () => {
-    const bad = fakeFetch(() => new Error('还是挂了'))
-    const r = await retryPromptLibrary(store, query, 'u1', bad.impl)
-    expect(r.succeeded).toBe(0)
-    expect(r.failures).toHaveLength(REMOTE)
-    // 外部源全挂，但「系统自带」照常可用 —— 库不会因此变成空的
-    expect(r.items).toHaveLength(BUILTIN)
-  })
-
-  it('没有失败也没有陈旧时：一个源都不抓，直接返回当前内容', async () => {
-    const seed = fakeFetch((url) => payloadFor(url, 1))
-    await refreshPromptSources(store, undefined, seed.impl)
-    const idle = fakeFetch((url) => payloadFor(url, 1))
-    const r = await retryPromptLibrary(store, query, 'u1', idle.impl)
-    expect(idle.calls).toHaveLength(0)
-    expect(r.retried).toBe(0)
-    expect(r.total).toBe(BUILTIN + REMOTE)
-  })
-
-  it('按用户频控：同一人 1 分钟内第 4 次 429，换个人不受影响', async () => {
-    const { impl } = fakeFetch((url) => payloadFor(url, 1))
-    await retryPromptLibrary(store, query, 'u1', impl)
-    await retryPromptLibrary(store, query, 'u1', impl)
-    await retryPromptLibrary(store, query, 'u1', impl)
-    await expect(retryPromptLibrary(store, query, 'u1', impl)).rejects.toThrow(/频繁/)
-    // 另一个用户不受这个人用掉的配额影响
-    const r = await retryPromptLibrary(store, query, 'u2', impl)
-    expect(r.retried).toBe(0)
-  })
-
-  it('重试也遵守单飞：与在途的抓取合并，不重复请求', async () => {
-    const calls: string[] = []
-    const resolvers: Array<() => void> = []
-    const impl = (async (input: string | URL | Request) => {
-      calls.push(String(input))
-      await new Promise<void>((r) => {
-        resolvers.push(r)
-      })
-      return { ok: true, status: 200, json: async () => payloadFor('x', 1) } as unknown as Response
-    }) as unknown as typeof fetch
-    const lazy = loadPromptLibrary(store, query, impl)
-    const retry = retryPromptLibrary(store, query, 'u1', impl)
-    await Promise.resolve()
-    expect(calls).toHaveLength(REMOTE)
-    for (const release of resolvers) release()
-    await Promise.all([lazy, retry])
   })
 })
 

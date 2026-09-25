@@ -61,8 +61,30 @@ export const PROMPT_CACHE_TTL_MS = 60 * 60 * 1000
  */
 export const PROMPT_FAILURE_RETRY_MS = 5 * 60 * 1000
 
-/** 单个源的抓取上限：超时即中断，不让一个慢源拖住整批 */
-export const PROMPT_FETCH_TIMEOUT_MS = 8000
+/**
+ * 提示词源抓取上限：超时即中断，不让一个慢源拖住整批。
+ *
+ * ⚠️ 从 8s 放宽到 30s 的**理由（推断，未在目标机上实测）**：上游最大的两个源实测约
+ * 1,059,345 B（≈1.01 MiB）与 1,252,781 B（≈1.19 MiB），若链路上限约 100KB/s 则需要约 12s
+ * —— 8s 下不完，表现就是「部署到服务器后只有这两个源一直抓取失败」。**这只是推断**：
+ * 服务器上那两个源的真实报错原文没有拿到过，所以别把它当已证实的根因。
+ * 30s 给约 2.5 倍余量；5 个源是并发抓（`refreshSources` 用 `Promise.all`），
+ * 故管理端「立即刷新」最坏等约 30s，**不是** 5×30s。
+ *
+ * 若放宽后**仍然**失败，问题多半不在带宽：查服务端出网 —— Node 内置 `fetch` 不认
+ * `HTTP(S)_PROXY`，服务端走代理时必须设 `NODE_USE_ENV_PROXY=1`。
+ */
+export const PROMPT_FETCH_TIMEOUT_MS = 30_000
+
+/**
+ * 示例图抓取上限（「把提示词示例图带进参考图区」那条链路）。
+ *
+ * ⚠️ **刻意与源抓取分开**：这条路径每跳都吃一次超时，且最多 3 跳
+ * （`fetchImageFollowingSafeRedirects` + `ATTACH_MAX_REDIRECTS = 2`）。
+ * 若跟源抓取共用 30s，一次「用作参考图」的最坏耗时会从 3×8s=24s 变成 3×30s=90s ——
+ * 那是用户没要求的行为变更，故这里保持 8s 不变。
+ */
+export const PROMPT_ATTACH_TIMEOUT_MS = 8_000
 
 export const PROMPT_PAGE_SIZE = 20
 export const PROMPT_MAX_PAGE_SIZE = 100

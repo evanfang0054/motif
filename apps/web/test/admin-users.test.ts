@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NextRequest } from 'next/server'
 import { MotifStore } from '@motif/db'
-import { hashPassword, SESSION_COOKIE } from '@/server/auth'
+import type { User } from '@motif/core'
+import { hashPassword, verifyPassword, SESSION_COOKIE } from '@/server/auth'
 import { login } from '@/server/services'
-import { GET as usersGET } from '@/app/api/admin/users/route'
+import { GET as usersGET, POST as usersPOST } from '@/app/api/admin/users/route'
 import { POST as creditsPOST } from '@/app/api/admin/users/credits/route'
 import { POST as statusPOST } from '@/app/api/admin/users/status/route'
 import { POST as rolePOST } from '@/app/api/admin/users/role/route'
@@ -243,5 +244,79 @@ describe('审计写入失败的隔离', () => {
       store.insertAudit = original
     }
     expect(store.listAudit({})).toHaveLength(0) // 审计确实没写成
+  })
+})
+
+describe('POST /api/admin/users（后台建号）', () => {
+  it('普通管理员建普通用户：默认角色、强制首登改密、写审计、返回一次性密码', async () => {
+    const adminTok = sessionFor('admin', 'ops@b.co')
+    const res = await usersPOST(req(adminTok, { email: 'New@B.co', name: '新同事', credits: 50 }))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { user: User; password: string }
+    expect(body.user.role).toBe('user')
+    expect(body.user.status).toBe('active')
+    expect(body.user.mustChangePassword).toBe(true)
+    expect(body.user.credits).toBe(50)
+    // 不是「非空即通过」：钉住 generateStrongPassword(20) 的长度契约
+    expect(body.password).toHaveLength(20)
+    // 更强的判据：库里那份哈希**确实对得上**这个明文（不只是「不等于」）
+    // ⚠️ `User` 领域类型不含 passwordHash，必须走 store 的专用读口（packages/db/src/store.ts:655）
+    expect(verifyPassword(body.password, store.getPasswordHash(body.user.id)!)).toBe(true)
+    // 邮箱归一化到小写（store.createUser 内部 toLowerCase）
+    expect(store.getUserByEmail('new@b.co')?.id).toBe(body.user.id)
+    // 期初额度有账本行，且**金额与请求的 credits 相等**（只断言「存在」的话，金额写错也能绿）
+    const opening = store.listLedger({ userId: body.user.id }).filter((l) => l.source === 'opening_balance')
+    expect(opening).toHaveLength(1)
+    expect(opening[0].delta).toBe(50)
+    // 审计有 user.create；detail 含 email / role / credits，且不含明文密码（detail 是 string | null）
+    const entry = store.listAudit({ limit: 10 }).find((a) => a.action === 'user.create')
+    expect(entry?.targetId).toBe(body.user.id)
+    expect(entry?.detail).toContain('"role":"user"')
+    expect(entry?.detail).toContain('"credits":50')
+    expect(entry?.detail ?? '').not.toContain(body.password)
+  })
+
+  it('admin 建 admin 被拒（403）；root 建 admin 成功', async () => {
+    const adminTok = sessionFor('admin', 'ops2@b.co')
+    expect((await usersPOST(req(adminTok, { email: 'a1@b.co', name: 'x', role: 'admin' }))).status).toBe(403)
+
+    const rootTok = sessionFor('root', 'root@b.co')
+    const ok = await usersPOST(req(rootTok, { email: 'a2@b.co', name: 'y', role: 'admin' }))
+    expect(ok.status).toBe(200)
+    expect(((await ok.json()) as { user: User }).user.role).toBe('admin')
+  })
+
+  it('非法 role 是 400（与提权被拒的 403 区分），root 也不可建', async () => {
+    const rootTok = sessionFor('root', 'root2@b.co')
+    for (const role of ['root', 'superuser']) {
+      expect((await usersPOST(req(rootTok, { email: `r-${role}@b.co`, name: 'z', role }))).status).toBe(400)
+    }
+  })
+
+  it('邮箱重复 409 且给出可行动文案；大小写不产生第二个账号', async () => {
+    const adminTok = sessionFor('admin', 'ops3@b.co')
+    expect((await usersPOST(req(adminTok, { email: 'Dup@B.co', name: 'p' }))).status).toBe(200)
+    const again = await usersPOST(req(adminTok, { email: 'dup@b.co', name: 'q' }))
+    expect(again.status).toBe(409)
+    expect(((await again.json()) as { error: string }).error).toBe('该邮箱已被注册。')
+  })
+
+  it('credits 非法 400；email / name 走 core 校验', async () => {
+    const adminTok = sessionFor('admin', 'ops4@b.co')
+    for (const credits of [-1, 1.5]) {
+      expect((await usersPOST(req(adminTok, { email: `c${credits}@b.co`, name: 'n', credits }))).status).toBe(400)
+    }
+    expect((await usersPOST(req(adminTok, { email: 'not-an-email', name: 'n' }))).status).toBe(400)
+    expect((await usersPOST(req(adminTok, { email: 'ok@b.co', name: '  ' }))).status).toBe(400)
+    expect((await usersPOST(req(adminTok, { email: 'ok2@b.co', name: 'x'.repeat(41) }))).status).toBe(400)
+    // 合法 JSON 但根不是对象：`readJson` 放行 `null`，取字段会抛 TypeError ⇒ 必须挡成 400 而不是 500
+    expect((await usersPOST(req(adminTok, null))).status).toBe(400)
+  })
+
+  it('未登录 / 普通用户拿不到 200', async () => {
+    const userTok = sessionFor('user', 'plain@b.co')
+    for (const tok of [undefined, userTok]) {
+      expect((await usersPOST(req(tok, { email: 'nope@b.co', name: 'n' }))).status).not.toBe(200)
+    }
   })
 })
