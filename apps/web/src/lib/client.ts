@@ -173,7 +173,6 @@ export interface PromptLibraryResponse {
   total: number
   tags: string[]
   sources: Array<{ id: string; name: string; homepage: string; entryCount: number }>
-  failures: Array<{ sourceId: string; sourceName: string; error: string }>
   pending: boolean
 }
 
@@ -349,18 +348,6 @@ export const api = {
         page: params.page,
         pageSize: params.pageSize,
       })}`
-    ),
-  /** 抓取失败时用户自己重来一次：服务端会绕过失败重试节奏，只抓失败/陈旧的源 */
-  retryPrompts: (params: { q?: string; tags?: string[]; source?: string; page?: number; pageSize?: number } = {}) =>
-    call<PromptLibraryResponse & { retried: number; succeeded: number }>(
-      `/api/prompts/retry${toQuery({
-        q: params.q,
-        tags: params.tags?.length ? params.tags.join(',') : undefined,
-        source: params.source,
-        page: params.page,
-        pageSize: params.pageSize,
-      })}`,
-      { method: 'POST' }
     ),
   /** 把某条提示词的第 index 张示例图带进表单的参考图区（服务端抓取 → 落成暂存参考） */
   attachPromptImage: (input: { topicId: string; sourceId: string; entryId: string; index: number }) =>

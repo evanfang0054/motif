@@ -83,7 +83,6 @@ export interface PromptLibraryResult {
   total: number
   tags: string[]
   sources: Array<{ id: string; name: string; homepage: string; entryCount: number }>
-  failures: Array<{ sourceId: string; sourceName: string; error: string }>
   /** 是否仍有陈旧的可抓取源正在后台抓取 —— 前端据此显示加载态并轮询 */
   pending: boolean
 }
@@ -128,7 +127,7 @@ function toStatus(row: PromptSourceRow): PromptSourceStatus {
   }
 }
 
-/** 把底层异常翻译成给运维看的一句话（**不带源名** —— 源名由 failures[].sourceName 提供） */
+/** 把底层异常翻译成给运维看的一句话（**不带源名** —— 源名由结果里的 sourceName 单独给） */
 function describeReason(e: unknown): string {
   if (e instanceof Error) {
     if (e.name === 'TimeoutError') return '抓取超时'
@@ -213,19 +212,11 @@ function assemble(
     sources: sources
       .filter((s) => s.entryCount > 0)
       .map((s) => ({ id: s.id, name: s.name, homepage: s.homepage, entryCount: s.entryCount })),
-    // ⚠️ `lastError` 是**运维口径**的原文（管理端「上次错误」列要它），但同一条串也会经这里进
-    // 用户可见的提示词库横幅（界面按「源名：原因」拼）—— 故只在用户这一侧过一遍 zhReason 做中文映射，
-    // 库里 / 管理端仍是原文（issue #106）。
-    failures: sources
-      .filter((s) => s.lastError)
-      .map((s) => ({ sourceId: s.id, sourceName: s.name, error: zhReason(s.lastError, '抓取失败') })),
+    // ⚠️ 这里**刻意不返回**各源的抓取失败原因（`lastError`）：那是**运维口径**的信息，
+    // 只在管理端「系统设置 → 提示词库」的「上次错误」列展示原文。用户侧看不到失败态，
+    // 失败时静默降级为「展示上次成功的内容」或「还没有内容」。
     pending,
   }
-}
-
-/** 只读库组装结果（不做任何抓取），供惰性路径与重试路径共用 */
-function readLibrary(store: MotifStore, query: PromptQuery, pending: boolean): PromptLibraryResult {
-  return assemble(store.listPromptEntries(), store.listPromptSources(), query, pending)
 }
 
 /**
@@ -253,35 +244,6 @@ export async function loadPromptLibrary(
   // 有了「系统自带」这个本地播种的源之后，库里**永不为空**，按旧口径 pending 恒为 false，
   // 前端就不会再轮询、外部源的首抓结果要等下次打开才出现。
   return assemble(entries, sources, query, stale.length > 0)
-}
-
-/**
- * 用户侧「重试」（登录必需）。**无条件抓「失败或陈旧」的源**，绕过失败重试节奏 ——
- * 否则点重试在 5 分钟内什么也不会发生，按钮就成了假动作。
- *
- * 防滥用：按用户频控（不是全局键 —— 这里保护的是「我这次打开」的重试，一个人点满
- * 不该影响别人；上游源本身由单飞去重与每源 8 秒上限兜着）。
- */
-export async function retryPromptLibrary(
-  store: MotifStore,
-  query: PromptQuery,
-  userId: string,
-  fetchImpl: typeof fetch = fetch
-): Promise<PromptLibraryResult & { retried: number; succeeded: number }> {
-  ensurePromptSources(store)
-  if (!checkRate(`prompts:retry:${userId}`, 60_000, 3)) {
-    throw new ServiceError(429, '重试过于频繁，请稍后再试。')
-  }
-  const sources = store.listPromptSources()
-  const now = Date.now()
-  const targets = sources.filter(
-    (s) =>
-      isFetchableSource(s) &&
-      (Boolean(s.lastError) || isSourceStale({ fetchedAt: s.fetchedAt, signature: s.signature, lastError: s.lastError, def: s, now }))
-  )
-  const summary = await refreshSources(store, targets, fetchImpl)
-  const after = readLibrary(store, query, false)
-  return { ...after, retried: summary.results.length, succeeded: summary.successCount }
 }
 
 /**

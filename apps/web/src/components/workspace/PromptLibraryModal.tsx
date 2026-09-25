@@ -1,12 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Chip, SearchField, Skeleton, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
+import { Button, Chip, SearchField, Skeleton, Spinner, Tag, TagGroup, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight } from '@gravity-ui/icons'
 import { api, type PromptLibraryEntry } from '@/lib/client'
 import { errorMessage } from '@/lib/error-message'
-import { showToast } from '@/components/ui/toast'
 import { PromptDetailDialog } from './PromptDetailDialog'
 import { ALL_PROMPTS_OPTION, PROMPT_PAGE_SIZE } from '@/lib/prompt-sources'
 import { WorkspaceModal } from './dialogs'
@@ -28,12 +27,6 @@ interface PromptSourceFacet {
   name: string
   homepage: string
   entryCount: number
-}
-
-interface PromptFailure {
-  sourceId: string
-  sourceName: string
-  error: string
 }
 
 interface Props {
@@ -192,7 +185,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   const [items, setItems] = useState<PromptLibraryEntry[]>([])
   const [facetTags, setFacetTags] = useState<string[]>([])
   const [facetSources, setFacetSources] = useState<PromptSourceFacet[]>([])
-  const [failures, setFailures] = useState<PromptFailure[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -200,7 +192,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [brokenCovers, setBrokenCovers] = useState<string[]>([])
-  const [retrying, setRetrying] = useState(false)
   const [detailEntry, setDetailEntry] = useState<PromptLibraryEntry | null>(null)
 
   // 迟到的旧响应不许落地：连打搜索词时后发的请求可能先回
@@ -223,7 +214,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
         setTotal(r.total)
         setFacetTags(r.tags)
         setFacetSources(r.sources)
-        setFailures(r.failures)
         setPending(r.pending)
         setPage(targetPage)
         setError(null)
@@ -243,44 +233,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   useEffect(() => {
     loadRef.current = load
   }, [load])
-
-  /**
-   * 重试：抓取失败时用户自己重来一次。
-   * 走 POST /api/prompts/retry —— 服务端**绕过失败重试节奏**，否则点下去 5 分钟内什么都不会发生。
-   */
-  const retry = useCallback(async () => {
-    setRetrying(true)
-    setError(null)
-    // 重试自己接管 loading：在途的那次 load 会被下面的 seq 推进作废，
-    // 它的 finally 不再复位 loading（否则「作废」和「不复位」叠加会把内容区永久钉在 Spinner 上）
-    setLoading(true)
-    setLoadingMore(false)
-    const seq = ++seqRef.current // 丢弃在途的旧响应
-    try {
-      const r = await api.retryPrompts({ q: debouncedKeyword, tags, source, page: 1, pageSize: PROMPT_PAGE_SIZE })
-      if (seq !== seqRef.current) return
-      setItems(r.items)
-      setTotal(r.total)
-      setFacetTags(r.tags)
-      setFacetSources(r.sources)
-      setFailures(r.failures)
-      setPending(r.pending)
-      setPage(1)
-      showToast(
-        r.failures.length === 0
-          ? { tone: 'success', message: `重试成功，共 ${r.total} 条` }
-          : { tone: 'warning', message: `重试了 ${r.retried} 个源，仍有 ${r.failures.length} 个源失败` }
-      )
-    } catch (e) {
-      if (seq === seqRef.current) setError(errorMessage(e, '重试失败'))
-    } finally {
-      if (seq === seqRef.current) {
-        setLoading(false)
-        setLoadingMore(false)
-      }
-      setRetrying(false)
-    }
-  }, [debouncedKeyword, tags, source])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), SEARCH_DEBOUNCE_MS)
@@ -319,38 +271,18 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   const hasFilter = Boolean(debouncedKeyword) || tags.length > 0 || source !== ALL_PROMPTS_OPTION
   /**
    * 内容为空时区分成因（按优先级判）：
-   * 1. 有源抓失败（`failures` 非空）⇒ 如实报原因 + 重试
-   * 2. 还有源正在后台抓（`pending`）⇒ 加载态，不能显示成「拉不到」
-   * 3. 抓完了、只是当前筛选没命中 / 库里确实没内容
+   * 1. 还有源正在后台抓（`pending`）⇒ 加载态，不能显示成「拉不到」
+   * 2. 抓完了、只是当前筛选没命中 / 库里确实没内容
    *
-   * ⚠️ 注意「系统自带」是本地播种的源，所以**列表几乎不会真的为空**；`pending` 为真时
-   * 内容区照常显示已有条目，只在底部计数行提示「正在抓取提示词库…」，并继续轮询。
+   * ⚠️ 这里**不再有**「抓取失败」这一类：上游源的抓取失败是运维信息，不进用户面 ——
+   * 失败时用户就是「看到上次成功的内容」或「还没有内容」，与正常情况无差别。
+   * 注意「系统自带」是本地播种的源，所以**列表几乎不会真的为空**；`pending` 为真时
+   * 内容区照常显示已有条目，只在底部计数行提示「正在加载提示词…」，并继续轮询。
    */
-  const emptyKind: 'fetching' | 'failed' | 'filtered' | 'empty' =
-    failures.length > 0 ? 'failed' : pending ? 'fetching' : hasFilter ? 'filtered' : 'empty'
-  const hasContent = items.length > 0
+  const emptyKind: 'fetching' | 'filtered' | 'empty' = pending ? 'fetching' : hasFilter ? 'filtered' : 'empty'
 
   return (
     <WorkspaceModal title="提示词库" onClose={onClose} dialogClassName="max-w-[min(960px,94vw)]">
-      {failures.length > 0 && (
-        <Alert status="warning" className="mb-3">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>
-              {hasContent
-                ? `${failures.length} 个提示词源抓取失败，正在展示上次成功的内容`
-                : `${failures.length} 个提示词源抓取失败，暂时没有可展示的内容`}
-            </Alert.Title>
-            <Alert.Description>{failures.map((f) => `${f.sourceName}：${f.error}`).join('；')}</Alert.Description>
-            {/* 错误态的 CTA 且会 disabled → 保留可见文字（禁用时 Tooltip 不可达，见 ui/icon-button.tsx 的说明） */}
-            <Button variant="secondary" size="sm" className="mt-2" isDisabled={retrying} onPress={() => void retry()}>
-              <ArrowRotateRight className={retrying ? 'animate-spin' : undefined} />
-              {retrying ? '重试中…' : '重试'}
-            </Button>
-          </Alert.Content>
-        </Alert>
-      )}
-
       <div className="grid h-[62dvh] min-h-0 gap-4 sm:grid-cols-[170px_minmax(0,1fr)]">
         <aside className="min-h-0 overflow-y-auto pe-1">
           <div className="ws-panel-label mb-1.5">来源</div>
@@ -421,25 +353,13 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>
                 {/* ⚠️ 下面这些 `align="center"` 不能省：本容器靠 `text-center` 居中，而 `Typography` 自己在
                     元素上带 `text-align: start`。单行时看不出差别（子元素按 fit-content 居中），
-                    一旦折行（失败原因那几条经常很长）第二行起就是左对齐。 */}
+                    一旦折行第二行起就是左对齐。 */}
                 {emptyKind === 'fetching' ? (
                   <>
                     {/* 上游还在抓：内容形状同样可预判（卡片网格）。⚠️ 这里不能限高（原来的 h-40 装不下三张卡），
                         也不能让 grid 按 fit-content 收缩 —— 否则骨架塌成一条缝（见 EntryGridSkeleton 的说明）。 */}
                     <EntryGridSkeleton count={3} />
-                    <InlineText color="muted" type="body-sm" align="center">正在抓取提示词库…</InlineText>
-                  </>
-                ) : emptyKind === 'failed' ? (
-                  <>
-                    <InlineText color="muted" type="body-sm" align="center">提示词库暂时拉不到内容，可以重试一次；也可让管理员在系统设置里刷新。</InlineText>
-                    {failures.map((f) => (
-                      <InlineText type="body-xs" key={f.sourceId} align="center">
-                        {f.sourceName}：{f.error}
-                      </InlineText>
-                    ))}
-                    <Button variant="secondary" size="sm" className="mt-1" isDisabled={retrying} onPress={() => void retry()}>
-                      {retrying ? '重试中…' : '重试'}
-                    </Button>
+                    <InlineText color="muted" type="body-sm" align="center">正在加载提示词…</InlineText>
                   </>
                 ) : emptyKind === 'filtered' ? (
                   <InlineText color="muted" type="body-sm" align="center">没有匹配的提示词，换个关键词或标签试试</InlineText>
@@ -471,7 +391,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
               ) : (
                 <>
                   <InlineText color="muted" type="body-xs">{loadingMore ? '正在加载更多…' : `共 ${total} 条`}</InlineText>
-                  {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在抓取提示词库…）</InlineText>}
+                  {pending && <InlineText color="muted" type="body-xs" className="ms-2">（正在加载提示词…）</InlineText>}
                 </>
               )}
             </div>
