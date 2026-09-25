@@ -17,9 +17,8 @@ const SEARCH_DEBOUNCE_MS = 300
 const LOAD_MORE_THRESHOLD_PX = 160
 /**
  * 只要服务端还有陈旧的可抓取源在后台抓，响应里就是 `pending: true`。
- * 前端每 2 秒重取一次、最多 5 次（≈10 秒，覆盖服务端 8 秒的单源上限），之后停止轮询。
- * 停止轮询不等于死路：抓取失败的源会连同原因一起显示在告警区，那里有「重试」按钮
- * （走 `POST /api/prompts/retry`，服务端绕过 5 分钟的失败节奏）。
+ * 前端每 2 秒重取一次、最多 5 次（≈10 秒），之后停止轮询 —— 停止轮询不等于死路：
+ * 失败源 5 分钟后会自动重抓，管理员也可在系统设置里「立即刷新」。
  */
 const PENDING_POLL_MS = 2000
 const PENDING_MAX_POLLS = 5

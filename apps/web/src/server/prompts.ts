@@ -18,7 +18,7 @@ import { detectImageMime, type StagedReference, type User } from '@motif/core'
 import type { MotifStore, PromptEntryRow, PromptSourceRow } from '@motif/db'
 import { zhReason } from '@/lib/error-message'
 import { BUILT_IN_PROMPT_ENTRIES, BUILT_IN_PROMPT_SOURCE } from '@/lib/prompt-builtins'
-import { BUILT_IN_PROMPT_SOURCES, PROMPT_FETCH_TIMEOUT_MS, isFetchableSource, type PromptSourceDef } from '@/lib/prompt-sources'
+import { BUILT_IN_PROMPT_SOURCES, PROMPT_ATTACH_TIMEOUT_MS, PROMPT_FETCH_TIMEOUT_MS, isFetchableSource, type PromptSourceDef } from '@/lib/prompt-sources'
 import {
   collectPromptTags,
   filterPromptEntries,
@@ -347,7 +347,7 @@ async function readCapped(res: Response, max: number): Promise<Buffer> {
 async function fetchImageFollowingSafeRedirects(url: string, fetchImpl: typeof fetch): Promise<Response> {
   let current = url
   for (let hop = 0; hop <= ATTACH_MAX_REDIRECTS; hop += 1) {
-    const res = await fetchImpl(current, { redirect: 'manual', signal: AbortSignal.timeout(PROMPT_FETCH_TIMEOUT_MS) })
+    const res = await fetchImpl(current, { redirect: 'manual', signal: AbortSignal.timeout(PROMPT_ATTACH_TIMEOUT_MS) })
     if (res.status < 300 || res.status >= 400) return res
     const location = res.headers.get('location')
     if (!location) return res

@@ -6,8 +6,10 @@ import {
   BUILT_IN_PROMPT_SOURCES,
   REMOTE_PROMPT_SOURCES,
   isFetchableSource,
+  PROMPT_ATTACH_TIMEOUT_MS,
   PROMPT_CACHE_TTL_MS,
   PROMPT_FAILURE_RETRY_MS,
+  PROMPT_FETCH_TIMEOUT_MS,
   PROMPT_REGISTRY_SOURCE_BASE,
 } from '@/lib/prompt-sources'
 import {
@@ -239,6 +241,21 @@ describe('isSourceStale', () => {
     const at = '2026-09-21T11:50:00.000Z'
     expect(isSourceStale({ ...ok, fetchedAt: at })).toBe(false)
     expect(isSourceStale({ ...ok, fetchedAt: at, lastError: 'x' })).toBe(true)
+  })
+})
+
+describe('抓取超时常量', () => {
+  // 回归绊线：源抓取曾长期是 8s，而体积最大的两个上游源（约 1.01MiB / 1.19MiB）
+  // 在慢链路上 8s 内下不完，表现为「部署到服务器后个别源一直抓取失败」。
+  // ⚠️ 它只防「被改回小值」，**不构成**「服务器上真的能抓下来」的行为验证 ——
+  // 那需要部署到目标机实测，不在单测射程内。
+  it('源抓取不小于 30 秒（回归绊线，非行为验证）', () => {
+    expect(PROMPT_FETCH_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000)
+  })
+
+  it('示例图抓取仍是 8 秒 —— 两条链路不共用一个常量', () => {
+    expect(PROMPT_ATTACH_TIMEOUT_MS).toBe(8_000)
+    expect(PROMPT_ATTACH_TIMEOUT_MS).not.toBe(PROMPT_FETCH_TIMEOUT_MS)
   })
 })
 
