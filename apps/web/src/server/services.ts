@@ -35,6 +35,7 @@ import { buildImageKey, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hasChinese, isNetworkFailureReason } from '@/lib/error-message'
 import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
+import { ConfigError } from './config-error'
 import type { MailerConfig } from './mailer'
 import { removeFromAllStorages, resolveReadStorages, resolveStorage } from './context'
 import { createLlmFromConfig } from './llm'
@@ -518,9 +519,27 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
     // 与 `finalizeCancel` 同构：谁先翻走状态谁收尾，另一方退化为 no-op。
     store.finalizeFailure(messageId, {
       workerId: deps.workerId,
-      buildError: (refund) => friendlyGenerateError(raw, refund),
+      buildError: (refund) => userFacingGenerateError(e, refund),
     })
   }
+}
+
+/** 内部特征：`[motif]` 前缀，或 SCREAMING_SNAKE 形式的环境变量名（要求至少一个下划线） */
+const INTERNAL_RAW_PATTERN = /^\s*\[motif\]|\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/
+
+/**
+ * 面向用户的失败文案（**唯一入口**）：先按错误类型分流，再交给 `friendlyGenerateError`。
+ *
+ * ⚠️ 为什么必须按类型分流：配置类失败（占位 provider 抛的 `ConfigError`）的 message 里带着
+ * 内部环境变量键名（`IMAGE_API_BASE_URL` / `IMAGE_API_KEY`）。旧实现把 message 当普通 raw
+ * 交给 `friendlyGenerateError`，而它最后一条分支对「含中文的 raw」原样透传 —— 键名就这样
+ * 经 `messages.error` 漏到了 toast / 右侧横幅 / 画布卡片三处（三处读同一份，故在此一处收口即全覆盖）。
+ */
+export function userFacingGenerateError(e: unknown, refund: number): string {
+  const refunded = refund > 0 ? `，已退还 ${refund} 张额度` : ''
+  // 不含「请稍后重试」：配置没改好之前，用户重试多少次都一样，不做假承诺
+  if (e instanceof ConfigError) return `生成服务暂时不可用${refunded}`
+  return friendlyGenerateError(e instanceof Error ? e.message : String(e), refund)
 }
 
 /**
@@ -544,6 +563,11 @@ export function friendlyGenerateError(raw: string, refund: number): string {
   // 兜底挡纯英文。⚠️ 若将来 provider 新增**纯英文但可行动**的错误（配额 / 鉴权类），应在此处显式
   // 映射成具体中文，而不是落进这条泛化文案 —— 原始串仍在 catch 的 console.error 里，但用户会失去线索。
   if (!hasChinese(raw)) return `生成失败${refunded}，请稍后重试`
+  // 兜底防线：挡住「将来新增的配置错误忘了走 ConfigError 类型」的情形。
+  // 判据是**内部特征**而不是「像不像英文」—— 环境变量名要求至少一个下划线，
+  // 故不会误伤 `GPT` / `HTTP 401` / `PNG` 这类正常词。
+  // 文案与上面的 ConfigError 分支同款：都不承诺「稍后重试」，保持口径一致。
+  if (INTERNAL_RAW_PATTERN.test(raw)) return `生成服务暂时不可用${refunded}`
   return `生成失败：${raw.slice(0, 60)}${refunded}`
 }
 

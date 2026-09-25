@@ -11,8 +11,13 @@
  * `context.ts` 依赖（放进 `context.ts` 就会成环 `mailer → context → mailer`）。
  */
 export class ConfigError extends Error {
-  /** 面向用户的固定指引（不透内部键名） */
-  static readonly USER_MESSAGE = '服务配置不完整，请到管理后台「系统设置」补全配置后重试。'
+  /**
+   * 面向**调用方**的固定文案，不透内部键名。
+   *
+   * ⚠️ 刻意**不**写「请到管理后台补配置」：这句会经 `jsonError` 的 503 回到**普通用户**
+   * （可达路径：注册发验证码时邮件渠道没配好）。管理端有自己的系统设置页，不靠这句指路。
+   */
+  static readonly USER_MESSAGE = '服务暂时不可用'
 
   readonly detail: string
 
