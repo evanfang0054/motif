@@ -105,10 +105,9 @@ describe('首次打开不阻塞', () => {
     // 故断言它等价于断言响应体。
     expect('failures' in r).toBe(false)
     expect(Object.keys(r).sort()).toEqual(['items', 'pending', 'sources', 'tags', 'total'])
-    // 反向兜底：失败信息只能从管理端拿，用户侧连「有没有源失败」都读不出来
-    await refreshPromptSources(store, undefined, impl)
-    const admin = await loadPromptLibrary(store, query, impl)
-    expect('failures' in admin).toBe(false)
+    // 失败信息不是被丢弃，只是**换了个面**：管理端仍能逐源读到原文
+    const admin = await refreshPromptSources(store, undefined, impl)
+    expect(admin.sources.filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id).every((s) => s.lastError === 'fetch failed')).toBe(true)
   })
 })
 

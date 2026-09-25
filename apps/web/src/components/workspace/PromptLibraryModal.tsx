@@ -250,6 +250,9 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
   // 首次抓取进行中：每 2 秒重取一次，最多 5 次（用 ref 调最新 load，避免闭包取到旧筛选条件）
   // ⚠️ 预算用尽必须**同时**收掉指示（置 `pollExhausted`）—— 服务端的 `pending` 只看「还有陈旧源」，
   // 源一直抓不到时它不会自己变假，光停轮询会留下一个永不消失的「正在加载提示词…」。
+  // ⚠️ 预算（10s）短于源抓取超时（30s）：慢链路上会出现「指示已收、抓取仍在途」。
+  // 那时新内容要等用户再动一次筛选（或重开弹窗）才出现 —— 停止轮询不是死路，
+  // 但也**不承诺**内容会自动补上，故这里不显示任何「稍后会自动出现」的承诺。
   useEffect(() => {
     if (!pending) return
     setPollExhausted(false)
