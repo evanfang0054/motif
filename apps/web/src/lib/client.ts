@@ -167,7 +167,11 @@ export interface PromptLibraryEntry {
   images: string[]
 }
 
-/** 提示词库检索结果：内容 + 分面 + 失败源 + 「首次抓取中」标记 */
+/**
+ * 提示词库检索结果：内容 + 分面 + 「还有源在抓」标记。
+ *
+ * ⚠️ 刻意**不含**任何「哪个源失败了」的信息：上游抓取失败属运维信息，只在管理端可见。
+ */
 export interface PromptLibraryResponse {
   items: PromptLibraryEntry[]
   total: number

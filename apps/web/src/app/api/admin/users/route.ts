@@ -42,6 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const actor = requireAdmin(req)
     const body = await readJson<{ email?: string; name?: string; credits?: number; role?: string }>(req)
+    // `readJson` 只保证「是合法 JSON」——字面量 `null` 也会通过，随后取字段会抛 TypeError 变成 500。
+    // 这是输入不合法，该给 400。
+    if (typeof body !== 'object' || body === null) throw new ServiceError(400, '请求体需为 JSON 对象。')
     const email = (body.email ?? '').trim()
     const name = (body.name ?? '').trim()
     const role = (body.role ?? 'user') as UserRole
@@ -60,6 +63,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!Number.isInteger(credits) || credits < 0) throw new ServiceError(400, '初始额度需为非负整数。')
 
     const { store } = getRuntime()
+    // ⚠️ 这里「先查重、后建号」之间存在一个很窄的 TOCTOU 窗口：并发同邮箱会撞
+    // `users.email` 的 UNIQUE 约束，抛出的 SqliteError 会变成 500 而不是 409。
+    // 建号是单人运维动作、并发概率极低，故不为此加约束异常映射（已记账）。
     if (store.getUserByEmail(email)) throw new ServiceError(409, '该邮箱已被注册。')
 
     // 明文密码只在本次响应里出现一次：不落库、不进审计、不打日志（与「重置密码」同口径）

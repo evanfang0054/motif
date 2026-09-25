@@ -264,11 +264,15 @@ describe('POST /api/admin/users（后台建号）', () => {
     expect(verifyPassword(body.password, store.getPasswordHash(body.user.id)!)).toBe(true)
     // 邮箱归一化到小写（store.createUser 内部 toLowerCase）
     expect(store.getUserByEmail('new@b.co')?.id).toBe(body.user.id)
-    // 期初额度有账本行
-    expect(store.listLedger({ userId: body.user.id }).some((l) => l.source === 'opening_balance')).toBe(true)
-    // 审计有 user.create，且 detail 不含明文密码（detail 是 string | null）
+    // 期初额度有账本行，且**金额与请求的 credits 相等**（只断言「存在」的话，金额写错也能绿）
+    const opening = store.listLedger({ userId: body.user.id }).filter((l) => l.source === 'opening_balance')
+    expect(opening).toHaveLength(1)
+    expect(opening[0].delta).toBe(50)
+    // 审计有 user.create；detail 含 email / role / credits，且不含明文密码（detail 是 string | null）
     const entry = store.listAudit({ limit: 10 }).find((a) => a.action === 'user.create')
     expect(entry?.targetId).toBe(body.user.id)
+    expect(entry?.detail).toContain('"role":"user"')
+    expect(entry?.detail).toContain('"credits":50')
     expect(entry?.detail ?? '').not.toContain(body.password)
   })
 
@@ -305,6 +309,8 @@ describe('POST /api/admin/users（后台建号）', () => {
     expect((await usersPOST(req(adminTok, { email: 'not-an-email', name: 'n' }))).status).toBe(400)
     expect((await usersPOST(req(adminTok, { email: 'ok@b.co', name: '  ' }))).status).toBe(400)
     expect((await usersPOST(req(adminTok, { email: 'ok2@b.co', name: 'x'.repeat(41) }))).status).toBe(400)
+    // 合法 JSON 但根不是对象：`readJson` 放行 `null`，取字段会抛 TypeError ⇒ 必须挡成 400 而不是 500
+    expect((await usersPOST(req(adminTok, null))).status).toBe(400)
   })
 
   it('未登录 / 普通用户拿不到 200', async () => {
