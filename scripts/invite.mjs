@@ -80,15 +80,19 @@ if (args.includes('--list')) {
     const run = db.transaction(() => {
       for (let i = 0; i < count; i++) {
         let code = newCode()
+        let inserted = false
         // 主键冲突换码重试（与 store.createRegistrationInviteBatch 同口径）
-        for (let guard = 0; guard < 20; guard++) {
+        for (let guard = 0; guard < 20 && !inserted; guard++) {
           try {
             insert.run(code, note, null, new Date().toISOString())
-            break
+            inserted = true
           } catch {
             code = newCode()
           }
         }
+        // ⚠️ 20 次都撞车就**抛错让整批回滚** —— 不能默默 push 一个没入库的码再打印「已发放」，
+        //    那会打印出一个库里根本不存在的准入码（用户拿它去注册只会得到「无效或已被使用」）。
+        if (!inserted) throw new Error('连续 20 次生成的主键都冲突，已回滚整批（未发放任何码）')
         created.push(code)
       }
     })
