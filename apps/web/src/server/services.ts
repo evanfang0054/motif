@@ -81,6 +81,11 @@ export async function sendCode(
   email: string,
   ip?: string,
 ): Promise<{ sent: true; devCode?: string; via: string }> {
+  // 注册用途的门之一：总开关关闭时发码入口一并拒绝。
+  // 不拒就等于「开关关了还能发验证码」——半个入口还在，且发出去的码在开关重开后仍在 TTL 内有效。
+  if (purpose === 'register' && !resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
+    throw new ServiceError(403, '本站暂未开放注册。')
+  }
   const err = validateEmail(email)
   if (err) throw new ServiceError(400, err)
   // 防邮件轰炸/防爆破：每邮箱 60s 冷却 + 每小时 5 封；每 IP 每小时 30 封
@@ -137,6 +142,10 @@ export function register(
   store: MotifStore,
   input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string },
 ): User {
+  // 注册总开关：关闭时任何组合都在这里终止，不触碰任何一张表。
+  if (!resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
+    throw new ServiceError(403, '本站暂未开放注册。')
+  }
   // 逐项校验：数组只承载「错误信息」，命中的第一条直接抛。
   for (const err of [
     validateName(input.name || ''),
