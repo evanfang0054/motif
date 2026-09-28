@@ -41,16 +41,26 @@ export interface AuthFieldState extends AuthFields {
  *
  * 顺序刻意与用户填写顺序一致（必填 → 格式 → 规则 → 两次一致），一次只报一条，改一个填一个。
  */
-/** 注册视图的先行校验。`requireCode` 由后台开关决定（关闭时不要求也不校验验证码）。 */
-function registerAuthError(f: AuthFields, requireCode: boolean): string | null {
+/**
+ * 注册视图的先行校验。
+ *
+ * 邮箱验证码是否**必填**由两件事共同决定（与服务端 `register` 的判据同源）：
+ * - `requireEmailCode`：后台开关 `REGISTRATION_REQUIRE_EMAIL_CODE`；
+ * - `hasAccessCode`：用户填了**注册准入码** —— 码本身就是凭据，验证码整行都不需要。
+ *
+ * ⚠️ 少了 `hasAccessCode` 这一支，「带准入码 + 不填验证码」会被这里先拦死（提交按钮还是灰的），
+ *    服务端那条准入码路径就永远走不到 —— 功能在界面上不可达。
+ */
+function registerAuthError(f: AuthFields, opts: { requireEmailCode: boolean; hasAccessCode: boolean }): string | null {
+  const needCode = opts.requireEmailCode && !opts.hasAccessCode
   if (!f.name.trim()) return '请输入昵称。'
   if (!f.email.trim()) return '请输入邮箱。'
-  if (requireCode && !f.code.trim()) return '请输入 6 位邮箱验证码。'
+  if (needCode && !f.code.trim()) return '请输入 6 位邮箱验证码。'
   if (!f.password) return '请输入密码。'
   if (!f.passwordConfirm) return '请再次输入密码。'
   const emailErr = validateEmail(f.email)
   if (emailErr) return emailErr
-  if (requireCode) {
+  if (needCode) {
     const codeErr = validateVerificationCode(f.code)
     if (codeErr) return codeErr
   }
@@ -74,9 +84,14 @@ function resetAuthError(f: AuthFields): string | null {
 export function clientAuthError(
   mode: AuthMode,
   f: AuthFields,
-  opts: { requireEmailCode?: boolean } = {},
+  opts: { requireEmailCode?: boolean; hasAccessCode?: boolean } = {},
 ): string | null {
-  if (mode === 'register') return registerAuthError(f, opts.requireEmailCode ?? true)
+  if (mode === 'register') {
+    return registerAuthError(f, {
+      requireEmailCode: opts.requireEmailCode ?? true,
+      hasAccessCode: opts.hasAccessCode ?? false,
+    })
+  }
   if (mode === 'reset') return resetAuthError(f)
   // 登录：只拦空值 —— 邮箱格式错误与凭据错误都归服务端统一口径（「邮箱或密码不正确。」），
   // 免得客户端把「账号不存在」与「邮箱写错」说成两句不同的话，反而泄露账号是否存在。
@@ -88,14 +103,20 @@ export function clientAuthError(
 /**
  * 必填是否齐全（只判「非空」，不判格式与规则）—— 用于提交按钮置灰。
  * 与 clientAuthError 分工：空表单直接不让点（#74-2.2），格式/规则类错误点下去就地报（能说清为什么）。
+ *
+ * ⚠️ 两个 opts 与 clientAuthError 同源同判据（`hasAccessCode` 见 registerAuthError 的说明）：
+ *    这里漏一支，按钮就永远是灰的 —— 报错文案再准也点不下去。
  */
-export function isFormFilled(mode: AuthMode, f: AuthFields, opts: { requireEmailCode?: boolean } = {}): boolean {
+export function isFormFilled(
+  mode: AuthMode,
+  f: AuthFields,
+  opts: { requireEmailCode?: boolean; hasAccessCode?: boolean } = {},
+): boolean {
   if (mode === 'register') {
-    // ⚠️ 本开关只作用于注册；reset 走下面那行，验证码始终必填（opts 对它无效）。
+    // ⚠️ 两个开关只作用于注册；reset 走下面那行，验证码始终必填（opts 对它无效）。
     const requireCode = opts.requireEmailCode ?? true
-    return Boolean(
-      f.name.trim() && f.email.trim() && f.password && f.passwordConfirm && (!requireCode || f.code.trim()),
-    )
+    const needCode = requireCode && !(opts.hasAccessCode ?? false)
+    return Boolean(f.name.trim() && f.email.trim() && f.password && f.passwordConfirm && (!needCode || f.code.trim()))
   }
   if (mode === 'reset') return Boolean(f.email.trim() && f.code.trim() && f.password)
   return Boolean(f.email.trim() && f.password)

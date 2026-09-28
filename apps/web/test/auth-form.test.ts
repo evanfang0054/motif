@@ -182,3 +182,42 @@ describe('注册免邮箱验证码（后台开关 REGISTRATION_REQUIRE_EMAIL_COD
     expect(isFormFilled('reset', { ...filled, code: '' }, { requireEmailCode: false })).toBe(false)
   })
 })
+
+describe('注册准入码免邮箱验证码（hasAccessCode）', () => {
+  it('isFormFilled：带准入码时不填验证码也可提交', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { hasAccessCode: true })).toBe(true)
+    // 对照：不带准入码时同一份字段值不可提交（防「这一支恒真」的假绿）
+    expect(isFormFilled('register', { ...filled, code: '' }, { hasAccessCode: false })).toBe(false)
+    expect(isFormFilled('register', { ...filled, code: '' })).toBe(false)
+  })
+
+  it('clientAuthError：带准入码时不再报「验证码缺失」', () => {
+    expect(
+      clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' }, { hasAccessCode: true }),
+    ).toBe('请输入密码。')
+    expect(clientAuthError('register', { ...filled, code: '' }, { hasAccessCode: true })).toBeNull()
+  })
+
+  it('clientAuthError：带准入码时也不再校验验证码格式（填了半截也不拦）', () => {
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' }, { hasAccessCode: true })).toBeNull()
+  })
+
+  it('hasAccessCode 不作用于 reset：找回密码的验证码始终必填', () => {
+    expect(clientAuthError('reset', { ...empty, email: 'me@example.com' }, { hasAccessCode: true })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+    expect(isFormFilled('reset', { ...filled, code: '' }, { hasAccessCode: true })).toBe(false)
+  })
+
+  it('两个 opts 同时给出时取「任一放宽」（准入码与后台开关互不干扰）', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: false, hasAccessCode: true })).toBe(
+      true,
+    )
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true, hasAccessCode: true })).toBe(
+      true,
+    )
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true, hasAccessCode: false })).toBe(
+      false,
+    )
+  })
+})

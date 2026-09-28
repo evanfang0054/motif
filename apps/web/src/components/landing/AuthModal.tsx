@@ -178,6 +178,13 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
   //    「Cannot access variable before it is declared」且闭包会捕获到过期值。
   const registrationEnabled = cfg?.registrationEnabled ?? true
   const registrationRequireEmailCode = cfg?.registrationRequireEmailCode ?? true
+  /**
+   * 填了注册准入码时邮箱验证码整行都不需要 —— 准入码本身就是凭据（与服务端 `register` 同一判据）。
+   *
+   * ⚠️ 必须传给 `clientAuthError` **与** `isFormFilled` 两处：只给前者的话提交按钮仍是灰的，
+   *    「带准入码 + 不填验证码」这条路径在界面上根本点不下去 —— 功能不可达。
+   */
+  const hasAccessCode = Boolean(registrationCode.trim())
 
   const submit = useCallback(
     async (e: React.FormEvent) => {
@@ -187,7 +194,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
       const localErr = clientAuthError(
         mode,
         { name, email, code, password, passwordConfirm },
-        { requireEmailCode: registrationRequireEmailCode },
+        { requireEmailCode: registrationRequireEmailCode, hasAccessCode },
       )
       if (localErr) {
         setNotice(null)
@@ -247,6 +254,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
       inviteCode,
       registrationCode,
       registrationRequireEmailCode,
+      hasAccessCode,
       router,
       switchMode,
     ],
@@ -467,7 +475,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
                   !isFormFilled(
                     mode,
                     { name, email, code, password, passwordConfirm },
-                    { requireEmailCode: registrationRequireEmailCode },
+                    { requireEmailCode: registrationRequireEmailCode, hasAccessCode },
                   )
                 }
               >
