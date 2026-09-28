@@ -39,6 +39,8 @@ function statusOf(i: AdminRegistrationInvite): InviteStatus {
 
 export default function AdminInvitesPage() {
   const [items, setItems] = useState<AdminRegistrationInvite[]>([])
+  /** 总条数（服务端给的）—— **不能**用 `items.length`：那是当前页的条数，超过一页时会让分页器消失、计数也少报 */
+  const [total, setTotal] = useState(0)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -55,6 +57,7 @@ export default function AdminInvitesPage() {
     try {
       const r = await api.adminListInvites({ page, pageSize: PAGE_SIZE })
       setItems(r.items)
+      setTotal(r.total)
       setErr(null)
     } catch (e) {
       setErr(describeAdminError(e))
@@ -143,7 +146,7 @@ export default function AdminInvitesPage() {
         >
           <Copy />
         </IconButton>
-        <ListCount loading={loading} total={items.length} unit="个" />
+        <ListCount loading={loading} total={total} unit="个" />
       </div>
 
       {msg && (
@@ -205,7 +208,7 @@ export default function AdminInvitesPage() {
         </Table.ScrollContainer>
       </Table>
 
-      <Pager page={page} pageSize={PAGE_SIZE} total={items.length} onChange={setPage} />
+      <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
       {confirmElement}
     </section>

@@ -346,7 +346,7 @@ export const api = {
     if (params.page) qs.set('page', String(params.page))
     if (params.pageSize) qs.set('pageSize', String(params.pageSize))
     const q = qs.toString()
-    return call<{ items: AdminRegistrationInvite[]; page: number; pageSize: number }>(
+    return call<{ items: AdminRegistrationInvite[]; total: number; page: number; pageSize: number }>(
       `/api/admin/invites${q ? `?${q}` : ''}`,
     )
   },

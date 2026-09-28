@@ -16,7 +16,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const { store } = getRuntime()
     const items = store.listRegistrationInvites({ limit: pageSize, offset: (page - 1) * pageSize })
-    return NextResponse.json({ items, page, pageSize })
+    // ⚠️ `total` 必须是**总条数**（不是 items.length）：客户端分页器与计数文案都用它，
+    //    传当前页条数会让分页器在超过一页时直接不渲染（Pager 在 total <= pageSize 时返回 null）。
+    const total = store.countRegistrationInvites()
+    return NextResponse.json({ items, total, page, pageSize })
   } catch (e) {
     return jsonError(e)
   }
