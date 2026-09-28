@@ -380,6 +380,15 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     danger: true,
     hint: 'mock=模拟收银台（不产生真实扣款）；epay/stripe=真实渠道，需先在「支付与套餐」保存对应凭据，否则用户无法充值。切回 mock 时存量真实渠道订单仍按创建渠道回调入账。',
   },
+  {
+    key: 'REGISTRATION_REQUIRE_EMAIL_CODE',
+    group: 'danger',
+    label: '注册需邮箱验证码',
+    kind: 'boolean',
+    defaultHint: 'true',
+    danger: true,
+    hint: '关闭后任何人只要填一个邮箱串即可注册，邮箱不必真实存在；「注册准入码」的免验证码特性随之失去意义。开放注册关闭时本开关亦失效。',
+  },
 
   // ---- 注册与登录 ----
   // ⚠️ 默认必须为 true：改动前注册是**无条件开放**的，默认 false 会让现有部署一升级就静默关闭注册
