@@ -73,3 +73,33 @@ describe('开放注册总开关', () => {
     expect(user.email).toBe('a@example.com')
   })
 })
+
+describe('注册需邮箱验证码开关', () => {
+  it('关闭时不填验证码也能注册', () => {
+    store.setSettings([{ key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'false' }])
+    const user = register(store, { ...base, code: '' })
+    expect(user.email).toBe('a@example.com')
+  })
+
+  it('关闭时发码被拒，且文案指出「无需验证码」', async () => {
+    store.setSettings([{ key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'false' }])
+    const { cfg, count } = stubMailer()
+    await expect(sendCode(store, cfg, 'register', 'gate-nocode@example.com')).rejects.toThrowError(/无需邮箱验证码/)
+    expect(count()).toBe(0)
+  })
+
+  it('开启时验证码必须是 6 位数字：abcdef 被格式判据拒掉（改动前会被接受）', () => {
+    store.setSettings([{ key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'true' }])
+    // ⚠️ 断言必须打在**格式判据的文案**上：改动前 'abcdef' 会通过 /^.{6}$/，
+    //    随后死在 consumeVerificationCode 的「验证码无效或已过期。」—— 只断言 /验证码/ 两边都过，等于没测。
+    expect(() => register(store, { ...base, code: 'abcdef' })).toThrowError(/6 位数字/)
+  })
+
+  it('注册总开关关闭时，本开关无论开闭都 403', () => {
+    store.setSettings([
+      { key: 'REGISTRATION_ENABLED', value: 'false' },
+      { key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'false' },
+    ])
+    expect(() => register(store, { ...base, code: '' })).toThrowError(/暂未开放注册/)
+  })
+})

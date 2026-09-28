@@ -19,6 +19,7 @@ import {
   validatePrompt,
   validateReferenceCount,
   validateSize,
+  validateVerificationCode,
   viewportOrigin,
   type CanvasImagePlacement,
   type CanvasRect,
@@ -81,10 +82,13 @@ export async function sendCode(
   email: string,
   ip?: string,
 ): Promise<{ sent: true; devCode?: string; via: string }> {
-  // 注册用途的门之一：总开关关闭时发码入口一并拒绝。
+  // 注册用途的两道门：总开关关闭、或本次注册不需要邮箱验证码时，发码入口一并拒绝。
   // 不拒就等于「开关关了还能发验证码」——半个入口还在，且发出去的码在开关重开后仍在 TTL 内有效。
   if (purpose === 'register' && !resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
     throw new ServiceError(403, '本站暂未开放注册。')
+  }
+  if (purpose === 'register' && !resolveBool(store, process.env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true)) {
+    throw new ServiceError(403, '当前注册无需邮箱验证码。')
   }
   const err = validateEmail(email)
   if (err) throw new ServiceError(400, err)
@@ -147,10 +151,13 @@ export function register(
     throw new ServiceError(403, '本站暂未开放注册。')
   }
   // 逐项校验：数组只承载「错误信息」，命中的第一条直接抛。
+  // ⚠️ 验证码格式判据走 core 的纯函数（前端先行校验用的是同一份），不再内联 /^.{6}$/ ——
+  //    后者接受任意 6 字符，与前端 inputMode="numeric" 的「6 位数字」提示不一致。
+  const requireCode = resolveBool(store, process.env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true)
   for (const err of [
     validateName(input.name || ''),
     validateEmail(input.email || ''),
-    /^.{6}$/.test(input.code || '') ? null : '请输入 6 位邮箱验证码。',
+    requireCode ? validateVerificationCode(input.code || '') : null,
     validatePassword(input.password || ''),
   ]) {
     if (err) throw new ServiceError(400, err)
@@ -160,7 +167,9 @@ export function register(
   const confirmErr = validatePasswordConfirm(input.password || '', input.passwordConfirm || '')
   if (confirmErr) throw new ServiceError(400, confirmErr)
   // 先消费验证码再做邮箱查重：避免「邮箱已注册」成为匿名可探测的枚举信号
-  if (!store.consumeVerificationCode('register', input.email, input.code)) {
+  // ⚠️ 关闭「注册需邮箱验证码」时跳过消费。**已知取舍**：上面那层防枚举保护随之消失 ——
+  //    原设计用它避免「邮箱已注册」成为匿名可探测的枚举信号。这是开关带来的、需求已接受的代价。
+  if (requireCode && !store.consumeVerificationCode('register', input.email, input.code)) {
     throw new ServiceError(400, '验证码无效或已过期。')
   }
   if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
