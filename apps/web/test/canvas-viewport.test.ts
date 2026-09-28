@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, clampToolbarCenter, fitView, panBy, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
+import { clampScale, clampToolbarCenter, fitView, panBy, sameViewport, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
+
+describe('sameViewport：视口逐字段相等（store 值级短路的判据）', () => {
+  it('三个字段全等 → true', () => {
+    expect(sameViewport({ x: 1, y: 2, k: 3 }, { x: 1, y: 2, k: 3 })).toBe(true)
+  })
+  it('任一字段不同 → false', () => {
+    expect(sameViewport({ x: 1, y: 2, k: 3 }, { x: 1, y: 2, k: 0.25 })).toBe(false)
+    expect(sameViewport({ x: 1, y: 2, k: 3 }, { x: 1.0000001, y: 2, k: 3 })).toBe(false)
+  })
+  it('同引用 → true', () => {
+    const v = { x: 0, y: 0, k: 1 }
+    expect(sameViewport(v, v)).toBe(true)
+  })
+})
 
 describe('缩放锚点', () => {
   it('缩放后光标下的世界坐标不变', () => {

@@ -57,6 +57,19 @@ export function panBy(v: Viewport, dx: number, dy: number): Viewport {
   return { x: v.x + dx, y: v.y + dy, k: v.k }
 }
 
+/**
+ * 视口逐字段相等。**只用于 store 的「值未变则短路」**：`zoomAt` 在撞到
+ * `MIN_SCALE` / `MAX_SCALE` 后返回的 `k` 是同一个常量，`x`/`y` 也逐值相同，
+ * 但对象引用每次都是新的 —— 不比较就必然触发订阅者重渲染（实测 40 次滚轮里
+ * 有 28 次属于这种空转）。
+ *
+ * 用严格相等而非 epsilon：pan/zoom 是确定性算术，同一输入得同一结果；
+ * 边界钳制后落在同一常量上。引入 epsilon 反而会把「真实的小位移」吞掉。
+ */
+export function sameViewport(a: Viewport, b: Viewport): boolean {
+  return a.x === b.x && a.y === b.y && a.k === b.k
+}
+
 /** 适应视图：把世界包围盒放进 viewportW×viewportH（留 padding）并居中，k 被钳制 */
 export function fitView(bounds: Rect, viewportW: number, viewportH: number, padding = 40): Viewport {
   const availW = Math.max(1, viewportW - padding * 2)
