@@ -145,7 +145,7 @@ motif/
 
 ### 工程能力（真实）
 
-- pnpm monorepo · TypeScript strict · **1232 个单元测试**（core 90 · db 141 · provider 8 · web 993）
+- pnpm monorepo · TypeScript strict · **1242 个单元测试**（core 90 · db 141 · provider 8 · web 1003）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
@@ -348,7 +348,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 1232 个单元测试（core 90 · db 141 · provider 8 · web 993）
+pnpm test             # 1242 个单元测试（core 90 · db 141 · provider 8 · web 1003）
 pnpm typecheck        # 严格类型检查
 pnpm lint             # ESLint 静态检查
 pnpm format:check     # Prettier 格式检查（pnpm format 自动修复）

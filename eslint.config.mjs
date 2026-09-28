@@ -12,7 +12,10 @@ import prettier from 'eslint-config-prettier/flat'
  *    后者里的 typescript-eslint base 没有 `files` 限制，会把 parser 覆盖成 TS parser ——
  *    于是 `next/babel` 永远不会被真正调用。顺序反过来就会从仓库根解析 `next/babel` 失败
  *    （next 只装在 apps/web 下，根 node_modules 里没有）。
- * 2. `prettier` 必须放最后：它只做一件事 —— 关掉与 Prettier 冲突的格式类规则。
+ * 2. `prettier` 只做一件事 —— 关掉与 Prettier 冲突的格式类规则，故它必须排在**任何启用格式类
+ *    规则的配置之后**。它后面还有本文件的 3 个自定义块，但那些只设非格式类规则与 ignores，
+ *    与它无交集（实测 nextVitals + nextTs 启用的规则 ∩ 它关掉的规则 = 0），所以此刻位置不影响
+ *    结果 —— 但别再往它前面塞启用格式规则的配置。
  * 3. `next lint` 在 Next 16 已被移除，本仓一律用 `eslint` CLI（见根 package.json 的 lint 脚本）。
  */
 export default defineConfig([
