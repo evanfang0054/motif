@@ -32,6 +32,17 @@ export interface AdminCdk {
   createdAt: string
 }
 
+/** 管理后台：注册准入码行。一码一用；`usedBy` 非空即已使用，`revokedAt` 非空即已作废 */
+export interface AdminRegistrationInvite {
+  code: string
+  note: string | null
+  createdBy: string | null
+  usedBy: string | null
+  usedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
 /** 管理后台：订单行。amountTotal 单位为「分」 */
 export interface AdminOrder {
   id: string
@@ -330,6 +341,19 @@ export const api = {
     call<{ codes: string[]; credits: number }>('/api/admin/cdks', { method: 'POST', body: JSON.stringify(input) }),
   adminRevokeCdk: (code: string) =>
     call<{ ok: true }>('/api/admin/cdks/revoke', { method: 'POST', body: JSON.stringify({ code }) }),
+  adminListInvites: (params: { page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.page) qs.set('page', String(params.page))
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize))
+    const q = qs.toString()
+    return call<{ items: AdminRegistrationInvite[]; page: number; pageSize: number }>(
+      `/api/admin/invites${q ? `?${q}` : ''}`,
+    )
+  },
+  adminCreateInvites: (input: { count: number; note?: string }) =>
+    call<{ codes: string[] }>('/api/admin/invites', { method: 'POST', body: JSON.stringify(input) }),
+  adminRevokeInvite: (code: string) =>
+    call<{ ok: true }>('/api/admin/invites/revoke', { method: 'POST', body: JSON.stringify({ code }) }),
   adminListOrders: (params: { status?: string; userId?: string; page?: number; pageSize?: number } = {}) => {
     const qs = new URLSearchParams()
     if (params.status) qs.set('status', params.status)
