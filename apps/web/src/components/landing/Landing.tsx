@@ -33,7 +33,11 @@ function Landing() {
   const [authNotice, setAuthNotice] = useState<string | null>(null)
 
   const cfg = usePublicConfig()
-  const registrationEnabled = cfg?.registrationEnabled === true
+  // 未知态（`cfg` 首帧为 null）取**服务端默认值** —— 本仓既有口径，见 `workspace/dialogs.tsx:87`
+  //（`?? true`）与 `Workspace.tsx:923-924`（`?? false` / `?? true`）。
+  // 这样默认值下首帧渲染与改动前逐字一致（不闪掉注册入口）；非默认站点的过渡窗口也不会出坏结果：
+  // 注册关停时即便入口短暂可见，`openAuth('register')` 也会降级为登录 + 提示。
+  const registrationEnabled = cfg?.registrationEnabled ?? true
   // URL 入口只消费一次：cfg 到位后 effect 会重跑，但不该因此重复开弹窗
   const urlEntryDone = useRef(false)
 
