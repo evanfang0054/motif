@@ -15,6 +15,7 @@ const filled: AuthFieldState = {
   password: 'Passw0rd!',
   passwordConfirm: 'Passw0rd!',
   inviteCode: 'INVITE01',
+  registrationCode: 'ACC3SSCODE',
 }
 
 const empty = { name: '', email: '', code: '', password: '', passwordConfirm: '' }
@@ -116,7 +117,7 @@ describe('isFormFilled：提交按钮的置灰判据（#74-2.2）', () => {
   })
 })
 
-describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）', () => {
+describe('switchAuthFields：切视图只保留邮箱与两个「入口上下文」码（#80-1.2）', () => {
   it('密码类字段被清空 —— 登录密码不得被带进「找回密码」的新密码框', () => {
     const next = switchAuthFields(filled)
     expect(next.password).toBe('')
@@ -129,10 +130,11 @@ describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）',
     expect(next.code).toBe('')
   })
 
-  it('邮箱与邀请码保留（邮箱三视图共用；邀请码是入口上下文，清掉会静默丢奖励）', () => {
+  it('邮箱、邀请码与注册准入码保留（邮箱三视图共用；两个码是入口上下文，清掉会静默丢奖励 / 要用户重贴）', () => {
     const next = switchAuthFields(filled)
     expect(next.email).toBe('me@example.com')
     expect(next.inviteCode).toBe('INVITE01')
+    expect(next.registrationCode).toBe('ACC3SSCODE')
   })
 
   it('是纯函数：不改动入参', () => {
@@ -141,6 +143,7 @@ describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）',
     expect(filled.passwordConfirm).toBe('Passw0rd!')
     expect(filled.name).toBe('小美')
     expect(filled.code).toBe('123456')
+    expect(filled.registrationCode).toBe('ACC3SSCODE')
   })
 })
 

@@ -20,9 +20,11 @@ export interface AuthFields {
   passwordConfirm: string
 }
 
-/** 切视图时要一并处理的**全部**字段：表单字段 + 入口上下文邀请码（邀请码不在表单里） */
+/** 切视图时要一并处理的**全部**字段：表单字段 + 入口上下文邀请码 + 注册准入码（后两者都不是 `AuthFields` 的成员） */
 export interface AuthFieldState extends AuthFields {
   inviteCode: string
+  /** 注册准入码：**不是**推荐用的邀请码（见 CONTEXT.md），只在注册视图出现 */
+  registrationCode: string
 }
 
 /**
@@ -113,6 +115,8 @@ export function isFormFilled(mode: AuthMode, f: AuthFields, opts: { requireEmail
  * - **保留**邮箱：三种视图都要用，是用户输入成本最高的一项。
  * - **保留**邀请码：它来自邀请链接（`?invite=`），属于**入口上下文**而不是视图字段 ——
  *   清掉会让被邀请人切一次视图就静默丢掉奖励。
+ * - **保留**注册准入码：同属**入口上下文**（用户从管理端拿到的一次性凭据，多为粘贴输入），
+ *   且只在注册视图提交 —— 带着它切走不会泄漏到别的视图，清掉却要用户重贴一次。
  */
 export function switchAuthFields(prev: AuthFieldState): AuthFieldState {
   return {
@@ -122,5 +126,6 @@ export function switchAuthFields(prev: AuthFieldState): AuthFieldState {
     password: '',
     passwordConfirm: '',
     inviteCode: prev.inviteCode,
+    registrationCode: prev.registrationCode,
   }
 }

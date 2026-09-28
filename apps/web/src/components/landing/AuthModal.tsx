@@ -80,6 +80,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
   // 深链预填只写进初值：用户改过之后不该被父组件的重渲染覆盖回去
   const [email, setEmail] = useState(prefill?.email ?? '')
   const [inviteCode, setInviteCode] = useState('')
+  /** 注册准入码（管理端发放，免邮箱验证码）；与上面的推荐邀请码是两回事 */
+  const [registrationCode, setRegistrationCode] = useState('')
   const [code, setCode] = useState(prefill?.code ?? '')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -100,9 +102,17 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
    * 选 ref 而不是「把六个字段收成一个 state 对象」：后者要改所有 setter、`isFormFilled` /
    * `clientAuthError` 的调用点与预填初值，改动面大且容易碰到行为；ref 只多一个 ref + 一个 effect。
    */
-  const fieldsRef = useRef<AuthFieldState>({ name, email, code, password, passwordConfirm, inviteCode })
+  const fieldsRef = useRef<AuthFieldState>({
+    name,
+    email,
+    code,
+    password,
+    passwordConfirm,
+    inviteCode,
+    registrationCode,
+  })
   useEffect(() => {
-    fieldsRef.current = { name, email, code, password, passwordConfirm, inviteCode }
+    fieldsRef.current = { name, email, code, password, passwordConfirm, inviteCode, registrationCode }
   })
 
   // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（与通用弹窗外壳同一套焦点还原做法）
@@ -145,7 +155,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
       setNotice(null)
       setCodeMsg(null)
       setCooldown(0)
-      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）。
+      // #80-1.2：切换视图只保留邮箱与两个「入口上下文」码（邀请码 / 注册准入码）—— 清空规则集中在
+      // lib/auth-form 的 switchAuthFields（可单测）。
       // 读 ref 而不是闭包里的六个 state：见 fieldsRef 的说明（依赖数组不再随击键变化）。
       const next = switchAuthFields(fieldsRef.current)
       setName(next.name)
@@ -154,6 +165,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
       setPassword(next.password)
       setPasswordConfirm(next.passwordConfirm)
       setInviteCode(next.inviteCode)
+      setRegistrationCode(next.registrationCode)
     },
     [onModeChange],
   )
@@ -192,7 +204,15 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
         } else if (mode === 'register') {
           // 服务端错误（验证码无效 / 邮箱已注册…）一律由下面的 catch 落进对话框内的 Alert；
           // 只有成功才 refresh —— 失败路径既不关窗也不吞错（#80-1.1）。
-          await api.register({ name, email, code, password, passwordConfirm, inviteCode: inviteCode || undefined })
+          await api.register({
+            name,
+            email,
+            code,
+            password,
+            passwordConfirm,
+            inviteCode: inviteCode || undefined,
+            registrationCode: registrationCode || undefined,
+          })
           router.refresh()
         } else {
           await fetch('/api/auth/password-reset', {
@@ -217,7 +237,19 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, registrationRequireEmailCode, router, switchMode],
+    [
+      mode,
+      name,
+      email,
+      code,
+      password,
+      passwordConfirm,
+      inviteCode,
+      registrationCode,
+      registrationRequireEmailCode,
+      router,
+      switchMode,
+    ],
   )
 
   const sendCode = useCallback(async () => {
@@ -313,6 +345,15 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
                 <TextField className="mt-3.5" value={inviteCode} onChange={setInviteCode}>
                   <Label>邀请码（选填）</Label>
                   <Input placeholder="选填" />
+                </TextField>
+              )}
+
+              {/* ⚠️ 与上一行的「邀请码」是**两回事**（CONTEXT.md：准入码管「谁能注册」，邀请码管推荐关系）——
+                  文案必须能区分，不要合并成一行 */}
+              {mode === 'register' && (
+                <TextField className="mt-3.5" value={registrationCode} onChange={setRegistrationCode}>
+                  <Label>注册准入码（选填）</Label>
+                  <Input placeholder="有准入码可免邮箱验证码" />
                 </TextField>
               )}
 
