@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, clampToolbarCenter, fitView, panBy, sameViewport, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT } from '@/lib/canvas/viewport'
+import { clampScale, clampToolbarCenter, fitView, panBy, sameViewport, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, zoomStepsToFactor, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT, ZOOM_STEP } from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
 describe('sameViewport：视口逐字段相等（store 值级短路的判据）', () => {
@@ -13,6 +13,19 @@ describe('sameViewport：视口逐字段相等（store 值级短路的判据）'
   it('同引用 → true', () => {
     const v = { x: 0, y: 0, k: 1 }
     expect(sameViewport(v, v)).toBe(true)
+  })
+})
+
+describe('zoomStepsToFactor：把同帧累积的滚轮步数换算成一次缩放倍率', () => {
+  it('0 步 → 1（不缩放）', () => {
+    expect(zoomStepsToFactor(0)).toBe(1)
+  })
+  it('n 步与逐次缩放等价（严格相等：同一表达式）', () => {
+    expect(zoomStepsToFactor(3)).toBe(ZOOM_STEP ** 3)
+    expect(zoomStepsToFactor(-2)).toBe(ZOOM_STEP ** -2)
+  })
+  it('可加性：两段分别缩放的乘积等于合并后的倍率', () => {
+    expect(zoomStepsToFactor(2) * zoomStepsToFactor(5)).toBeCloseTo(zoomStepsToFactor(7), 10)
   })
 })
 
