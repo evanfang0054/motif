@@ -24,32 +24,7 @@ import { MAILER_GUIDES, PAYMENT_GUIDES } from '@/lib/guide-cards'
 import { mailerFieldVisible, paymentFieldVisible, storageFieldVisible } from '@/lib/setting-visibility'
 import { enumDisplayValue, enumOptionItems, pickUpdates } from '@/lib/settings-draft'
 import { describeAdminError } from '@/lib/admin-error'
-
-const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
-  generation: '生图网关',
-  credits: '额度与奖励',
-  payment: '支付与套餐',
-  mailer: '邮件发信',
-  llm: '提示词增强',
-  storage: '图片存储',
-  // 该分区**没有任何配置键**，只承载「提示词源状态 + 立即刷新」这个动作型面板
-  prompts: '提示词库',
-  security: '会话与安全',
-  danger: '危险区',
-  data: '数据位置（只读）',
-}
-
-const GROUP_ORDER: AdminSettingItem['group'][] = [
-  'generation',
-  'credits',
-  'payment',
-  'mailer',
-  'llm',
-  'storage',
-  'prompts',
-  'security',
-  'data',
-]
+import { GROUP_ORDER, GROUP_TITLE } from './groups'
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',

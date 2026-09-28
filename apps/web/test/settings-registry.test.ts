@@ -391,3 +391,16 @@ describe('payment 注册表', () => {
     expect(SETTING_DEFS.some((d) => d.key === 'MOTIF_BILLING_MODE')).toBe(false)
   })
 })
+
+describe('注册与登录分组（auth）', () => {
+  it('开放注册开关存在、布尔、默认开、既非只读也非危险区', () => {
+    const defs = SETTING_DEFS.filter((d) => d.group === 'auth')
+    expect(defs.map((d) => d.key).sort()).toEqual(['REGISTRATION_ENABLED'])
+    const def = defs[0]!
+    expect(def.kind).toBe('boolean')
+    // 默认必须与改动前的实际行为一致：注册当前是无条件开放的
+    expect(def.defaultHint).toBe('true')
+    expect(def.readOnly).toBeFalsy()
+    expect(def.danger).toBeFalsy()
+  })
+})

@@ -20,7 +20,17 @@ import { createPaymentGateway } from './payment'
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
 export type SettingGroup =
-  'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
+  | 'generation'
+  | 'credits'
+  | 'payment'
+  | 'mailer'
+  | 'llm'
+  | 'storage'
+  | 'prompts'
+  | 'auth'
+  | 'danger'
+  | 'security'
+  | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -369,6 +379,18 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     defaultHint: 'mock',
     danger: true,
     hint: 'mock=模拟收银台（不产生真实扣款）；epay/stripe=真实渠道，需先在「支付与套餐」保存对应凭据，否则用户无法充值。切回 mock 时存量真实渠道订单仍按创建渠道回调入账。',
+  },
+
+  // ---- 注册与登录 ----
+  // ⚠️ 默认必须为 true：改动前注册是**无条件开放**的，默认 false 会让现有部署一升级就静默关闭注册
+  //    （用户只会看到「注册链接不见了」）。升级须知写在对应 PR 描述里。
+  {
+    key: 'REGISTRATION_ENABLED',
+    group: 'auth',
+    label: '开放注册',
+    kind: 'boolean',
+    defaultHint: 'true',
+    hint: '关闭后注册接口与注册发码接口一并拒绝，落地页与弹窗不再显示注册入口。登录与找回密码不受影响。',
   },
 
   // ---- 会话与安全 ----

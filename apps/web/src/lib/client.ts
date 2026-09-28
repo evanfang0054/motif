@@ -140,7 +140,17 @@ export interface PublicConfig {
 export interface AdminSettingItem {
   key: string
   group:
-    'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
+    | 'generation'
+    | 'credits'
+    | 'payment'
+    | 'mailer'
+    | 'llm'
+    | 'storage'
+    | 'prompts'
+    | 'auth'
+    | 'danger'
+    | 'security'
+    | 'data'
   label: string
   kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
