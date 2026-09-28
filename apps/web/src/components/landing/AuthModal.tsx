@@ -32,6 +32,8 @@ interface AuthModalProps {
    * 只当 useState 的**初值**用 —— 之后以弹窗内 state 为准，不受父组件重渲染影响。
    */
   prefill?: ResetPrefill
+  /** 进弹窗时就要显示的一次性提示（如「本站暂未开放注册。」）；只当 useState 初值用 */
+  initialNotice?: string
 }
 
 /** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
@@ -72,7 +74,7 @@ function PasswordInput({
 }
 
 /** 登录 / 注册 / 找回密码 三合一弹窗（原 AuthCard 表单逻辑零改动，外壳 Card → HeroUI Modal） */
-function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
+function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: AuthModalProps) {
   const router = useRouter()
   const [name, setName] = useState('')
   // 深链预填只写进初值：用户改过之后不该被父组件的重渲染覆盖回去
@@ -82,7 +84,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(initialNotice ?? null)
   const [busy, setBusy] = useState(false)
   // 发送验证码的「就地」反馈与冷却：出现在验证码行正下方，触屏视口内必然可见
   const [codeMsg, setCodeMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -238,6 +240,9 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
 
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
   const cfg = usePublicConfig()
+  // 未知态（cfg 首帧为 null）按「不渲染入口」处理 —— 与本仓 `usePublicConfig` 的既定口径一致
+  //（见其 JSDoc：入口按不渲染、文案按不写数字）。服务端各自也把一道，前端隐藏只是体验。
+  const registrationEnabled = cfg?.registrationEnabled === true
   const subtitle =
     mode === 'reset'
       ? '输入注册邮箱与验证码设置新密码。'
@@ -423,9 +428,11 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                 {mode === 'login' ? (
-                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>
-                    注册账号
-                  </Link>
+                  registrationEnabled && (
+                    <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                      注册账号
+                    </Link>
+                  )
                 ) : (
                   <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>
                     已有账号？登录

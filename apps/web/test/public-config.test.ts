@@ -45,6 +45,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       llmEnhanceEnabled: false,
       billingEnabled: false,
       cdkRedeemEnabled: true,
+      registrationEnabled: true, // 键未设置 → 兜底 true
     })
   })
 
@@ -57,6 +58,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       { key: 'LLM_ENHANCE_ENABLED', value: 'true' },
       { key: 'BILLING_ENABLED', value: 'true' },
       { key: 'CDK_REDEEM_ENABLED', value: 'false' },
+      { key: 'REGISTRATION_ENABLED', value: 'false' },
     ])
     expect(readPublicConfig(store, {})).toEqual({
       inviteRewardEnabled: true,
@@ -66,6 +68,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       llmEnhanceEnabled: true,
       billingEnabled: true,
       cdkRedeemEnabled: false,
+      registrationEnabled: false, // 库中显式设了 false
     })
   })
 

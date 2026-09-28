@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
@@ -19,6 +19,9 @@ function SignupBonusPhrase({ tail }: { tail: string }) {
   return <>{cfg ? `注册即送 ${cfg.signupBonusCredits} 张${tail}` : `注册即送${tail}`}</>
 }
 
+/** 注册已关停时，深链落到登录视图后给的一句明确原因（而不是一个坏掉的页面） */
+const REGISTRATION_CLOSED_NOTICE = '本站暂未开放注册。'
+
 /** 未登录落地页：导航 + 主视觉（hero）+ 三段满幅色带 + 页脚 + 登录弹窗 */
 function Landing() {
   // 弹窗模式由 Landing 持有：默认 login（回访/老用户主路径）；注册意图入口显式切 register
@@ -26,11 +29,22 @@ function Landing() {
   const [authOpen, setAuthOpen] = useState(false)
   // 找回密码深链带来的预填值（只在首次进入时设一次；用户后续操作以弹窗内 state 为准）
   const [resetPrefill, setResetPrefill] = useState<ResetPrefill | null>(null)
+  // 注册已关停时带进弹窗的一句提示
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
+
+  const cfg = usePublicConfig()
+  const registrationEnabled = cfg?.registrationEnabled === true
+  // URL 入口只消费一次：cfg 到位后 effect 会重跑，但不该因此重复开弹窗
+  const urlEntryDone = useRef(false)
 
   // URL 入口：/?mode=register（投放外链）、/?mode=login（显式登录）、/?invite=CODE（邀请自动注册）
   // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」
   // 另：/?reset=1&email=..&code=.. 是找回密码邮件里的**直达链接**（#21）—— 自动进重置模式并预填
   useEffect(() => {
+    // ⚠️ 必须等公开配置到位：`usePublicConfig` 首帧返回 null，若此时就按「注册开放」落视图，
+    //    关停了注册的站点会先落进注册视图、配置到达后才被改回登录 —— 用户看得见这次闪跳。
+    if (!cfg || urlEntryDone.current) return
+    urlEntryDone.current = true
     const params = new URLSearchParams(window.location.search)
     // 深链优先于 mode：邮件链接是明确的单一意图，不该被同时带的 mode 参数抢走
     const reset = parseResetParams(Object.fromEntries(params))
@@ -48,29 +62,53 @@ function Landing() {
       return
     }
     const mode = params.get('mode')
+    if (mode === 'register' && !registrationEnabled) {
+      // 关停注册后旧投放外链仍可能被点开：落**登录**视图 + 明确告知，并把 mode 从地址栏抹掉
+      //（不抹掉则刷新会再次落回同一分支，与「关闭注册」自相矛盾）。
+      setAuthNotice(REGISTRATION_CLOSED_NOTICE)
+      setAuthMode('login')
+      setAuthOpen(true)
+      params.delete('mode')
+      const rest = params.toString()
+      const url = rest ? `${window.location.pathname}?${rest}` : window.location.pathname
+      window.history.replaceState(null, '', url + window.location.hash)
+      return
+    }
     if (mode === 'register' || mode === 'login') {
       setAuthMode(mode)
       setAuthOpen(true)
     }
     if (params.get('invite')) {
-      setAuthMode('register')
+      // 邀请深链同理：注册关停时落登录视图 + 提示，而不是一个填不了的表单
+      if (registrationEnabled) {
+        setAuthMode('register')
+      } else {
+        setAuthNotice(REGISTRATION_CLOSED_NOTICE)
+        setAuthMode('login')
+      }
       setAuthOpen(true)
     }
-  }, [])
+  }, [cfg, registrationEnabled])
 
-  /** 弹窗入口：设置模式并打开 */
+  /** 弹窗入口：设置模式并打开。注册关停时「注册」意图降级为登录（入口本身已隐藏，这是兜底） */
   const openAuth = (m: Mode) => {
-    setAuthMode(m)
+    if (m === 'register' && !registrationEnabled) {
+      setAuthNotice(REGISTRATION_CLOSED_NOTICE)
+      setAuthMode('login')
+    } else {
+      setAuthMode(m)
+    }
     setAuthOpen(true)
   }
 
   /**
-   * 弹窗关闭：顺手清掉深链预填值。
+   * 弹窗关闭：顺手清掉深链预填值与一次性提示。
    * 预填只服务「从邮件点进来的那一次」—— 不清的话，之后切到注册表单会带出一个可能已过期的验证码。
    */
   const closeAuth = () => {
     setAuthOpen(false)
     setResetPrefill(null)
+    setAuthNotice(null)
   }
 
   /** 锚点平滑滚动到色带（section）顶部：配合 scroll-margin-top 让整段模块完整入画 */
@@ -137,10 +175,13 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
-                  <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
-                  <SignupBonusPhrase tail="额度" />
-                </InlineText>
+                {/* 注册关停时这条「注册即送」不成立，整条不渲染 */}
+                {registrationEnabled && (
+                  <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
+                    <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                    <SignupBonusPhrase tail="额度" />
+                  </InlineText>
+                )}
                 <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
                   <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
                   单任务多张成套
@@ -261,12 +302,16 @@ function Landing() {
             <Typography type="h2" align="center" className="lp-section-title">
               准备好开始了吗？
             </Typography>
-            <Typography type="body" align="center" className="lp-section-sub">
-              <SignupBonusPhrase tail="生成额度，不需要绑卡。" />
-            </Typography>
-            <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>
-              免费注册
-            </Button>
+            {registrationEnabled && (
+              <>
+                <Typography type="body" align="center" className="lp-section-sub">
+                  <SignupBonusPhrase tail="生成额度，不需要绑卡。" />
+                </Typography>
+                <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>
+                  免费注册
+                </Button>
+              </>
+            )}
           </div>
         </section>
       </main>
@@ -282,7 +327,13 @@ function Landing() {
       </footer>
 
       {authOpen && (
-        <AuthModal mode={authMode} onModeChange={setAuthMode} onClose={closeAuth} prefill={resetPrefill ?? undefined} />
+        <AuthModal
+          mode={authMode}
+          onModeChange={setAuthMode}
+          onClose={closeAuth}
+          prefill={resetPrefill ?? undefined}
+          initialNotice={authNotice ?? undefined}
+        />
       )}
     </div>
   )

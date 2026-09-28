@@ -24,6 +24,9 @@ export const PUBLIC_CONFIG_KEYS = [
   // 前端隐藏只是体验，不是防线 —— 关掉开关后直接打接口同样会被拒。
   'BILLING_ENABLED',
   'CDK_REDEEM_ENABLED',
+  // 注册入口开关：前端据此隐藏注册入口。**服务端各自也把一道**（register / send-code），
+  // 前端隐藏只是体验，不是防线。
+  'REGISTRATION_ENABLED',
 ] as const
 
 export interface PublicConfig {
@@ -34,6 +37,7 @@ export interface PublicConfig {
   llmEnhanceEnabled: boolean
   billingEnabled: boolean
   cdkRedeemEnabled: boolean
+  registrationEnabled: boolean
 }
 
 /** 读公开配置。只回白名单里的非密钥值；数值类键非法时回退默认值（口径与注册链路共用 resolvePositiveInt）。 */
@@ -53,5 +57,7 @@ export function readPublicConfig(store: MotifStore, env: Record<string, string |
     // 三处各写一份就是三次漂移机会（前端按 true 显示入口、服务端按 false 拒绝，用户只会看到「点了报错」）。
     billingEnabled: resolveBool(store, env, 'BILLING_ENABLED', false),
     cdkRedeemEnabled: resolveBool(store, env, 'CDK_REDEEM_ENABLED', true),
+    // 兜底值必须与 SETTING_DEFS 的 defaultHint 一致（三处各写一份就是三次漂移机会）
+    registrationEnabled: resolveBool(store, env, 'REGISTRATION_ENABLED', true),
   }
 }

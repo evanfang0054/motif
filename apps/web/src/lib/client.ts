@@ -135,6 +135,8 @@ export interface PublicConfig {
   billingEnabled: boolean
   /** 是否开放 CDK 兑换（默认开）；前端据此隐藏兑换入口 */
   cdkRedeemEnabled: boolean
+  /** 是否开放注册（默认开）；前端据此隐藏注册入口（服务端各自也把一道） */
+  registrationEnabled: boolean
 }
 
 export interface AdminSettingItem {
