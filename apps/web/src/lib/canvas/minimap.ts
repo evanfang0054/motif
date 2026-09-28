@@ -92,7 +92,7 @@ export function viewportRectIn(
   viewport: Viewport,
   size: { w: number; h: number },
   bounds: WorldBounds,
-  fit: MinimapFit
+  fit: MinimapFit,
 ): Rect {
   const k = baseScale(viewport.k)
   const x0 = -viewport.x / k
@@ -111,7 +111,7 @@ export function viewportRectIn(
 export function jumpViewport(
   world: { x: number; y: number },
   viewport: Viewport,
-  size: { w: number; h: number }
+  size: { w: number; h: number },
 ): Viewport {
   const k = baseScale(viewport.k)
   return { x: size.w / 2 - world.x * k, y: size.h / 2 - world.y * k, k }

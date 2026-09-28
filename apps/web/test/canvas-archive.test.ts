@@ -73,7 +73,7 @@ describe('导出条目清单', () => {
         images: [{ id: 'x' } as unknown as CanvasImagePlacement],
         archiveImages: [],
         exportedAt: '2026-09-20T10:00:00.000Z',
-      })
+      }),
     ).toThrow(/形状非法/)
   })
 })
@@ -117,7 +117,7 @@ describe('导入合并（LWW 关键点）', () => {
     const { applied, skipped } = mergeImportedPlacements(
       [placement('cimg_a')],
       [placement('cimg_a'), placement('cimg_gone')],
-      NOW
+      NOW,
     )
     expect(applied.map((p) => p.id)).toEqual(['cimg_a'])
     expect(skipped).toEqual(['cimg_gone'])
@@ -127,7 +127,7 @@ describe('导入合并（LWW 关键点）', () => {
     const { applied, skipped } = mergeImportedPlacements(
       [placement('cimg_a')],
       [placement('cimg_x'), placement('cimg_y')],
-      NOW
+      NOW,
     )
     expect(applied).toEqual([])
     expect(skipped).toEqual(['cimg_x', 'cimg_y'])
@@ -155,7 +155,11 @@ describe('原名映射（条目名改 ASCII 后的信息保全，#85）', () => 
 
   it('老归档（没有 names 字段）仍能解析，names 为空', () => {
     const legacy = JSON.stringify({
-      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
+      app: 'motif',
+      version: 1,
+      exportedAt: '',
+      topicId: 'top_1',
+      meta: META,
       images: [placement('cimg_a')],
     })
     const parsed = parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(legacy)]]))
@@ -165,16 +169,26 @@ describe('原名映射（条目名改 ASCII 后的信息保全，#85）', () => 
 
   it('names 形状不对时当没有（它是附加信息，不该让导入失败）', () => {
     const bad = JSON.stringify({
-      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
-      images: [placement('cimg_a')], names: { cimg_a: 123 },
+      app: 'motif',
+      version: 1,
+      exportedAt: '',
+      topicId: 'top_1',
+      meta: META,
+      images: [placement('cimg_a')],
+      names: { cimg_a: 123 },
     })
     expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(bad)]]))).toMatchObject({ topicId: 'top_1' })
   })
 
   it('空映射读出来也是「没有」——与写端对称（否则读成 {}、写回去又消失）', () => {
     const empty = JSON.stringify({
-      app: 'motif', version: 1, exportedAt: '', topicId: 'top_1', meta: META,
-      images: [placement('cimg_a')], names: {},
+      app: 'motif',
+      version: 1,
+      exportedAt: '',
+      topicId: 'top_1',
+      meta: META,
+      images: [placement('cimg_a')],
+      names: {},
     })
     expect(parseCanvasArchive(new Map([[CANVAS_JSON_ENTRY, bytes(empty)]])).names).toBeUndefined()
   })

@@ -63,7 +63,11 @@ describe('迁移安全', () => {
 
   it('库内表清单快照（画布升级本身零新表；新增表必须同步这里）', () => {
     const db = new Database(join(dir, 't.db'), { readonly: true })
-    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>)
+    const tables = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{
+        name: string
+      }>
+    )
       .map((t) => t.name)
       .sort()
     db.close()
@@ -121,8 +125,16 @@ describe('迁移安全', () => {
 describe('图片级 LWW', () => {
   function makeImage(): string {
     return store.insertCanvasImage({
-      topicId, userId, messageId: null, origin: 'generated', name: '图片 1',
-      imageKey: 'k1', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024,
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: '图片 1',
+      imageKey: 'k1',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
     }).id
   }
 
@@ -153,7 +165,14 @@ describe('图片级 LWW', () => {
 
   it('不存在的 id 进 rejected（已删除的图）', () => {
     const r = store.upsertCanvasPlacements(topicId, [
-      { id: 'cimg_nope', canvasX: 1, canvasY: 1, canvasWidth: 1, canvasHeight: 1, updatedAt: '2026-09-20T10:00:00.000Z' },
+      {
+        id: 'cimg_nope',
+        canvasX: 1,
+        canvasY: 1,
+        canvasWidth: 1,
+        canvasHeight: 1,
+        updatedAt: '2026-09-20T10:00:00.000Z',
+      },
     ])
     expect(r.rejected).toEqual(['cimg_nope'])
   })
@@ -161,10 +180,34 @@ describe('图片级 LWW', () => {
 
 describe('旧库补位', () => {
   it('updated_at 为空的行按 serial 分配位置；连续两次调用位置不变（幂等）', () => {
-    const a = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
-    const b = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'b', imageKey: 'kb', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
+    const a = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    }).id
+    const b = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'b',
+      imageKey: 'kb',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    }).id
     // 模拟升级库：手工把两行的位置清空
-    store.db.prepare("UPDATE canvas_images SET updated_at = '', canvas_x = 0, canvas_y = 0 WHERE topic_id = ?").run(topicId)
+    store.db
+      .prepare("UPDATE canvas_images SET updated_at = '', canvas_x = 0, canvas_y = 0 WHERE topic_id = ?")
+      .run(topicId)
 
     expect(store.backfillCanvasPlacements(topicId)).toBe(2)
     const first = store.listCanvasPlacements(topicId)
@@ -181,15 +224,42 @@ describe('旧库补位', () => {
   })
 
   it('已有非零位置的行不被补位改动', () => {
-    const a = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
-    const b = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'b', imageKey: 'kb', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 }).id
+    const a = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    }).id
+    const b = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'b',
+      imageKey: 'kb',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    }).id
     store.upsertCanvasPlacements(topicId, [
       { id: a, canvasX: 777, canvasY: 888, canvasWidth: 240, canvasHeight: 240, updatedAt: '2026-09-20T10:00:00.000Z' },
     ])
     store.backfillCanvasPlacements(topicId)
     const after = store.listCanvasPlacements(topicId)
     // 已落位的 a 一字不动
-    expect(after.find((p) => p.id === a)).toMatchObject({ canvasX: 777, canvasY: 888, canvasWidth: 240, canvasHeight: 240 })
+    expect(after.find((p) => p.id === a)).toMatchObject({
+      canvasX: 777,
+      canvasY: 888,
+      canvasWidth: 240,
+      canvasHeight: 240,
+    })
     // b 被补位：拿到了真实槽位（尺寸/版本都写上了），且不与 a 重叠
     const pb = after.find((p) => p.id === b)!
     expect(pb.canvasWidth).toBeGreaterThan(0)
@@ -204,8 +274,16 @@ describe('旧库补位', () => {
 describe('insertCanvasImage 带 placement', () => {
   it('位置列与图片行在同一条 INSERT 落库（原子），updatedAt 非空故不参与补位', () => {
     const img = store.insertCanvasImage({
-      topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka',
-      mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024,
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
       placement: { x: 12, y: 34, width: 240, height: 120 },
     })
     // 返回值即已带位置
@@ -213,7 +291,11 @@ describe('insertCanvasImage 带 placement', () => {
     expect(img.updatedAt).not.toBe('')
     // 落库可读回
     expect(store.listCanvasPlacements(topicId)[0]).toMatchObject({
-      id: img.id, canvasX: 12, canvasY: 34, canvasWidth: 240, canvasHeight: 120,
+      id: img.id,
+      canvasX: 12,
+      canvasY: 34,
+      canvasWidth: 240,
+      canvasHeight: 120,
     })
     // updatedAt 非空 → 补位不认领它
     expect(store.backfillCanvasPlacements(topicId)).toBe(0)
@@ -222,8 +304,16 @@ describe('insertCanvasImage 带 placement', () => {
 
   it('缺省 placement 时落 0 位置 + 空 updatedAt，等首次 GET 补位', () => {
     const img = store.insertCanvasImage({
-      topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka',
-      mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024,
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
     })
     expect(img).toMatchObject({ canvasX: 0, canvasY: 0, canvasWidth: 0, canvasHeight: 0, updatedAt: '' })
     expect(store.backfillCanvasPlacements(topicId)).toBe(1)
@@ -236,8 +326,14 @@ describe('insertCanvasImage 带 placement', () => {
 describe('messages.slot_plan（#88：槽位计划挂 message 上，零新表）', () => {
   function makeMessage(slotPlan?: CanvasRect[]) {
     return store.createMessage({
-      topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
-      requestedCount: 2, enhancePrompt: false, slotPlan,
+      topicId,
+      userId,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 2,
+      enhancePrompt: false,
+      slotPlan,
     })
   }
 
@@ -264,8 +360,12 @@ describe('messages.slot_plan（#88：槽位计划挂 message 上，零新表）'
     const db = new Database(join(dir, 't.db'))
     db.prepare('UPDATE messages SET slot_plan = ? WHERE id = ?').run('{不是 json', dirty)
     db.prepare('UPDATE messages SET slot_plan = ? WHERE id = ?').run(
-      JSON.stringify([{ x: 1, y: 2, w: 240, h: 240 }, { x: 'a', y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: -1, h: 10 }]),
-      partial
+      JSON.stringify([
+        { x: 1, y: 2, w: 240, h: 240 },
+        { x: 'a', y: 0, w: 1, h: 1 },
+        { x: 0, y: 0, w: -1, h: 10 },
+      ]),
+      partial,
     )
     db.close()
     expect(store.getMessage(dirty)!.slotPlan).toEqual([])

@@ -17,7 +17,7 @@ export function createImageProviderFromEnv(env: Record<string, string | undefine
   const apiKey = env.IMAGE_API_KEY
   if (!baseUrl || !apiKey) {
     throw new Error(
-      '[motif] 缺少生图网关配置：请在管理后台「系统设置 → 生图网关」填写 IMAGE_API_BASE_URL 与 IMAGE_API_KEY'
+      '[motif] 缺少生图网关配置：请在管理后台「系统设置 → 生图网关」填写 IMAGE_API_BASE_URL 与 IMAGE_API_KEY',
     )
   }
   return new OpenAICompatProvider(baseUrl, apiKey, env.IMAGE_MODEL || 'gpt-image-2')

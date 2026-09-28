@@ -5,10 +5,7 @@
  * 展示层必须转成查看者的本地时区——此前 admin 各列表直接 `iso.slice(0, 19)` 截取，
  * 把 UTC 原样当本地时间显示，导致所有创建/支付时间差了时区偏移（如北京时间差 8 小时）。
  */
-export function formatDateTime(
-  iso: string | null | undefined,
-  opts?: { timeZone?: string }
-): string {
+export function formatDateTime(iso: string | null | undefined, opts?: { timeZone?: string }): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso

@@ -115,7 +115,10 @@ function safeParseSlotPlan(raw: string | null | undefined): CanvasRect[] {
  * ⚠️ 空数组必须落成恒假条件（`1 = 0`）：调用方给空数组的语义是「这个词没匹配到任何人」，
  * 若当成「没有筛选条件」跳过，页面会返回**全量**数据 —— 那是比不筛选更糟的误导。
  */
-function userScopeWhere(column: string, filter: { userId?: string; userIds?: string[] }): { clause: string | null; params: string[] } {
+function userScopeWhere(
+  column: string,
+  filter: { userId?: string; userIds?: string[] },
+): { clause: string | null; params: string[] } {
   if (filter.userIds !== undefined) {
     if (filter.userIds.length === 0) return { clause: '1 = 0', params: [] }
     return { clause: `${column} IN (${placeholders(filter.userIds.length)})`, params: [...filter.userIds] }
@@ -125,7 +128,10 @@ function userScopeWhere(column: string, filter: { userId?: string; userIds?: str
 }
 
 /** 按操作者/动作/时间构造审计查询条件（供 list / count 共用）。action 用**精确匹配** —— 前缀匹配会让 credit.adjust 与 credit.adjust.rollback 互相污染 */
-function auditWhere(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string }): { where: string; params: string[] } {
+function auditWhere(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string }): {
+  where: string
+  params: string[]
+} {
   const clauses: string[] = []
   const params: string[] = []
   const actor = userScopeWhere('actor_id', { userId: filter.actorId, userIds: filter.userIds })
@@ -181,7 +187,13 @@ export interface SettingRow {
 }
 
 /** 按状态/用户/时间构造生成轮次查询条件（供 list / count 共用） */
-function messageWhere(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string }): { where: string; params: string[] } {
+function messageWhere(filter: {
+  status?: MessageStatus
+  userId?: string
+  userIds?: string[]
+  from?: string
+  to?: string
+}): { where: string; params: string[] } {
   const clauses: string[] = []
   const params: string[] = []
   if (filter.status) {
@@ -273,7 +285,10 @@ function userWhere(filter: { q?: string; role?: UserRole; status?: UserStatus })
 }
 
 /** 按状态与关键词构造 CDK 查询条件（供 list / count 共用，避免两处口径漂移） */
-function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string }): { where: string; params: string[] } {
+function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string }): {
+  where: string
+  params: string[]
+} {
   const clauses: string[] = []
   const params: string[] = []
   if (filter.status === 'unredeemed') clauses.push('redeemed_by IS NULL AND revoked_at IS NULL')
@@ -287,7 +302,10 @@ function cdkWhere(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: 
 }
 
 /** 按用户/状态/时间范围构造订单查询条件（供 list / count 共用，避免两处口径漂移） */
-function orderWhere(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string }): { where: string; params: string[] } {
+function orderWhere(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string }): {
+  where: string
+  params: string[]
+} {
   const clauses: string[] = []
   const params: string[] = []
   const user = userScopeWhere('user_id', filter)
@@ -410,7 +428,13 @@ export interface AdminOverview {
     netSpent: number
     bySource: Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
   }
-  generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
+  generations: {
+    total: number
+    terminal: number
+    succeeded: number
+    successRate: number
+    topErrors: Array<{ error: string; count: number }>
+  }
   orders: {
     /** 订单总数。**不能拿 paid + pending 现算** —— 概览卡要写「合计 N 笔」，而 status 列没有 CHECK 约束，
      *  靠两个已知状态相加会在出现第三种状态时静默少算。直接 COUNT(*) 才是唯一真相。 */
@@ -620,7 +644,7 @@ export class MotifStore {
       this.db
         .prepare(
           `INSERT INTO users (id, email, password_hash, name, avatar_url, role, status, must_change_password, disabled_at, credits, invite_code, invited_by, invited_count, created_at, updated_at)
-           VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`
+           VALUES (?, ?, ?, ?, NULL, ?, 'active', ?, NULL, ?, ?, ?, 0, ?, ?)`,
         )
         .run(
           id,
@@ -633,7 +657,7 @@ export class MotifStore {
           inviteCode,
           input.invitedBy ?? null,
           t,
-          t
+          t,
         )
       // 建档时就带额度（引导、测试造数）→ 记一条 opening_balance，使不变式从第一行起就成立
       if (initialCredits > 0) this.insertLedger(id, initialCredits, { source: 'opening_balance', note: '建档初始额度' })
@@ -653,17 +677,24 @@ export class MotifStore {
   }
 
   getPasswordHash(userId: string): string | null {
-    const row = this.db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as { password_hash: string } | undefined
+    const row = this.db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as
+      { password_hash: string } | undefined
     return row ? row.password_hash : null
   }
 
   updateUserPassword(userId: string, passwordHash: string): void {
-    this.db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(passwordHash, nowIso(), userId)
+    this.db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .run(passwordHash, nowIso(), userId)
   }
 
   updateUserProfile(userId: string, patch: { name?: string; avatarUrl?: string | null }): void {
-    if (patch.name !== undefined) this.db.prepare('UPDATE users SET name = ?, updated_at = ? WHERE id = ?').run(patch.name, nowIso(), userId)
-    if (patch.avatarUrl !== undefined) this.db.prepare('UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?').run(patch.avatarUrl, nowIso(), userId)
+    if (patch.name !== undefined)
+      this.db.prepare('UPDATE users SET name = ?, updated_at = ? WHERE id = ?').run(patch.name, nowIso(), userId)
+    if (patch.avatarUrl !== undefined)
+      this.db
+        .prepare('UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?')
+        .run(patch.avatarUrl, nowIso(), userId)
   }
 
   getUserByInviteCode(code: string): User | null {
@@ -677,9 +708,12 @@ export class MotifStore {
    */
   deductCredits(userId: string, amount: number, entry: LedgerEntry): User | null {
     const tx = this.db.transaction((): User | null => {
-      const row = this.db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number } | undefined
+      const row = this.db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as
+        { credits: number } | undefined
       if (!row || row.credits < amount) return null
-      this.db.prepare('UPDATE users SET credits = credits - ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.db
+        .prepare('UPDATE users SET credits = credits - ?, updated_at = ? WHERE id = ?')
+        .run(amount, nowIso(), userId)
       this.insertLedger(userId, -amount, entry)
       return this.getUserById(userId)
     })
@@ -689,7 +723,9 @@ export class MotifStore {
   /** 加额。`entry` 必填：没有来源的额度变动等于不可对账（与余额更新同事务） */
   addCredits(userId: string, amount: number, entry: LedgerEntry): User {
     const tx = this.db.transaction((): User => {
-      this.db.prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), userId)
+      this.db
+        .prepare('UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?')
+        .run(amount, nowIso(), userId)
       this.insertLedger(userId, amount, entry)
       return this.getUserById(userId)!
     })
@@ -719,7 +755,15 @@ export class MotifStore {
     const rows = this.db
       .prepare(`SELECT * FROM credit_ledger ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
       .all(...params, filter.limit ?? 50, filter.offset ?? 0) as LedgerDbRow[]
-    return rows.map((r) => ({ id: r.id, userId: r.user_id, delta: r.delta, source: r.source as CreditSource, refId: r.ref_id, note: r.note, createdAt: r.created_at }))
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      delta: r.delta,
+      source: r.source as CreditSource,
+      refId: r.ref_id,
+      note: r.note,
+      createdAt: r.created_at,
+    }))
   }
 
   countLedger(filter: { userId?: string; source?: CreditSource }): number {
@@ -739,7 +783,9 @@ export class MotifStore {
 
   /** 记录邀请成功；返回受赠额度（受上限约束）。inviteeId 用于流水溯源「这笔奖励是谁带来的」 */
   recordInvite(inviterId: string, reward: number, inviteeId: string): void {
-    this.db.prepare('UPDATE users SET invited_count = invited_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), inviterId)
+    this.db
+      .prepare('UPDATE users SET invited_count = invited_count + 1, updated_at = ? WHERE id = ?')
+      .run(nowIso(), inviterId)
     if (reward > 0) this.addCredits(inviterId, reward, { source: 'invite_reward', refId: inviteeId, note: '邀请奖励' })
   }
 
@@ -816,7 +862,9 @@ export class MotifStore {
   }
 
   setMustChangePassword(userId: string, value: boolean): void {
-    this.db.prepare('UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?').run(value ? 1 : 0, nowIso(), userId)
+    this.db
+      .prepare('UPDATE users SET must_change_password = ?, updated_at = ? WHERE id = ?')
+      .run(value ? 1 : 0, nowIso(), userId)
   }
 
   // ---------- sessions ----------
@@ -868,9 +916,9 @@ export class MotifStore {
    * 仍应得 404）。角色判断属服务层，不在这里做。
    */
   getExpiredSessionUser(token: string): User | null {
-    const row = this.db.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').get(this.hashToken(token)) as
-      | { user_id: string; expires_at: string }
-      | undefined
+    const row = this.db
+      .prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?')
+      .get(this.hashToken(token)) as { user_id: string; expires_at: string } | undefined
     if (!row) return null
     if (row.expires_at > nowIso()) return null
     return this.getUserById(row.user_id)
@@ -879,9 +927,7 @@ export class MotifStore {
   /** 吊销用户全部会话（可选保留一个，如改密时的当前会话） */
   revokeUserSessions(userId: string, exceptToken?: string): void {
     if (exceptToken) {
-      this.db
-        .prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?')
-        .run(userId, this.hashToken(exceptToken))
+      this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(userId, this.hashToken(exceptToken))
     } else {
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
     }
@@ -891,11 +937,15 @@ export class MotifStore {
 
   createVerificationCode(purpose: 'register' | 'password-reset', email: string, ttlMs: number): string {
     // 同邮箱旧码作废
-    this.db.prepare('UPDATE verification_codes SET used = 1 WHERE purpose = ? AND email = ? AND used = 0').run(purpose, email.toLowerCase())
+    this.db
+      .prepare('UPDATE verification_codes SET used = 1 WHERE purpose = ? AND email = ? AND used = 0')
+      .run(purpose, email.toLowerCase())
     const code = newVerificationCode()
     const t = Date.now()
     this.db
-      .prepare('INSERT INTO verification_codes (purpose, email, code, used, created_at, expires_at) VALUES (?, ?, ?, 0, ?, ?)')
+      .prepare(
+        'INSERT INTO verification_codes (purpose, email, code, used, created_at, expires_at) VALUES (?, ?, ?, 0, ?, ?)',
+      )
       .run(purpose, email.toLowerCase(), code, new Date(t).toISOString(), new Date(t + ttlMs).toISOString())
     return code
   }
@@ -910,7 +960,7 @@ export class MotifStore {
       .prepare(
         `SELECT id, code, attempts FROM verification_codes
          WHERE purpose = ? AND email = ? AND used = 0 AND expires_at > ?
-         ORDER BY id DESC LIMIT 1`
+         ORDER BY id DESC LIMIT 1`,
       )
       .get(purpose, emailLc, now) as { id: number; code: string; attempts: number } | undefined
     if (!active) return false
@@ -934,14 +984,15 @@ export class MotifStore {
     this.db
       .prepare(
         `INSERT INTO topics (id, user_id, title, status, active_message_id, active_prompt, created_at, updated_at)
-         VALUES (?, ?, ?, 'idle', NULL, NULL, ?, ?)`
+         VALUES (?, ?, ?, 'idle', NULL, NULL, ?, ?)`,
       )
       .run(id, userId, title, t, t)
     return this.getTopic(id)!
   }
 
   getTopic(id: string): Topic | null {
-    const read = (): TopicRow | undefined => this.db.prepare('SELECT * FROM topics WHERE id = ?').get(id) as TopicRow | undefined
+    const read = (): TopicRow | undefined =>
+      this.db.prepare('SELECT * FROM topics WHERE id = ?').get(id) as TopicRow | undefined
     const row = read()
     if (!row) return null
     // 读取自愈：只在 topic 自称在跑时才可能要做写（idle 是常见态，不该为它付一次写事务）
@@ -977,7 +1028,7 @@ export class MotifStore {
         `SELECT t.* FROM topics t
          WHERE t.user_id = ? AND t.status = 'idle'
            AND NOT EXISTS (SELECT 1 FROM canvas_images ci WHERE ci.topic_id = t.id)
-         ORDER BY t.updated_at DESC, t.id DESC LIMIT 1`
+         ORDER BY t.updated_at DESC, t.id DESC LIMIT 1`,
       )
       .get(userId) as TopicRow | undefined
     return row ? rowToTopic(row) : null
@@ -1008,7 +1059,12 @@ export class MotifStore {
    * 为什么必须收口：topic 状态是**活跃生成轮次的投影**，两边各自写就会出现
    * 「任务说在停止、轮次早已失败」这类互相矛盾的中间态（#81 / #86 的共同根因）。
    */
-  syncTopicStatus(topicId: string, messageId: string | null, prompt: string | null, msgStatus: MessageStatus | null): void {
+  syncTopicStatus(
+    topicId: string,
+    messageId: string | null,
+    prompt: string | null,
+    msgStatus: MessageStatus | null,
+  ): void {
     const status = topicStatusFromMessage(msgStatus)
     // 派生为 idle 时活跃消息/提示词必须一起清空 —— 否则会留下「话题空闲、却仍挂着一条终态消息」
     // 的半状态（读的人得自己判断那条消息算不算数）。状态与它携带的上下文必须同生同灭。
@@ -1028,7 +1084,7 @@ export class MotifStore {
     const res = this.db
       .prepare(
         `UPDATE topics SET status = ?, active_message_id = NULL, active_prompt = NULL, updated_at = ?
-         WHERE id = ? AND ${STALE_TOPIC_WHERE}`
+         WHERE id = ? AND ${STALE_TOPIC_WHERE}`,
       )
       .run(SETTLED_TOPIC_STATUS, nowIso(), id, ...BUSY_TOPIC_STATUS_VALUES, ...ACTIVE_MESSAGE_STATUS_VALUES)
     return res.changes > 0
@@ -1039,7 +1095,7 @@ export class MotifStore {
     const res = this.db
       .prepare(
         `UPDATE topics SET status = ?, active_message_id = NULL, active_prompt = NULL, updated_at = ?
-         WHERE user_id = ? AND ${STALE_TOPIC_WHERE}`
+         WHERE user_id = ? AND ${STALE_TOPIC_WHERE}`,
       )
       .run(SETTLED_TOPIC_STATUS, nowIso(), userId, ...BUSY_TOPIC_STATUS_VALUES, ...ACTIVE_MESSAGE_STATUS_VALUES)
     return res.changes
@@ -1079,8 +1135,12 @@ export class MotifStore {
   getTopicDetail(id: string): TopicDetail | null {
     const topic = this.getTopic(id)
     if (!topic) return null
-    const messages = (this.db.prepare('SELECT * FROM messages WHERE topic_id = ? ORDER BY created_at, id').all(id) as MessageRow[]).map(rowToMessage)
-    const canvasImages = (this.db.prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial').all(id) as CanvasImageRow[]).map(rowToCanvasImage)
+    const messages = (
+      this.db.prepare('SELECT * FROM messages WHERE topic_id = ? ORDER BY created_at, id').all(id) as MessageRow[]
+    ).map(rowToMessage)
+    const canvasImages = (
+      this.db.prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial').all(id) as CanvasImageRow[]
+    ).map(rowToCanvasImage)
     const messageReferences = canvasImages.filter((i) => i.origin === 'uploaded').map((i) => i.serial)
     return { topic, messages, canvasImages, messageReferences }
   }
@@ -1104,9 +1164,21 @@ export class MotifStore {
     this.db
       .prepare(
         `INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, enhance_prompt, reference_ids, slot_plan, status, attempts, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)`,
       )
-      .run(id, input.topicId, input.userId, input.prompt, input.finalPrompt, input.size, input.requestedCount, input.enhancePrompt ? 1 : 0, JSON.stringify(input.referenceIds ?? []), JSON.stringify(input.slotPlan ?? []), t)
+      .run(
+        id,
+        input.topicId,
+        input.userId,
+        input.prompt,
+        input.finalPrompt,
+        input.size,
+        input.requestedCount,
+        input.enhancePrompt ? 1 : 0,
+        JSON.stringify(input.referenceIds ?? []),
+        JSON.stringify(input.slotPlan ?? []),
+        t,
+      )
     return this.getMessage(id)!
   }
 
@@ -1116,7 +1188,9 @@ export class MotifStore {
   }
 
   listMessages(topicId: string): Message[] {
-    const rows = this.db.prepare('SELECT * FROM messages WHERE topic_id = ? ORDER BY created_at, id').all(topicId) as MessageRow[]
+    const rows = this.db
+      .prepare('SELECT * FROM messages WHERE topic_id = ? ORDER BY created_at, id')
+      .all(topicId) as MessageRow[]
     return rows.map(rowToMessage)
   }
 
@@ -1129,7 +1203,9 @@ export class MotifStore {
       if (!row) return null
       const t = Date.now()
       this.db
-        .prepare(`UPDATE messages SET status = 'running', worker_id = ?, locked_at = ?, lease_token = ?, lease_expires_at = ?, attempts = attempts + 1 WHERE id = ?`)
+        .prepare(
+          `UPDATE messages SET status = 'running', worker_id = ?, locked_at = ?, lease_token = ?, lease_expires_at = ?, attempts = attempts + 1 WHERE id = ?`,
+        )
         .run(workerId, new Date(t).toISOString(), workerId, new Date(t + leaseMs).toISOString(), row.id)
       // 认领即把 topic 同步为「生成中」（#86）：由消息状态派生，与其余写入点同一口径。
       // 放在同一事务里 —— 不允许出现「消息在跑、任务仍显示排队中」的中间态被别的读看到。
@@ -1141,7 +1217,9 @@ export class MotifStore {
 
   setMessageStatus(id: string, status: string, error?: string | null): void {
     this.db
-      .prepare('UPDATE messages SET status = ?, error = ?, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ?')
+      .prepare(
+        'UPDATE messages SET status = ?, error = ?, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ?',
+      )
       .run(status, error ?? null, id)
   }
 
@@ -1156,9 +1234,7 @@ export class MotifStore {
    * @returns 真的把状态翻成 `canceling` 返回 `true`；消息已不是 `running`（已被收尾/重排）返回 `false`
    */
   markMessageCanceling(id: string): boolean {
-    const res = this.db
-      .prepare(`UPDATE messages SET status = 'canceling' WHERE id = ? AND status = 'running'`)
-      .run(id)
+    const res = this.db.prepare(`UPDATE messages SET status = 'canceling' WHERE id = ? AND status = 'running'`).run(id)
     return res.changes > 0
   }
 
@@ -1183,7 +1259,7 @@ export class MotifStore {
     const rows = this.db
       .prepare(
         `SELECT id, topic_id, prompt FROM messages
-         WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
+         WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`,
       )
       .all(now, ...skipIds) as Array<{ id: string; topic_id: string; prompt: string }>
     if (rows.length > 0) {
@@ -1191,7 +1267,7 @@ export class MotifStore {
         this.db
           .prepare(
             `UPDATE messages SET status = 'queued', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
-             WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
+             WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`,
           )
           .run(now, ...skipIds)
         for (const r of rows) this.syncTopicStatus(r.topic_id, r.id, r.prompt, 'queued')
@@ -1207,7 +1283,7 @@ export class MotifStore {
     const canceling = this.db
       .prepare(
         `SELECT id FROM messages
-         WHERE status = 'canceling' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`
+         WHERE status = 'canceling' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?${skipClause}`,
       )
       .all(now, ...skipIds) as Array<{ id: string }>
     for (const r of canceling) this.finalizeCancel(r.id, { leaseExpiredOnly: true, now })
@@ -1222,8 +1298,7 @@ export class MotifStore {
    */
   private refundFor(id: string): number {
     const row = this.db.prepare('SELECT requested_count FROM messages WHERE id = ?').get(id) as
-      | { requested_count: number }
-      | undefined
+      { requested_count: number } | undefined
     if (!row) return 0
     return row.requested_count - this.countGeneratedInMessage(id)
   }
@@ -1262,12 +1337,11 @@ export class MotifStore {
    */
   finalizeCancel(
     id: string,
-    opts: { leaseExpiredOnly?: boolean; now?: string; workerId?: string } = {}
+    opts: { leaseExpiredOnly?: boolean; now?: string; workerId?: string } = {},
   ): { finalized: boolean; refund: number } {
     const tx = this.db.transaction((): { finalized: boolean; refund: number } => {
-      const row = this.db
-        .prepare('SELECT user_id, topic_id FROM messages WHERE id = ?')
-        .get(id) as { user_id: string; topic_id: string } | undefined
+      const row = this.db.prepare('SELECT user_id, topic_id FROM messages WHERE id = ?').get(id) as
+        { user_id: string; topic_id: string } | undefined
       if (!row) return { finalized: false, refund: 0 }
       // 守卫全部进 WHERE：CAS 的判据落在同一条语句里，读-判-写之间没有窗口。
       const guards: string[] = []
@@ -1286,7 +1360,7 @@ export class MotifStore {
       const res = this.db
         .prepare(
           `UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
-           WHERE id = ? AND status = 'canceling'${guards.join('')}`
+           WHERE id = ? AND status = 'canceling'${guards.join('')}`,
         )
         .run(...params)
       if (res.changes === 0) return { finalized: false, refund: 0 }
@@ -1323,20 +1397,19 @@ export class MotifStore {
    */
   finalizeFailure(
     id: string,
-    opts: { workerId: string; buildError: (refund: number) => string }
+    opts: { workerId: string; buildError: (refund: number) => string },
   ): { finalized: boolean; refund: number } {
     const tx = this.db.transaction((): { finalized: boolean; refund: number } => {
       // 先读 row 再 CAS：row 缺失时返回「未收尾」且**不写任何状态**，返回值语义与副作用一致
       // （同一事务内 CAS 命中后 row 不可能消失，故「已置 failed 却返回 finalized:false」不可达）。
-      const row = this.db
-        .prepare('SELECT user_id, topic_id FROM messages WHERE id = ?')
-        .get(id) as { user_id: string; topic_id: string } | undefined
+      const row = this.db.prepare('SELECT user_id, topic_id FROM messages WHERE id = ?').get(id) as
+        { user_id: string; topic_id: string } | undefined
       if (!row) return { finalized: false, refund: 0 }
       // CAS：状态与执行者身份一起进 WHERE —— 判据全落在同一条语句里，读-判-写之间没有窗口。
       const res = this.db
         .prepare(
           `UPDATE messages SET status = 'failed', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
-           WHERE id = ? AND status = 'running' AND worker_id = ?`
+           WHERE id = ? AND status = 'running' AND worker_id = ?`,
         )
         .run(id, opts.workerId)
       if (res.changes === 0) return { finalized: false, refund: 0 }
@@ -1344,7 +1417,8 @@ export class MotifStore {
       const refund = this.refundFor(id)
       this.db.prepare('UPDATE messages SET error = ? WHERE id = ?').run(opts.buildError(refund), id)
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式在失败路径上破掉。
-      if (refund > 0) this.addCredits(row.user_id, refund, { source: 'generation_refund', refId: id, note: '生成失败退额' })
+      if (refund > 0)
+        this.addCredits(row.user_id, refund, { source: 'generation_refund', refId: id, note: '生成失败退额' })
       this.syncTopicStatus(row.topic_id, null, null, 'failed')
       return { finalized: true, refund }
     })
@@ -1368,7 +1442,8 @@ export class MotifStore {
    */
   finalizeSuccess(id: string, opts: { workerId: string }): { finalized: boolean } {
     const tx = this.db.transaction((): { finalized: boolean } => {
-      const row = this.db.prepare('SELECT topic_id FROM messages WHERE id = ?').get(id) as { topic_id: string } | undefined
+      const row = this.db.prepare('SELECT topic_id FROM messages WHERE id = ?').get(id) as
+        { topic_id: string } | undefined
       if (!row) return { finalized: false }
       const res = this.db
         .prepare(
@@ -1376,7 +1451,7 @@ export class MotifStore {
           // 当前其实不可达 —— `error` 只在 `finalizeFailure` 里写，而 failed 是终态、不会再有成功收尾 ——
           // 但留着这一笔，将来若出现「同一条消息被重跑」的形态，就不会把上一轮的失败文案挂在成功的轮次上。
           `UPDATE messages SET status = 'completed', error = NULL, worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
-           WHERE id = ? AND status = 'running' AND worker_id = ?`
+           WHERE id = ? AND status = 'running' AND worker_id = ?`,
         )
         .run(id, opts.workerId)
       if (res.changes === 0) return { finalized: false }
@@ -1395,11 +1470,14 @@ export class MotifStore {
     const tx = this.db.transaction((): { found: boolean; canceled: boolean; refund: number } => {
       const row = this.db
         .prepare(`SELECT id, user_id, topic_id, requested_count, status FROM messages WHERE id = ?`)
-        .get(id) as { id: string; user_id: string; topic_id: string; requested_count: number; status: string } | undefined
+        .get(id) as
+        { id: string; user_id: string; topic_id: string; requested_count: number; status: string } | undefined
       if (!row || row.user_id !== userId) return { found: false, canceled: false, refund: 0 }
       if (row.status !== 'queued') return { found: true, canceled: false, refund: 0 }
       const res = this.db
-        .prepare(`UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND status = 'queued'`)
+        .prepare(
+          `UPDATE messages SET status = 'canceled', worker_id = NULL, lease_token = NULL, lease_expires_at = NULL WHERE id = ? AND status = 'queued'`,
+        )
         .run(id)
       if (res.changes === 0) return { found: true, canceled: false, refund: 0 }
       // 退额必须走 addCredits：内联改 credits 会绕过流水，让「账目与余额一致」的不变式
@@ -1414,7 +1492,9 @@ export class MotifStore {
   // ---------- canvas images ----------
 
   nextSerial(topicId: string): number {
-    const row = this.db.prepare('SELECT COALESCE(MAX(serial), 0) AS m FROM canvas_images WHERE topic_id = ?').get(topicId) as { m: number }
+    const row = this.db
+      .prepare('SELECT COALESCE(MAX(serial), 0) AS m FROM canvas_images WHERE topic_id = ?')
+      .get(topicId) as { m: number }
     return row.m + 1
   }
 
@@ -1439,12 +1519,27 @@ export class MotifStore {
     this.db
       .prepare(
         `INSERT INTO canvas_images (id, topic_id, user_id, message_id, origin, serial, name, image_key, mime_type, bytes, width, height, canvas_x, canvas_y, canvas_w, canvas_h, updated_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        id, input.topicId, input.userId, input.messageId, input.origin, serial, input.name, input.imageKey,
-        input.mimeType, input.bytes, input.width, input.height,
-        p ? p.x : 0, p ? p.y : 0, p ? p.width : 0, p ? p.height : 0, p ? t : '', t
+        id,
+        input.topicId,
+        input.userId,
+        input.messageId,
+        input.origin,
+        serial,
+        input.name,
+        input.imageKey,
+        input.mimeType,
+        input.bytes,
+        input.width,
+        input.height,
+        p ? p.x : 0,
+        p ? p.y : 0,
+        p ? p.width : 0,
+        p ? p.height : 0,
+        p ? t : '',
+        t,
       )
     return this.getCanvasImage(id)!
   }
@@ -1455,7 +1550,9 @@ export class MotifStore {
   }
 
   listCanvasImages(topicId: string): CanvasImage[] {
-    const rows = this.db.prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial').all(topicId) as CanvasImageRow[]
+    const rows = this.db
+      .prepare('SELECT * FROM canvas_images WHERE topic_id = ? ORDER BY serial')
+      .all(topicId) as CanvasImageRow[]
     return rows.map(rowToCanvasImage)
   }
 
@@ -1483,8 +1580,7 @@ export class MotifStore {
   /** 画布元信息（视口/背景）：JSON 列，脏数据回退默认值 */
   getCanvasMeta(topicId: string): CanvasMeta {
     const row = this.db.prepare('SELECT canvas_meta FROM topics WHERE id = ?').get(topicId) as
-      | { canvas_meta: string }
-      | undefined
+      { canvas_meta: string } | undefined
     return parseCanvasMeta(row?.canvas_meta)
   }
 
@@ -1500,7 +1596,7 @@ export class MotifStore {
   listCanvasPlacements(topicId: string): CanvasImagePlacement[] {
     const rows = this.db
       .prepare(
-        'SELECT id, canvas_x, canvas_y, canvas_w, canvas_h, updated_at FROM canvas_images WHERE topic_id = ? ORDER BY serial'
+        'SELECT id, canvas_x, canvas_y, canvas_w, canvas_h, updated_at FROM canvas_images WHERE topic_id = ? ORDER BY serial',
       )
       .all(topicId) as Array<{
       id: string
@@ -1527,13 +1623,13 @@ export class MotifStore {
    */
   upsertCanvasPlacements(
     topicId: string,
-    placements: CanvasImagePlacement[]
+    placements: CanvasImagePlacement[],
   ): { applied: string[]; rejected: string[] } {
     const applied: string[] = []
     const rejected: string[] = []
     const read = this.db.prepare('SELECT updated_at FROM canvas_images WHERE id = ? AND topic_id = ?')
     const write = this.db.prepare(
-      'UPDATE canvas_images SET canvas_x = ?, canvas_y = ?, canvas_w = ?, canvas_h = ?, updated_at = ? WHERE id = ? AND topic_id = ?'
+      'UPDATE canvas_images SET canvas_x = ?, canvas_y = ?, canvas_w = ?, canvas_h = ?, updated_at = ? WHERE id = ? AND topic_id = ?',
     )
     const tx = this.db.transaction(() => {
       for (const p of placements) {
@@ -1561,9 +1657,7 @@ export class MotifStore {
    */
   backfillCanvasPlacements(topicId: string): number {
     const pending = this.db
-      .prepare(
-        "SELECT id, width, height FROM canvas_images WHERE topic_id = ? AND updated_at = '' ORDER BY serial"
-      )
+      .prepare("SELECT id, width, height FROM canvas_images WHERE topic_id = ? AND updated_at = '' ORDER BY serial")
       .all(topicId) as Array<{ id: string; width: number; height: number }>
     if (pending.length === 0) return 0
     const origin = viewportOrigin(this.getCanvasMeta(topicId).viewport)
@@ -1594,7 +1688,7 @@ export class MotifStore {
     const id = newReferenceUploadId()
     this.db
       .prepare(
-        'INSERT INTO reference_uploads (id, topic_id, user_id, name, image_key, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO reference_uploads (id, topic_id, user_id, name, image_key, mime_type, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(id, input.topicId, input.userId, input.name, input.imageKey, input.mimeType, input.bytes, nowIso())
     return this.getReferenceUpload(id)!
@@ -1602,7 +1696,15 @@ export class MotifStore {
 
   getReferenceUpload(id: string): StagedReference | null {
     const r = this.db.prepare('SELECT * FROM reference_uploads WHERE id = ?').get(id) as
-      | { id: string; topic_id: string; name: string; image_key: string; mime_type: string; bytes: number; created_at: string }
+      | {
+          id: string
+          topic_id: string
+          name: string
+          image_key: string
+          mime_type: string
+          bytes: number
+          created_at: string
+        }
       | undefined
     if (!r) return null
     return {
@@ -1621,7 +1723,9 @@ export class MotifStore {
   }
 
   listReferenceUploads(topicId: string): StagedReference[] {
-    const rows = this.db.prepare('SELECT * FROM reference_uploads WHERE topic_id = ? ORDER BY created_at, id').all(topicId) as Array<{
+    const rows = this.db
+      .prepare('SELECT * FROM reference_uploads WHERE topic_id = ? ORDER BY created_at, id')
+      .all(topicId) as Array<{
       id: string
       topic_id: string
       name: string
@@ -1662,7 +1766,9 @@ export class MotifStore {
   // ---------- cdks ----------
 
   createCdk(code: string, credits: number): void {
-    this.db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?, ?, ?)').run(code.toUpperCase(), credits, nowIso())
+    this.db
+      .prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?, ?, ?)')
+      .run(code.toUpperCase(), credits, nowIso())
   }
 
   /**
@@ -1708,7 +1814,12 @@ export class MotifStore {
     return tx()
   }
 
-  listCdks(filter: { status?: 'unredeemed' | 'redeemed' | 'revoked'; q?: string; limit?: number; offset?: number }): Array<{
+  listCdks(filter: {
+    status?: 'unredeemed' | 'redeemed' | 'revoked'
+    q?: string
+    limit?: number
+    offset?: number
+  }): Array<{
     code: string
     credits: number
     redeemedBy: string | null
@@ -1720,8 +1831,17 @@ export class MotifStore {
     const limit = filter.limit ?? 50
     const offset = filter.offset ?? 0
     const rows = this.db
-      .prepare(`SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks ${where} ORDER BY created_at DESC, code DESC LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset) as Array<{ code: string; credits: number; redeemed_by: string | null; redeemed_at: string | null; revoked_at: string | null; created_at: string }>
+      .prepare(
+        `SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks ${where} ORDER BY created_at DESC, code DESC LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset) as Array<{
+      code: string
+      credits: number
+      redeemed_by: string | null
+      redeemed_at: string | null
+      revoked_at: string | null
+      created_at: string
+    }>
     return rows.map((r) => ({
       code: r.code,
       credits: r.credits,
@@ -1739,12 +1859,35 @@ export class MotifStore {
   }
 
   /** 精确取一张码。作废/详情的前置检查必须用它 —— 不能用 `listCdks({q})`（LIKE + LIMIT 1 会漏判） */
-  getCdk(code: string): { code: string; credits: number; redeemedBy: string | null; redeemedAt: string | null; revokedAt: string | null; createdAt: string } | null {
+  getCdk(code: string): {
+    code: string
+    credits: number
+    redeemedBy: string | null
+    redeemedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+  } | null {
     const r = this.db
       .prepare('SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks WHERE code = ?')
-      .get(code.toUpperCase()) as { code: string; credits: number; redeemed_by: string | null; redeemed_at: string | null; revoked_at: string | null; created_at: string } | undefined
+      .get(code.toUpperCase()) as
+      | {
+          code: string
+          credits: number
+          redeemed_by: string | null
+          redeemed_at: string | null
+          revoked_at: string | null
+          created_at: string
+        }
+      | undefined
     if (!r) return null
-    return { code: r.code, credits: r.credits, redeemedBy: r.redeemed_by, redeemedAt: r.redeemed_at, revokedAt: r.revoked_at, createdAt: r.created_at }
+    return {
+      code: r.code,
+      credits: r.credits,
+      redeemedBy: r.redeemed_by,
+      redeemedAt: r.redeemed_at,
+      revokedAt: r.revoked_at,
+      createdAt: r.created_at,
+    }
   }
 
   /**
@@ -1762,12 +1905,15 @@ export class MotifStore {
     const tx = this.db.transaction((): number | null => {
       const row = this.db
         .prepare('SELECT credits, redeemed_by, revoked_at FROM cdks WHERE code = ?')
-        .get(code.toUpperCase()) as { credits: number; redeemed_by: string | null; revoked_at: string | null } | undefined
+        .get(code.toUpperCase()) as
+        { credits: number; redeemed_by: string | null; revoked_at: string | null } | undefined
       // 已作废的码不可兑换：修复前只判断 redeemed_by、忽略 revoked_at，导致作废形同虚设
       if (!row || row.redeemed_by || row.revoked_at) return null
       // 条件 UPDATE：并发下只有一个请求能把 redeemed_by 从 NULL 写成自己
       const res = this.db
-        .prepare('UPDATE cdks SET redeemed_by = ?, redeemed_at = ? WHERE code = ? AND redeemed_by IS NULL AND revoked_at IS NULL')
+        .prepare(
+          'UPDATE cdks SET redeemed_by = ?, redeemed_at = ? WHERE code = ? AND redeemed_by IS NULL AND revoked_at IS NULL',
+        )
         .run(userId, nowIso(), code.toUpperCase())
       if (res.changes !== 1) return null
       return row.credits
@@ -1780,14 +1926,17 @@ export class MotifStore {
   createOrder(userId: string, pkg: CreditPackage, channel: 'mock' | 'epay' | 'stripe' = 'mock'): string {
     const id = newOrderId()
     this.db
-      .prepare('INSERT INTO orders (id, user_id, package_id, credits, amount_total, currency, status, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .prepare(
+        'INSERT INTO orders (id, user_id, package_id, credits, amount_total, currency, status, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      )
       .run(id, userId, pkg.id, pkg.credits, pkg.amountTotal, pkg.currency, 'pending', channel, nowIso())
     return id
   }
 
   payOrder(orderId: string, userId: string): number | null {
     const tx = this.db.transaction((): number | null => {
-      const row = this.db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId) as { credits: number; status: string } | undefined
+      const row = this.db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId) as
+        { credits: number; status: string } | undefined
       if (!row || row.status === 'paid') return null
       this.db.prepare('UPDATE orders SET status = ?, paid_at = ? WHERE id = ?').run('paid', nowIso(), orderId)
       return row.credits
@@ -1796,15 +1945,34 @@ export class MotifStore {
   }
 
   /** 按订单号读取（含归属与渠道信息）：回调入账与 mock-pay 渠道隔离都用它 */
-  getOrder(orderId: string): { id: string; userId: string; credits: number; amountTotal: number; status: string; channel: string } | undefined {
+  getOrder(
+    orderId: string,
+  ): { id: string; userId: string; credits: number; amountTotal: number; status: string; channel: string } | undefined {
     const r = this.db
       .prepare('SELECT id, user_id, credits, amount_total, status, channel FROM orders WHERE id = ?')
-      .get(orderId) as { id: string; user_id: string; credits: number; amount_total: number; status: string; channel: string } | undefined
+      .get(orderId) as
+      | { id: string; user_id: string; credits: number; amount_total: number; status: string; channel: string }
+      | undefined
     if (!r) return undefined
-    return { id: r.id, userId: r.user_id, credits: r.credits, amountTotal: r.amount_total, status: r.status, channel: r.channel }
+    return {
+      id: r.id,
+      userId: r.user_id,
+      credits: r.credits,
+      amountTotal: r.amount_total,
+      status: r.status,
+      channel: r.channel,
+    }
   }
 
-  listOrders(filter: { userId?: string; userIds?: string[]; status?: string; from?: string; to?: string; limit?: number; offset?: number }): Array<{
+  listOrders(filter: {
+    userId?: string
+    userIds?: string[]
+    status?: string
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+  }): Array<{
     id: string
     userId: string
     packageId: string
@@ -1849,14 +2017,22 @@ export class MotifStore {
    * 排序用 `rowid DESC` 而不是 `created_at DESC`：同一毫秒内创建的多条记录无法靠时间区分，
    * 而 `id` 是随机 hex 前缀，按其倒序等于随机顺序（测试与页面都会看到不稳定的「最新一条」）。
    */
-  listAllMessages(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string; limit?: number; offset?: number }): AdminLogRow[] {
+  listAllMessages(filter: {
+    status?: MessageStatus
+    userId?: string
+    userIds?: string[]
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+  }): AdminLogRow[] {
     const { where, params } = messageWhere(filter)
     const rows = this.db
       .prepare(
         `SELECT m.*, COALESCE(g.c, 0) AS generated_count
            FROM messages m
            LEFT JOIN (SELECT message_id, COUNT(*) AS c FROM canvas_images WHERE message_id IS NOT NULL GROUP BY message_id) g ON g.message_id = m.id
-           ${where} ORDER BY m.rowid DESC LIMIT ? OFFSET ?`
+           ${where} ORDER BY m.rowid DESC LIMIT ? OFFSET ?`,
       )
       .all(...params, filter.limit ?? 50, filter.offset ?? 0) as Array<MessageRow & { generated_count: number }>
     return rows.map((r) => ({
@@ -1875,7 +2051,13 @@ export class MotifStore {
     }))
   }
 
-  countAllMessages(filter: { status?: MessageStatus; userId?: string; userIds?: string[]; from?: string; to?: string }): number {
+  countAllMessages(filter: {
+    status?: MessageStatus
+    userId?: string
+    userIds?: string[]
+    from?: string
+    to?: string
+  }): number {
     const { where, params } = messageWhere(filter)
     return (this.db.prepare(`SELECT COUNT(*) AS c FROM messages m ${where}`).get(...params) as { c: number }).c
   }
@@ -1901,7 +2083,9 @@ export class MotifStore {
   // ---------- feedback ----------
 
   insertFeedback(userId: string, content: string): void {
-    this.db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)').run(userId, content, nowIso())
+    this.db
+      .prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?, ?, ?)')
+      .run(userId, content, nowIso())
   }
 
   /** 反馈列表（管理端） */
@@ -1930,13 +2114,23 @@ export class MotifStore {
   getFeedback(id: number): FeedbackRow | null {
     const r = this.db.prepare('SELECT * FROM feedback WHERE id = ?').get(id) as FeedbackDbRow | undefined
     if (!r) return null
-    return { id: r.id, userId: r.user_id, content: r.content, status: r.status, resolvedAt: r.resolved_at, resolvedBy: r.resolved_by, createdAt: r.created_at }
+    return {
+      id: r.id,
+      userId: r.user_id,
+      content: r.content,
+      status: r.status,
+      resolvedAt: r.resolved_at,
+      resolvedBy: r.resolved_by,
+      createdAt: r.created_at,
+    }
   }
 
   /** 标记已处理。条件 UPDATE 保证只有仍是 pending 时才写入 —— 不覆盖首个处理人（幂等拒绝） */
   resolveFeedback(id: number, actorId: string): boolean {
     const res = this.db
-      .prepare("UPDATE feedback SET status = 'resolved', resolved_at = ?, resolved_by = ? WHERE id = ? AND status = 'pending'")
+      .prepare(
+        "UPDATE feedback SET status = 'resolved', resolved_at = ?, resolved_by = ? WHERE id = ? AND status = 'pending'",
+      )
       .run(nowIso(), actorId, id)
     return res.changes === 1
   }
@@ -1967,7 +2161,7 @@ export class MotifStore {
                 SUM(delta) AS net,
                 SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END) AS inflow,
                 SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END) AS outflow
-           FROM credit_ledger GROUP BY source ORDER BY net DESC, source ASC`
+           FROM credit_ledger GROUP BY source ORDER BY net DESC, source ASC`,
       )
       .all() as Array<{ source: CreditSource; net: number; inflow: number; outflow: number }>
 
@@ -1979,7 +2173,18 @@ export class MotifStore {
         total: n('SELECT COUNT(*) AS c FROM users'),
         newLast7d: n('SELECT COUNT(*) AS c FROM users WHERE created_at >= ?', sevenDaysAgo),
       },
-      credits: { balance, ledgerSum, granted, openingBalance, adjustedIn, adjustedOut, generatedCharged, refunded, netSpent, bySource },
+      credits: {
+        balance,
+        ledgerSum,
+        granted,
+        openingBalance,
+        adjustedIn,
+        adjustedOut,
+        generatedCharged,
+        refunded,
+        netSpent,
+        bySource,
+      },
       generations: {
         total: n('SELECT COUNT(*) AS c FROM messages'),
         terminal,
@@ -1988,7 +2193,7 @@ export class MotifStore {
         successRate: terminal === 0 ? 0 : succeeded / terminal,
         topErrors: this.db
           .prepare(
-            "SELECT error, COUNT(*) AS count FROM messages WHERE status = 'failed' AND error IS NOT NULL AND error <> '' GROUP BY error ORDER BY count DESC, error ASC LIMIT 3"
+            "SELECT error, COUNT(*) AS count FROM messages WHERE status = 'failed' AND error IS NOT NULL AND error <> '' GROUP BY error ORDER BY count DESC, error ASC LIMIT 3",
           )
           .all() as Array<{ error: string; count: number }>,
       },
@@ -2000,7 +2205,7 @@ export class MotifStore {
         // 跨币种直接 SUM 会得到一个没有意义的数，展示层也无从推断该配哪个符号。
         amountByCurrency: this.db
           .prepare(
-            "SELECT currency, SUM(amount_total) AS amountTotal FROM orders WHERE status = 'paid' GROUP BY currency ORDER BY amountTotal DESC"
+            "SELECT currency, SUM(amount_total) AS amountTotal FROM orders WHERE status = 'paid' GROUP BY currency ORDER BY amountTotal DESC",
           )
           .all() as Array<{ currency: string; amountTotal: number }>,
       },
@@ -2023,8 +2228,17 @@ export class MotifStore {
     detail?: string | null
   }): void {
     this.db
-      .prepare('INSERT INTO admin_audit (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(input.actorId, input.action, input.targetType ?? null, input.targetId ?? null, input.detail ?? null, nowIso())
+      .prepare(
+        'INSERT INTO admin_audit (actor_id, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        input.actorId,
+        input.action,
+        input.targetType ?? null,
+        input.targetId ?? null,
+        input.detail ?? null,
+        nowIso(),
+      )
   }
 
   /** 审计保留清理：删除截止时间之前的记录，返回删除行数（回调端点防灌爆的配套机制） */
@@ -2044,7 +2258,9 @@ export class MotifStore {
   }> {
     const limit = filter.limit ?? 100
     const rows = filter.actorId
-      ? (this.db.prepare('SELECT * FROM admin_audit WHERE actor_id = ? ORDER BY id DESC LIMIT ?').all(filter.actorId, limit) as AuditRow[])
+      ? (this.db
+          .prepare('SELECT * FROM admin_audit WHERE actor_id = ? ORDER BY id DESC LIMIT ?')
+          .all(filter.actorId, limit) as AuditRow[])
       : (this.db.prepare('SELECT * FROM admin_audit ORDER BY id DESC LIMIT ?').all(limit) as AuditRow[])
     return rows.map((r) => ({
       id: r.id,
@@ -2061,7 +2277,15 @@ export class MotifStore {
    * 审计流水的管理端分页视图。**刻意与 `listAudit` 并存**：后者返回裸数组且被多处既有测试断言依赖，
    * 改它的返回值形状的代价大于新增一个方法。
    */
-  listAuditPaged(filter: { actorId?: string; userIds?: string[]; action?: string; from?: string; to?: string; limit?: number; offset?: number }): AuditLogRow[] {
+  listAuditPaged(filter: {
+    actorId?: string
+    userIds?: string[]
+    action?: string
+    from?: string
+    to?: string
+    limit?: number
+    offset?: number
+  }): AuditLogRow[] {
     const { where, params } = auditWhere(filter)
     const rows = this.db
       .prepare(`SELECT * FROM admin_audit ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
@@ -2091,9 +2315,11 @@ export class MotifStore {
   }
 
   listSettings(): SettingRow[] {
-    const rows = this.db
-      .prepare('SELECT key, value, updated_at FROM settings ORDER BY key')
-      .all() as Array<{ key: string; value: string; updated_at: string }>
+    const rows = this.db.prepare('SELECT key, value, updated_at FROM settings ORDER BY key').all() as Array<{
+      key: string
+      value: string
+      updated_at: string
+    }>
     return rows.map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at }))
   }
 
@@ -2114,7 +2340,7 @@ export class MotifStore {
     this.db
       .prepare(
         `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       )
       .run(key, value, nowIso())
   }
@@ -2123,7 +2349,7 @@ export class MotifStore {
   setSettings(entries: Array<{ key: string; value: string }>): void {
     const stmt = this.db.prepare(
       `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
     const tx = this.db.transaction(() => {
       const t = nowIso()
@@ -2162,7 +2388,7 @@ export class MotifStore {
     const stmt = this.db.prepare(
       `INSERT INTO prompt_sources (id, name, url, homepage, sort_index) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, url = excluded.url,
-         homepage = excluded.homepage, sort_index = excluded.sort_index`
+         homepage = excluded.homepage, sort_index = excluded.sort_index`,
     )
     const del = this.db.prepare('DELETE FROM prompt_sources WHERE id NOT IN (SELECT value FROM json_each(?))')
     const tx = this.db.transaction(() => {
@@ -2176,7 +2402,7 @@ export class MotifStore {
     const rows = this.db
       .prepare(
         `SELECT id, name, url, homepage, sort_index, entry_count, fetched_at, last_success_at, last_error, signature
-         FROM prompt_sources ORDER BY sort_index, id`
+         FROM prompt_sources ORDER BY sort_index, id`,
       )
       .all() as Array<{
       id: string
@@ -2214,18 +2440,18 @@ export class MotifStore {
   replacePromptEntries(
     sourceId: string,
     entries: readonly PromptEntryInput[],
-    meta: { signature: string; now: string }
+    meta: { signature: string; now: string },
   ): void {
     const del = this.db.prepare('DELETE FROM prompt_entries WHERE source_id = ?')
     const ins = this.db.prepare(
       `INSERT INTO prompt_entries
          (source_id, id, title, prompt, description, cover_url, reference_image_urls, tags, author, source_url, sort_index)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const upd = this.db.prepare(
       `UPDATE prompt_sources
        SET entry_count = ?, fetched_at = ?, last_success_at = ?, last_error = '', signature = ?
-       WHERE id = ?`
+       WHERE id = ?`,
     )
     const tx = this.db.transaction(() => {
       del.run(sourceId)
@@ -2241,8 +2467,8 @@ export class MotifStore {
           JSON.stringify(e.tags),
           e.author,
           e.sourceUrl,
-          i
-        )
+          i,
+        ),
       )
       upd.run(entries.length, meta.now, meta.now, meta.signature, sourceId)
     })
@@ -2274,7 +2500,7 @@ export class MotifStore {
         `SELECT e.source_id, s.name AS source_name, e.id, e.title, e.prompt, e.description,
                 e.cover_url, e.reference_image_urls, e.tags, e.author, e.source_url, e.sort_index
          FROM prompt_entries e JOIN prompt_sources s ON s.id = e.source_id
-         ORDER BY s.sort_index, e.sort_index`
+         ORDER BY s.sort_index, e.sort_index`,
       )
       .all() as Array<{
       source_id: string

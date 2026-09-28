@@ -44,7 +44,12 @@ export default function AdminLogsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await api.adminListLogs({ status: status || undefined, userId: userId || undefined, page, pageSize: PAGE_SIZE })
+      const r = await api.adminListLogs({
+        status: status || undefined,
+        userId: userId || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      })
       setItems(r.items)
       setUsers(r.users)
       setTotal(r.total)
@@ -85,28 +90,50 @@ export default function AdminLogsPage() {
 
   return (
     <section className="admin-panel">
-      <Typography type="h1" className="admin-title">生成日志</Typography>
-      <Typography type="body" className="admin-muted">全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。</Typography>
+      <Typography type="h1" className="admin-title">
+        生成日志
+      </Typography>
+      <Typography type="body" className="admin-muted">
+        全站生成轮次视图（跨用户）。用于回答「这次生成为什么失败」。
+      </Typography>
 
       <div className="admin-toolbar">
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值
             （动态项也要去掉 `status-` 前缀）；「全部」用哨兵 `all`，在 onChange 边界映射回 `''`。 */}
-        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as string)); setPage(1) }}>
+        <Select
+          aria-label="状态筛选"
+          value={status || 'all'}
+          onChange={(v) => {
+            setStatus(v === 'all' ? '' : (v as string))
+            setPage(1)
+          }}
+        >
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
+              <ListBox.Item key="all" id="all">
+                全部状态
+              </ListBox.Item>
               {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                <ListBox.Item key={k} id={k}>{v}</ListBox.Item>
+                <ListBox.Item key={k} id={k}>
+                  {v}
+                </ListBox.Item>
               ))}
             </ListBox>
           </Select.Popover>
         </Select>
         {/* 筛选词支持邮箱 / 昵称 / 裸 ID 三路解析（服务端 findUserIdsByTerm） */}
-        <SearchField aria-label="按用户筛选" value={userId} onChange={(v) => { setUserId(v); setPage(1) }}>
+        <SearchField
+          aria-label="按用户筛选"
+          value={userId}
+          onChange={(v) => {
+            setUserId(v)
+            setPage(1)
+          }}
+        >
           <SearchField.Group>
             <SearchField.SearchIcon />
             <SearchField.Input placeholder="按用户邮箱 / 昵称 / ID" />
@@ -133,8 +160,16 @@ export default function AdminLogsPage() {
         </button>
       </div>
 
-      {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
-      {err && <div className="admin-alert-err" role="alert">{err}</div>}
+      {msg && (
+        <div className="admin-alert-ok" role="status">
+          {msg}
+        </div>
+      )}
+      {err && (
+        <div className="admin-alert-err" role="alert">
+          {err}
+        </div>
+      )}
 
       <Table>
         <Table.ScrollContainer className="admin-table-scroll">
@@ -149,7 +184,9 @@ export default function AdminLogsPage() {
                   丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
                   合计最小宽 804px，容器约 1018px ⇒ 该宽度下不出现横向滚动；**更窄的视口仍会滚动**
                   （`table__scroll-container` 自带 `overflow-x-auto`），这是「列宽设下限」的必然取舍。 */}
-              <Table.Column isRowHeader className="min-w-[168px]">时间</Table.Column>
+              <Table.Column isRowHeader className="min-w-[168px]">
+                时间
+              </Table.Column>
               <Table.Column className="min-w-[180px]">用户</Table.Column>
               <Table.Column className="min-w-[88px]">状态</Table.Column>
               <Table.Column className="min-w-[72px]">张数</Table.Column>
@@ -157,11 +194,7 @@ export default function AdminLogsPage() {
               <Table.Column className="min-w-[160px]">失败原因</Table.Column>
               <Table.Column className="min-w-[72px]">提示词</Table.Column>
             </Table.Header>
-            <Table.Body
-              renderEmptyState={() =>
-                loading ? null : <ListEmptyContent text="（无匹配的生成记录）" />
-              }
-            >
+            <Table.Body renderEmptyState={() => (loading ? null : <ListEmptyContent text="（无匹配的生成记录）" />)}>
               {loading ? (
                 <ListLoadingRows cols={7} />
               ) : (
@@ -176,9 +209,13 @@ export default function AdminLogsPage() {
                     <Table.Cell data-label="状态">
                       <span className="admin-chip">{STATUS_LABEL[m.status] ?? m.status}</span>
                     </Table.Cell>
-                    <Table.Cell data-label="张数">{m.generatedCount}/{m.requestedCount}</Table.Cell>
+                    <Table.Cell data-label="张数">
+                      {m.generatedCount}/{m.requestedCount}
+                    </Table.Cell>
                     <Table.Cell data-label="重试">{m.attempts}</Table.Cell>
-                    <Table.Cell data-label="失败原因">{m.error ? <span className="admin-mono">{m.error}</span> : '—'}</Table.Cell>
+                    <Table.Cell data-label="失败原因">
+                      {m.error ? <span className="admin-mono">{m.error}</span> : '—'}
+                    </Table.Cell>
                     <Table.Cell data-label="提示词">
                       <IconButton size="sm" variant="secondary" label="查看详情" onPress={() => setDetail(m)}>
                         <Eye />
@@ -194,7 +231,13 @@ export default function AdminLogsPage() {
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
-      <Drawer.Backdrop isOpen={detail !== null} isDismissable onOpenChange={(o) => { if (!o) setDetail(null) }}>
+      <Drawer.Backdrop
+        isOpen={detail !== null}
+        isDismissable
+        onOpenChange={(o) => {
+          if (!o) setDetail(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -205,17 +248,34 @@ export default function AdminLogsPage() {
               {detail && (
                 <>
                   <dl className="audit-detail-meta">
-                    <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
+                    <div>
+                      <dt>时间</dt>
+                      <dd>{formatDateTime(detail.createdAt)}</dd>
+                    </div>
                     {/* 详情同样显示成人；ID 收进 title，仍可复制追溯 */}
                     <div>
                       <dt>用户</dt>
                       <dd title={detail.userId}>{userDisplayLabel(userMap.get(detail.userId), detail.userId)}</dd>
                     </div>
-                    <div><dt>状态</dt><dd>{STATUS_LABEL[detail.status] ?? detail.status}</dd></div>
-                    <div><dt>张数</dt><dd>{detail.generatedCount}/{detail.requestedCount}</dd></div>
-                    <div><dt>重试</dt><dd>{detail.attempts}</dd></div>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>{STATUS_LABEL[detail.status] ?? detail.status}</dd>
+                    </div>
+                    <div>
+                      <dt>张数</dt>
+                      <dd>
+                        {detail.generatedCount}/{detail.requestedCount}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>重试</dt>
+                      <dd>{detail.attempts}</dd>
+                    </div>
                     {detail.error && (
-                      <div><dt>失败原因</dt><dd className="admin-neg">{detail.error}</dd></div>
+                      <div>
+                        <dt>失败原因</dt>
+                        <dd className="admin-neg">{detail.error}</dd>
+                      </div>
                     )}
                   </dl>
                   <div className="audit-detail-label">用户提交的提示词</div>

@@ -17,13 +17,13 @@ describe('errorMessage：把任意抛出物转成中文可展示文案', () => {
 
   it('普通 Error 的中文原因也透传 —— 画布归档 / 导出取图 / 参考图上限抛的就是这种', () => {
     expect(errorMessage(new Error('导入失败：不是画布归档（缺少 canvas.json）。'), '导入失败。')).toBe(
-      '导入失败：不是画布归档（缺少 canvas.json）。'
+      '导入失败：不是画布归档（缺少 canvas.json）。',
     )
     expect(errorMessage(new Error('导出失败：有图片取不到（HTTP 404）。'), '导出失败。')).toBe(
-      '导出失败：有图片取不到（HTTP 404）。'
+      '导出失败：有图片取不到（HTTP 404）。',
     )
     expect(errorMessage(new Error('参考图最多 5 张，请先移除一张再添加'), '加入参考图失败')).toBe(
-      '参考图最多 5 张，请先移除一张再添加'
+      '参考图最多 5 张，请先移除一张再添加',
     )
   })
 
@@ -42,7 +42,9 @@ describe('errorMessage：把任意抛出物转成中文可展示文案', () => {
     // 这条与下一条互为对照：只改「是否含中文」就会让其中一条先红，才真正钉住判据。
     // ⚠️ 本用例钉的是 errorMessage 的**通用判据**，不是说服务端还会产出这个串 —— #106 已把三条
     // 「拼出来的 reason 串」在源头收口（走 zhReason），下面 describe('zhReason…') 钉的是那条路径。
-    expect(errorMessage(new Error('示例图抓取失败：fetch failed'), '加入参考图失败')).toBe('示例图抓取失败：fetch failed')
+    expect(errorMessage(new Error('示例图抓取失败：fetch failed'), '加入参考图失败')).toBe(
+      '示例图抓取失败：fetch failed',
+    )
     expect(errorMessage(new Error('fetch failed'), '加入参考图失败')).toBe('加入参考图失败')
   })
 
@@ -63,7 +65,9 @@ describe('errorMessage：把任意抛出物转成中文可展示文案', () => {
   })
 
   it('兜底文案原样返回（调用方按场景给的那句必须生效）', () => {
-    expect(errorMessage(new TypeError('Failed to fetch'), '网络开小差了，请稍后重试。')).toBe('网络开小差了，请稍后重试。')
+    expect(errorMessage(new TypeError('Failed to fetch'), '网络开小差了，请稍后重试。')).toBe(
+      '网络开小差了，请稍后重试。',
+    )
   })
 })
 

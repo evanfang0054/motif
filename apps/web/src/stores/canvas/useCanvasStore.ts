@@ -15,7 +15,13 @@ import { DEFAULT_CANVAS_META } from '@motif/core'
 import type { Rect } from '@/lib/canvas/geometry'
 import { createCanvasHistory, type CanvasHistory } from '@/lib/canvas/history'
 import { allocateSlots, displaySize, placementRect, rectToPlacement } from '@/lib/canvas/placement'
-import { clampScale, panBy as panByViewport, sameViewport, zoomAt as zoomAtViewport, type Viewport } from '@/lib/canvas/viewport'
+import {
+  clampScale,
+  panBy as panByViewport,
+  sameViewport,
+  zoomAt as zoomAtViewport,
+  type Viewport,
+} from '@/lib/canvas/viewport'
 
 type Placements = Record<string, Rect>
 
@@ -155,7 +161,7 @@ export function createCanvasStore() {
           const slots = allocateSlots(
             Object.values(next),
             unplaced.map((i) => displaySize(i.width, i.height)),
-            origin
+            origin,
           )
           unplaced.forEach((img, i) => {
             if (slots[i]) next[img.id] = slots[i]
@@ -195,7 +201,10 @@ export function createCanvasStore() {
       set((s) => {
         const r = s.placements[id]
         if (!r) return s
-        return { placements: { ...s.placements, [id]: { ...r, w: width, h: height } }, dirty: [...new Set([...s.dirty, id])] }
+        return {
+          placements: { ...s.placements, [id]: { ...r, w: width, h: height } },
+          dirty: [...new Set([...s.dirty, id])],
+        }
       })
     },
     undo() {

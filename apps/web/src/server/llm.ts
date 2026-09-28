@@ -24,7 +24,7 @@ class OpenAiCompatLlm implements LlmClient {
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly model: string,
-    private readonly timeoutMs: number
+    private readonly timeoutMs: number,
   ) {}
 
   async enhance(prompt: string): Promise<string> {
@@ -62,6 +62,6 @@ export function createLlmFromConfig(values: Record<string, string | undefined>):
     baseUrl!,
     apiKey!,
     values.LLM_MODEL || DEFAULT_MODEL,
-    Number.isInteger(rawTimeout) && rawTimeout > 0 ? rawTimeout : DEFAULT_TIMEOUT_MS
+    Number.isInteger(rawTimeout) && rawTimeout > 0 ? rawTimeout : DEFAULT_TIMEOUT_MS,
   )
 }

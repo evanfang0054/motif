@@ -8,6 +8,10 @@
     "build": "pnpm --filter @motif/web build",
     "start": "pnpm --filter @motif/web start",
     "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm -r test",
     "test:e2e": "bash e2e/run.sh",
     "cdk": "node scripts/cdk.mjs",
@@ -21,7 +25,11 @@
   },
   "packageManager": "pnpm@11.20.0",
   "devDependencies": {
-    "better-sqlite3": "^12.2.0"
+    "better-sqlite3": "^12.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.6",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.9"
   },
   "dependencies": {
     "tsx": "^4.23.15"

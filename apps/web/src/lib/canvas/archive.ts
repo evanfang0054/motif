@@ -113,7 +113,7 @@ export function parseCanvasArchive(files: Map<string, Uint8Array>): CanvasExport
 export function mergeImportedPlacements(
   current: readonly CanvasImagePlacement[],
   imported: readonly CanvasImagePlacement[],
-  updatedAt: string
+  updatedAt: string,
 ): { applied: CanvasImagePlacement[]; skipped: string[] } {
   const known = new Set(current.map((p) => p.id))
   const applied: CanvasImagePlacement[] = []

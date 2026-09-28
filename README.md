@@ -12,23 +12,22 @@
   <img src="docs/brand/motif-banner.png" alt="Motif 横幅：一张参考图，成套产出商业图片" width="720" />
 </div>
 
-
 > 品牌、文案、模板提示词与全部代码均为原创实现。
 
 ## 技术栈
 
-| 层 | 选型 |
-| --- | --- |
-| 前端 | Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · **HeroUI v3**（唯一控件来源，语义令牌桥接 `DESIGN.md`）· 图标 `@gravity-ui/icons` |
-| 服务端 | Next.js Route Handlers（与前端同仓同进程） |
-| 状态 | zustand（画布 store：视口 / 摆放 / 选择 / 撤销栈） |
-| 存储 | SQLite（better-sqlite3, WAL），图片文件存于 `.data/storage/` |
-| 队列 | 进程内生成 Worker：租约认领 → 逐张生成 → 崩溃回收重排 |
-| 生图 | `OpenAICompatProvider`：文生图（images/generations）+ 图生图（images/edits，参考图 multipart） |
-| 提示词 | 服务端代理上游开源提示词源 + 落 SQLite 缓存（浏览器不直连外部） |
-| 邮件 | `Mailer` 抽象：console（本地直出）/ SMTP（QQ·163·Gmail 等）/ Resend / SendGrid |
-| 测试 | Vitest 单测（core / db / provider / 服务层 / mailer） + ego-browser 端到端测试 |
-| 工程 | pnpm workspace monorepo · TypeScript strict · Docker 多阶段构建 |
+| 层     | 选型                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 前端   | Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · **HeroUI v3**（唯一控件来源，语义令牌桥接 `DESIGN.md`）· 图标 `@gravity-ui/icons` |
+| 服务端 | Next.js Route Handlers（与前端同仓同进程）                                                                                              |
+| 状态   | zustand（画布 store：视口 / 摆放 / 选择 / 撤销栈）                                                                                      |
+| 存储   | SQLite（better-sqlite3, WAL），图片文件存于 `.data/storage/`                                                                            |
+| 队列   | 进程内生成 Worker：租约认领 → 逐张生成 → 崩溃回收重排                                                                                   |
+| 生图   | `OpenAICompatProvider`：文生图（images/generations）+ 图生图（images/edits，参考图 multipart）                                          |
+| 提示词 | 服务端代理上游开源提示词源 + 落 SQLite 缓存（浏览器不直连外部）                                                                         |
+| 邮件   | `Mailer` 抽象：console（本地直出）/ SMTP（QQ·163·Gmail 等）/ Resend / SendGrid                                                          |
+| 测试   | Vitest 单测（core / db / provider / 服务层 / mailer） + ego-browser 端到端测试                                                          |
+| 工程   | pnpm workspace monorepo · TypeScript strict · Docker 多阶段构建                                                                         |
 
 ## Monorepo 结构
 
@@ -61,6 +60,7 @@ motif/
 ## 一、支持的能力
 
 ### 账号体系（真实）
+
 - 邮箱 + 6 位验证码注册（注册赠送额度在后台「额度与奖励」可配，默认 3 张）、登录、退出
 - 修改密码（校验旧密码）、忘记密码（验证码重置）、昵称与头像资料修改
 - 会话 Cookie（httpOnly · 30 天）、scrypt 口令散列
@@ -69,6 +69,7 @@ motif/
   「发送测试邮件」一键验证（失败原因直接回显）
 
 ### 生图（真实，走你的网关）
+
 - 文生图：`POST /v1/images/generations`（gpt-image-2）
 - 图生图：上传参考图后自动切换 `POST /v1/images/edits`（multipart）
 - 尺寸：方图 1024×1024 / 竖图 1024×1536 / 横图 1536×1024 / auto / 自定义（按比例吸附三档）
@@ -80,11 +81,13 @@ motif/
   用户侧静默 —— 内容照常能挑能用，不出现失败横幅与重试按钮
 
 ### 任务系统（真实）
+
 - 任务（Topic）增删改查、重命名、状态机七态（空闲/排队中/生成中/正在停止生成/已完成/失败/已取消）
 - 生成取消：未完成张数自动退回额度（含守恒验收）
 - **状态回流**：切到别的任务改提示词时，原任务跑完（或跑挂、被取消退额）会弹回执，不用切回去看
 
 ### 画布（展示墙，见 [#38](https://github.com/evanfang0054/motif/pull/38)–[#41](https://github.com/evanfang0054/motif/pull/41)）
+
 - 平移缩放（± / 100% / 适应 / 滚轮，钳制 0.25–3×）、框选多选（**Shift + 左键**）、
   撤销重做（`Ctrl+Z` / `Ctrl+Shift+Z`）、全选与删除（走二次确认）
 - 位置与尺寸**持久化到库**（刷新、换设备都保持），旧任务首访自动落位
@@ -99,6 +102,7 @@ motif/
 - 窄屏最小可用：单指拖图 / 框选 / 点按缩放（不自创双指手势）
 
 ### 运营与计费（真实）
+
 - 额度：按张扣费、失败/取消退回、余额不足拦截；每笔额度变动写入 `credit_ledger` 流水表（账目与余额同事务一致）
 - 充值：套餐币种与四档价格在管理后台可配；支付渠道 `PAYMENT_CHANNEL` 三选一——
   `mock`（模拟收银台，本地演示）/ `epay`（易支付协议网关）/ `stripe`（托管收银台）；
@@ -116,6 +120,7 @@ motif/
 - 参考图：上传 PNG/JPG/WebP ≤10MB，**暂存制** —— 点「开始生成」扣费后才转正进画布
 
 ### 管理后台（已上线，见 [#16](https://github.com/evanfang0054/motif/issues/16)）
+
 - **三级角色**：普通用户 / 管理员 / 超级管理员，角色比较收敛在 `packages/core/src/roles.ts`
 - **管理员账号自动引导**：服务启动时若库中尚无超级管理员，自动创建并生成**随机强密码**，
   写入 `dataDir/admin-credentials.txt`（权限 600）并打印到启动日志。
@@ -139,7 +144,8 @@ motif/
 - **响应式**：平板 / H5 下侧栏收纳为左侧抽屉，开关收敛为头部右上角图标按钮
 
 ### 工程能力（真实）
-- pnpm monorepo · TypeScript strict · **1232 个单元测试**（core 90 · db 141 · provider 8 · web 993）
+
+- pnpm monorepo · TypeScript strict · **1242 个单元测试**（core 90 · db 141 · provider 8 · web 1003）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
@@ -152,10 +158,10 @@ motif/
 
 ### 必需配置（缺一不可）
 
-| 配置 | 去哪拿 | 放哪里 |
-| --- | --- | --- |
+| 配置         | 去哪拿                                           | 放哪里               |
+| ------------ | ------------------------------------------------ | -------------------- |
 | 生图网关地址 | 你的 OpenAI 兼容网关（如 `http://host:3000/v1`） | `IMAGE_API_BASE_URL` |
-| 网关令牌 | 网关「令牌」页生成 | `IMAGE_API_KEY` |
+| 网关令牌     | 网关「令牌」页生成                               | `IMAGE_API_KEY`      |
 
 > 两项都可以**先不填**：服务照常启动（配置是懒校验的，首个触发生图的请求才报错），
 > 起来后登录管理员到「系统设置 → 生图网关」填也一样（保存即热生效）。
@@ -164,29 +170,29 @@ motif/
 
 > ⚠️ **下表里除「数据位置」与引导类参数外，都是「首次启动播种、此后以数据库为准」**：首次启动会把环境变量写进 `settings` 表，之后在管理后台「系统设置」里改才生效，再改这里的值不会覆盖已播种的配置。系统设置保存后 provider / mailer 即时热重载，无需重启。
 
-| 配置 | 说明 |
-| --- | --- |
-| `IMAGE_MODEL` | 默认 `gpt-image-2` |
-| `MOTIF_MAILER` | 验证码发信：`console`（默认，本地直出）/ `smtp` / `resend` / `sendgrid` |
-| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `MAIL_FROM` | smtp 渠道（QQ 邮箱 = smtp.qq.com:465 + 授权码） |
-| `SMTP_SECURE` | 按端口推断 | 465 默认 SSL；非 465 端口如需关闭可设 `false` |
-| `RESEND_API_KEY` / `SENDGRID_API_KEY` | 对应 API 渠道 |
-| `SITE_URL` | 站点对外地址（如 `https://motif.example.com`）。支付回调 / 支付完成跳转，以及**找回密码邮件里的一键直达链接**都由它拼接；未配时该邮件只发验证码（降级，不阻断重置）。在管理后台「支付与套餐」组 |
-| `MOTIF_DATA_DIR` / `MOTIF_DB_FILE` | 数据位置（默认 `apps/web/.data/motif.db`）。**只能在环境变量里改**，管理后台只读展示 |
-| `MOTIF_ADMIN_EMAIL` | 自动创建的管理员邮箱，默认 `admin@motif.local` |
-| `MOTIF_ADMIN_PASSWORD` | 指定管理员初始密码（不设则生成 20 位随机强密码） |
-| `MOTIF_SKIP_ADMIN_BOOTSTRAP` | `1` = 跳过管理员账号自动创建（本地开发常用） |
-| `MOTIF_EXPOSE_DEV_CODE` | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改 |
-| `MOTIF_COOKIE_SECURE` | 未设置 | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开） |
-| `PAYMENT_CHANNEL` | `mock` | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换） |
-| `BILLING_ENABLED` | `false` | **充值总开关**。默认关（不接支付渠道的自建部署形态）：关闭后不显示充值入口、下单接口拒绝新订单；**已支付订单的回调不受影响**。要卖额度就打开它 |
-| `CDK_REDEEM_ENABLED` | `true` | CDK 兑换开关。关闭后兑换入口隐藏、兑换接口拒绝（已发出的码仍有效） |
-| `STORAGE_DRIVER` | `local` | 图片存储驱动：`local`（默认，存 `dataDir/storage`）/ `s3`（S3 兼容对象存储，自建 MinIO 也可） |
-| `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY_ID` `S3_SECRET_ACCESS_KEY` | — | 驱动为 `s3` 时**必填**；`S3_REGION` 多数自建服务不校验、`S3_FORCE_PATH_STYLE` 自建 MinIO 需开 |
-| `S3_PUBLIC_BASE_URL` | 留空 | 图片**公开访问前缀**（如 `https://cdn.example.com`）。配了之后画布图片与打包下载直接由它取，字节不再经应用转发；留空则一切照旧走应用代理。**三个前提**：驱动为 `s3`、老图已搬迁完（未搬迁的老图只在本地，直链取不到）、桶允许公开读**并允许跨域 GET**（批量下载走 `fetch`） |
-| `MOTIF_INPROC_WORKER` | `true` | `false` = web 进程不跑生成队列 worker，改由独立进程 `pnpm worker` 接管（**改后需重启服务**） |
-| `LLM_ENHANCE_ENABLED` | `false` | 提示词增强总开关；开启后**还需**配好 `LLM_API_BASE_URL` + `LLM_API_KEY` 才真正生效（缺则静默降级为原文） |
-| `LLM_API_BASE_URL` `LLM_API_KEY` `LLM_MODEL` `LLM_TIMEOUT_MS` | — | 增强用的 OpenAI 兼容 `chat/completions` 网关（与生图网关相互独立，可不同域名/密钥） |
+| 配置                                                                | 说明                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `IMAGE_MODEL`                                                       | 默认 `gpt-image-2`                                                                                                                                                                              |
+| `MOTIF_MAILER`                                                      | 验证码发信：`console`（默认，本地直出）/ `smtp` / `resend` / `sendgrid`                                                                                                                         |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `MAIL_FROM`         | smtp 渠道（QQ 邮箱 = smtp.qq.com:465 + 授权码）                                                                                                                                                 |
+| `SMTP_SECURE`                                                       | 按端口推断                                                                                                                                                                                      | 465 默认 SSL；非 465 端口如需关闭可设 `false`                                                                                                                                                                                                                               |
+| `RESEND_API_KEY` / `SENDGRID_API_KEY`                               | 对应 API 渠道                                                                                                                                                                                   |
+| `SITE_URL`                                                          | 站点对外地址（如 `https://motif.example.com`）。支付回调 / 支付完成跳转，以及**找回密码邮件里的一键直达链接**都由它拼接；未配时该邮件只发验证码（降级，不阻断重置）。在管理后台「支付与套餐」组 |
+| `MOTIF_DATA_DIR` / `MOTIF_DB_FILE`                                  | 数据位置（默认 `apps/web/.data/motif.db`）。**只能在环境变量里改**，管理后台只读展示                                                                                                            |
+| `MOTIF_ADMIN_EMAIL`                                                 | 自动创建的管理员邮箱，默认 `admin@motif.local`                                                                                                                                                  |
+| `MOTIF_ADMIN_PASSWORD`                                              | 指定管理员初始密码（不设则生成 20 位随机强密码）                                                                                                                                                |
+| `MOTIF_SKIP_ADMIN_BOOTSTRAP`                                        | `1` = 跳过管理员账号自动创建（本地开发常用）                                                                                                                                                    |
+| `MOTIF_EXPOSE_DEV_CODE`                                             | `1` = 验证码随接口直出（仅本地联调/e2e，生产勿开）。管理后台危险区可改                                                                                                                          |
+| `MOTIF_COOKIE_SECURE`                                               | 未设置                                                                                                                                                                                          | `1` = 会话 Cookie 加 Secure 标记（HTTPS 部署时开启；本地 http 联调勿开）                                                                                                                                                                                                    |
+| `PAYMENT_CHANNEL`                                                   | `mock`                                                                                                                                                                                          | `mock`=演示收银台；`epay`/`stripe`=真实支付渠道（凭据与套餐在管理后台「支付与套餐」配置，危险区切换）                                                                                                                                                                       |
+| `BILLING_ENABLED`                                                   | `false`                                                                                                                                                                                         | **充值总开关**。默认关（不接支付渠道的自建部署形态）：关闭后不显示充值入口、下单接口拒绝新订单；**已支付订单的回调不受影响**。要卖额度就打开它                                                                                                                              |
+| `CDK_REDEEM_ENABLED`                                                | `true`                                                                                                                                                                                          | CDK 兑换开关。关闭后兑换入口隐藏、兑换接口拒绝（已发出的码仍有效）                                                                                                                                                                                                          |
+| `STORAGE_DRIVER`                                                    | `local`                                                                                                                                                                                         | 图片存储驱动：`local`（默认，存 `dataDir/storage`）/ `s3`（S3 兼容对象存储，自建 MinIO 也可）                                                                                                                                                                               |
+| `S3_ENDPOINT` `S3_BUCKET` `S3_ACCESS_KEY_ID` `S3_SECRET_ACCESS_KEY` | —                                                                                                                                                                                               | 驱动为 `s3` 时**必填**；`S3_REGION` 多数自建服务不校验、`S3_FORCE_PATH_STYLE` 自建 MinIO 需开                                                                                                                                                                               |
+| `S3_PUBLIC_BASE_URL`                                                | 留空                                                                                                                                                                                            | 图片**公开访问前缀**（如 `https://cdn.example.com`）。配了之后画布图片与打包下载直接由它取，字节不再经应用转发；留空则一切照旧走应用代理。**三个前提**：驱动为 `s3`、老图已搬迁完（未搬迁的老图只在本地，直链取不到）、桶允许公开读**并允许跨域 GET**（批量下载走 `fetch`） |
+| `MOTIF_INPROC_WORKER`                                               | `true`                                                                                                                                                                                          | `false` = web 进程不跑生成队列 worker，改由独立进程 `pnpm worker` 接管（**改后需重启服务**）                                                                                                                                                                                |
+| `LLM_ENHANCE_ENABLED`                                               | `false`                                                                                                                                                                                         | 提示词增强总开关；开启后**还需**配好 `LLM_API_BASE_URL` + `LLM_API_KEY` 才真正生效（缺则静默降级为原文）                                                                                                                                                                    |
+| `LLM_API_BASE_URL` `LLM_API_KEY` `LLM_MODEL` `LLM_TIMEOUT_MS`       | —                                                                                                                                                                                               | 增强用的 OpenAI 兼容 `chat/completions` 网关（与生图网关相互独立，可不同域名/密钥）                                                                                                                                                                                         |
 
 ### 部署形态（都在「系统设置」里改，不碰代码）
 
@@ -251,6 +257,7 @@ docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # 
 >
 > ⚠️ **配置入口只有 `.env`**：compose 用 `env_file` 把它注入容器 —— 写了才注入、没写的不注入
 > （改完要 `docker compose up -d` 重建容器才会生效）。两点注意：
+>
 > - **数据位置与生产标记由 compose 钉死**，写在 `.env` 里无效：`MOTIF_DATA_DIR` / `MOTIF_DB_FILE`
 >   （必须与挂载点一致，否则数据落在容器里、重建即丢）、`NODE_ENV`（改成 `development`
 >   会让注册验证码对任何人直出）。
@@ -296,16 +303,16 @@ tar czf motif-backup-$(date +%F).tar.gz data/     # 备份：默认（local 存�
 
 **常见问题**
 
-| 现象 | 原因 / 处理 |
-| --- | --- |
-| 容器起不来 / 打不开 3100 | `docker compose logs motif` 看原因；最常见是宿主 3100 被占用（改 `ports` 左边那个端口） |
-| 拉镜像报 `unauthorized` / `denied` | GHCR package 还是私有：按上文把 `evanfang0054/motif` 的 package 设为 public，或先 `docker login ghcr.io` |
+| 现象                                                          | 原因 / 处理                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 容器起不来 / 打不开 3100                                      | `docker compose logs motif` 看原因；最常见是宿主 3100 被占用（改 `ports` 左边那个端口）                                                                                                                                                                                                                      |
+| 拉镜像报 `unauthorized` / `denied`                            | GHCR package 还是私有：按上文把 `evanfang0054/motif` 的 package 设为 public，或先 `docker login ghcr.io`                                                                                                                                                                                                     |
 | **`docker compose up -d --build` 把宿主机拖死（SSH 无响应）** | 在目标机上编译 Next.js 需要约 **2 GiB 可用内存**，内存不足时会转入 swap 抖动而不是干净失败（见 [#115](https://github.com/evanfang0054/motif/issues/115)）。**用默认路径 `docker compose up -d`（只拉取、不编译）**；确实要本地构建就先 `free -m` 确认 available，或在别处构建后 `docker save \| docker load` |
-| 提交后报「网络不可达」或生成失败 | 网关地址或令牌不对（`IMAGE_API_BASE_URL` 要带 `/v1`）。网关跑在宿主机上时别写 `127.0.0.1`（那是容器自己）：Docker Desktop 用 `host.docker.internal`，**Linux 上还要在 `docker-compose.yml` 里加 `extra_hosts: ["host.docker.internal:host-gateway"]`** 才解析得到 |
-| 注册收不到验证码 | 默认 `MOTIF_MAILER=console`，验证码只打进容器日志：`docker compose logs -f motif`。要真发信去「系统设置 → 邮件发信」配 |
-| 改了 `.env` 没反应 | 见上文「配置只在首次启动播种一次」 |
-| 忘记管理员密码 | `docker compose exec motif node /app/scripts/admin.mjs --reset`（绝对路径，容器工作目录是 `/app/apps/web`） |
-| 生成成功但画布图片打不开 | 图片在 `./data/storage/`，确认该目录没被清掉、卷挂载没变 |
+| 提交后报「网络不可达」或生成失败                              | 网关地址或令牌不对（`IMAGE_API_BASE_URL` 要带 `/v1`）。网关跑在宿主机上时别写 `127.0.0.1`（那是容器自己）：Docker Desktop 用 `host.docker.internal`，**Linux 上还要在 `docker-compose.yml` 里加 `extra_hosts: ["host.docker.internal:host-gateway"]`** 才解析得到                                            |
+| 注册收不到验证码                                              | 默认 `MOTIF_MAILER=console`，验证码只打进容器日志：`docker compose logs -f motif`。要真发信去「系统设置 → 邮件发信」配                                                                                                                                                                                       |
+| 改了 `.env` 没反应                                            | 见上文「配置只在首次启动播种一次」                                                                                                                                                                                                                                                                           |
+| 忘记管理员密码                                                | `docker compose exec motif node /app/scripts/admin.mjs --reset`（绝对路径，容器工作目录是 `/app/apps/web`）                                                                                                                                                                                                  |
+| 生成成功但画布图片打不开                                      | 图片在 `./data/storage/`，确认该目录没被清掉、卷挂载没变                                                                                                                                                                                                                                                     |
 
 ### 方式 B：从源码构建（Docker）
 
@@ -341,8 +348,10 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 1232 个单元测试（core 90 · db 141 · provider 8 · web 993）
+pnpm test             # 1242 个单元测试（core 90 · db 141 · provider 8 · web 1003）
 pnpm typecheck        # 严格类型检查
+pnpm lint             # ESLint 静态检查
+pnpm format:check     # Prettier 格式检查（pnpm format 自动修复）
 pnpm test:e2e         # ego-browser 端到端主流程（⚠️ 真实网关出图，消耗额度）
 bash e2e/acceptance.sh  # 补充验收 A–G（⚠️ 同上）：图生图 · 取消退额守恒 · CDK · 改密 · 画布 · 骨架
 ```

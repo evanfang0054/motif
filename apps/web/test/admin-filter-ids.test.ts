@@ -145,14 +145,14 @@ describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 �
     expect(bad, `这些 id 写法有问题：\n${bad.join('\n')}`).toEqual([])
   })
 
-  it('**每个**用了 `all` 哨兵的下拉都要有 `=== \'all\'` 映射回空串（逐下拉查，不是文件级计数）', () => {
+  it("**每个**用了 `all` 哨兵的下拉都要有 `=== 'all'` 映射回空串（逐下拉查，不是文件级计数）", () => {
     // 只改 id 忘了映射 → 选「全部」后 state 会变成字面量 'all'，同样匹配不上接口。
     // users 页有两个下拉，所以必须**按 Select 分块**比：文件级计数会被「映射错位」蒙过去。
     const problems = sources.flatMap((s) => sentinelProblems(s.name, s.src))
     expect(problems, `哨兵缺映射（选「全部」会写入字面量 'all'）：\n${problems.join('\n')}`).toEqual([])
   })
 
-  it('没有页面仍在用 `(v as XxxFilter) ?? \'\'` 这种「原样写入回传值」的旧写法', () => {
+  it("没有页面仍在用 `(v as XxxFilter) ?? ''` 这种「原样写入回传值」的旧写法", () => {
     // 旧写法把回传值直接塞进 state，正是 #52 的成因；修好后应改为显式判哨兵
     const legacy = sources.filter((s) => /as (Role|Status)Filter\)\s*\?\?\s*''/.test(s.src)).map((s) => s.name)
     expect(legacy, `这些文件仍是旧写法：${legacy.join(', ')}`).toEqual([])
@@ -201,11 +201,11 @@ describe('管理后台筛选下拉：ListBox.Item 的 id 必须是裸值（#52 �
     expect(problems[0]).toContain('第 2 个 Select')
 
     // 正对照：各自映射各自的下拉 → 必须通过（否则上一条是恒真断言）
-    const ok = moved.replace("setStatus(v as StatusFilter)", "setStatus(v === 'all' ? '' : (v as StatusFilter))")
+    const ok = moved.replace('setStatus(v as StatusFilter)', "setStatus(v === 'all' ? '' : (v as StatusFilter))")
     expect(sentinelProblems('sample', ok)).toEqual([])
   })
 
-  it('守卫可证伪：只在注释里出现的 `=== \'all\'` 不算映射', () => {
+  it("守卫可证伪：只在注释里出现的 `=== 'all'` 不算映射", () => {
     const sample = "// 这里该写 === 'all' 才对\nconst x = 1"
     expect(countMatches(sample, /===\s*'all'/g)).toBe(1)
     expect(countMatches(stripComments(sample), /===\s*'all'/g)).toBe(0)

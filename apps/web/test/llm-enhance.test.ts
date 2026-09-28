@@ -14,7 +14,12 @@ let dir: string
 let store: MotifStore
 const provider: ImageProvider = {
   name: 'stub',
-  generate: async (): Promise<GeneratedImage> => ({ buffer: Buffer.from('stub'), mimeType: 'image/png', width: 1, height: 1 }),
+  generate: async (): Promise<GeneratedImage> => ({
+    buffer: Buffer.from('stub'),
+    mimeType: 'image/png',
+    width: 1,
+    height: 1,
+  }),
 }
 const base = { count: 1, size: '1024x1024', topicId: null, referenceCanvasImageIds: [] as string[] }
 
@@ -29,10 +34,13 @@ function enableLlm() {
   ])
 }
 const okResponse = () =>
-  new Response(JSON.stringify({ choices: [{ message: { content: '一只白瓷马克杯，晨光侧逆光，浅景深，极简背景' } }] }), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  })
+  new Response(
+    JSON.stringify({ choices: [{ message: { content: '一只白瓷马克杯，晨光侧逆光，浅景深，极简背景' } }] }),
+    {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    },
+  )
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-llm-'))
@@ -69,7 +77,10 @@ describe('提示词增强接线', () => {
 
   it('开启且就绪时 finalPrompt 为增强结果，enhance_prompt 记为真', async () => {
     enableLlm()
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse()))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse()),
+    )
     const u = newUser('on@b.co')
     const r = await enqueueGeneration(store, provider, dir, u, { ...base, prompt: '白瓷马克杯', enhance: true })
     const msg = store.getMessage(r.messageId)!
@@ -79,7 +90,12 @@ describe('提示词增强接线', () => {
 
   it('LLM 失败时降级为原文、enhance_prompt 为假、额度按张预扣（不退不补）', async () => {
     enableLlm()
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('网关 502') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('网关 502')
+      }),
+    )
     const u = newUser('fail@b.co', 8)
     const r = await enqueueGeneration(store, provider, dir, u, { ...base, prompt: '白瓷马克杯', enhance: true })
     const msg = store.getMessage(r.messageId)!
@@ -108,10 +124,18 @@ describe('提示词增强接线', () => {
 
   it('三种路径的扣费一致（额度不因是否增强而变化）', async () => {
     enableLlm()
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse()))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse()),
+    )
     const on = newUser('c1@b.co', 8)
     await enqueueGeneration(store, provider, dir, on, { ...base, prompt: '白瓷马克杯', enhance: true })
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('boom') }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('boom')
+      }),
+    )
     const fail = newUser('c2@b.co', 8)
     await enqueueGeneration(store, provider, dir, fail, { ...base, prompt: '白瓷马克杯', enhance: true })
     vi.stubGlobal('fetch', vi.fn())
@@ -133,9 +157,9 @@ describe('提示词增强接线', () => {
     const fetchMock = vi.fn(async () => okResponse())
     vi.stubGlobal('fetch', fetchMock)
     const broke = newUser('broke@b.co', 0)
-    await expect(enqueueGeneration(store, provider, dir, broke, { ...base, prompt: '白瓷马克杯', enhance: true })).rejects.toThrow(
-      /额度不足/
-    )
+    await expect(
+      enqueueGeneration(store, provider, dir, broke, { ...base, prompt: '白瓷马克杯', enhance: true }),
+    ).rejects.toThrow(/额度不足/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     // 且没有产生任何消息（额度不足不该建任务消息）
     expect(store.listMessages(store.createTopic(broke.id, 'x').id)).toEqual([])

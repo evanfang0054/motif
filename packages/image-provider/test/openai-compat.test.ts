@@ -29,14 +29,20 @@ function fakeFetch(payload: unknown, status = 200) {
 
 const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64'
+  'base64',
 )
 
 describe('OpenAICompatProvider', () => {
   it('文生图：请求体组装正确，b64_json 解码为 PNG', async () => {
     const { fn, calls } = fakeFetch({ data: [{ b64_json: PNG_1PX.toString('base64') }] })
     const provider = new OpenAICompatProvider('http://gw.example/v1', 'sk-test', 'gpt-image-2', fn)
-    const img = await provider.generate({ prompt: '白瓷马克杯', size: 'auto', seedText: 's', referenceImages: [], indexInBatch: 0 })
+    const img = await provider.generate({
+      prompt: '白瓷马克杯',
+      size: 'auto',
+      seedText: 's',
+      referenceImages: [],
+      indexInBatch: 0,
+    })
 
     expect(calls[0].url).toBe('http://gw.example/v1/images/generations')
     const body = JSON.parse(String(calls[0].init?.body))
@@ -71,7 +77,7 @@ describe('OpenAICompatProvider', () => {
     const { fn } = fakeFetch({ error: { message: 'Upstream request failed' } }, 502)
     const provider = new OpenAICompatProvider('http://gw.example/v1', 'sk-test', 'gpt-image-2', fn)
     await expect(
-      provider.generate({ prompt: 'x', size: '1024x1024', seedText: 's', referenceImages: [], indexInBatch: 0 })
+      provider.generate({ prompt: 'x', size: '1024x1024', seedText: 's', referenceImages: [], indexInBatch: 0 }),
     ).rejects.toThrow(/502/)
   })
 })

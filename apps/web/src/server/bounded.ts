@@ -17,7 +17,7 @@
 export async function runBounded<T>(
   items: readonly T[],
   concurrency: number,
-  task: (item: T) => Promise<void>
+  task: (item: T) => Promise<void>,
 ): Promise<void> {
   if (!Number.isFinite(concurrency) || concurrency < 1) {
     throw new RangeError(`runBounded 的并发度必须是 ≥1 的有限数，收到 ${concurrency}`)

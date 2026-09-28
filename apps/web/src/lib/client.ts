@@ -2,7 +2,6 @@
 
 import type {
   BillingPackagesResponse,
-  CanvasImage,
   CanvasMeta,
   CanvasPatch,
   CanvasSnapshot,
@@ -17,7 +16,7 @@ import type {
 export class ApiError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
   ) {
     super(message)
   }
@@ -61,8 +60,19 @@ export interface AdminOverview {
     netSpent: number
     bySource: Array<{ source: string; net: number; inflow: number; outflow: number }>
   }
-  generations: { total: number; terminal: number; succeeded: number; successRate: number; topErrors: Array<{ error: string; count: number }> }
-  orders: { total: number; pending: number; paid: number; amountByCurrency: Array<{ currency: string; amountTotal: number }> }
+  generations: {
+    total: number
+    terminal: number
+    succeeded: number
+    successRate: number
+    topErrors: Array<{ error: string; count: number }>
+  }
+  orders: {
+    total: number
+    pending: number
+    paid: number
+    amountByCurrency: Array<{ currency: string; amountTotal: number }>
+  }
   cdks: { unredeemed: number; redeemed: number; revoked: number }
   feedback: { pending: number }
 }
@@ -129,7 +139,8 @@ export interface PublicConfig {
 
 export interface AdminSettingItem {
   key: string
-  group: 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
+  group:
+    'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
   label: string
   kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
@@ -219,8 +230,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
-  register: (input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string }) =>
-    call<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) }),
+  register: (input: {
+    name: string
+    email: string
+    code: string
+    password: string
+    passwordConfirm: string
+    inviteCode?: string
+  }) => call<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) }),
   login: (email: string, password: string) =>
     call<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => call<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
@@ -280,7 +297,8 @@ export const api = {
       body: JSON.stringify({ orderId }),
     }),
   redeem: (code: string) => call<{ user: User }>('/api/redeem', { method: 'POST', body: JSON.stringify({ code }) }),
-  feedback: (content: string) => call<{ ok: true }>('/api/feedback', { method: 'POST', body: JSON.stringify({ content }) }),
+  feedback: (content: string) =>
+    call<{ ok: true }>('/api/feedback', { method: 'POST', body: JSON.stringify({ content }) }),
   adminListCdks: (params: { status?: string; q?: string; page?: number; pageSize?: number } = {}) => {
     const qs = new URLSearchParams()
     if (params.status) qs.set('status', params.status)
@@ -288,7 +306,9 @@ export const api = {
     if (params.page) qs.set('page', String(params.page))
     if (params.pageSize) qs.set('pageSize', String(params.pageSize))
     const q = qs.toString()
-    return call<{ items: AdminCdk[]; total: number; page: number; pageSize: number }>(`/api/admin/cdks${q ? `?${q}` : ''}`)
+    return call<{ items: AdminCdk[]; total: number; page: number; pageSize: number }>(
+      `/api/admin/cdks${q ? `?${q}` : ''}`,
+    )
   },
   adminCreateCdks: (input: { count: number; credits: number; prefix?: string }) =>
     call<{ codes: string[]; credits: number }>('/api/admin/cdks', { method: 'POST', body: JSON.stringify(input) }),
@@ -301,7 +321,9 @@ export const api = {
     if (params.page) qs.set('page', String(params.page))
     if (params.pageSize) qs.set('pageSize', String(params.pageSize))
     const q = qs.toString()
-    return call<{ items: AdminOrder[]; total: number; page: number; pageSize: number }>(`/api/admin/orders${q ? `?${q}` : ''}`)
+    return call<{ items: AdminOrder[]; total: number; page: number; pageSize: number }>(
+      `/api/admin/orders${q ? `?${q}` : ''}`,
+    )
   },
   adminOverview: () => call<AdminOverview>('/api/admin/overview'),
   adminListUsers: (params: { q?: string; role?: string; status?: string; page?: number; pageSize?: number } = {}) =>
@@ -317,22 +339,35 @@ export const api = {
     call<{ user: User }>('/api/admin/users/role', { method: 'POST', body: JSON.stringify({ userId, role }) }),
   /** 一次性重置密码：返回的明文只此一次，不要缓存到任何持久化位置 */
   adminResetPassword: (userId: string) =>
-    call<{ user: User; password: string }>('/api/admin/users/password', { method: 'POST', body: JSON.stringify({ userId }) }),
+    call<{ user: User; password: string }>('/api/admin/users/password', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    }),
   adminListFeedback: (params: { status?: string; page?: number; pageSize?: number } = {}) =>
     call<{ items: AdminFeedbackRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
-      `/api/admin/feedback${toQuery(params)}`
+      `/api/admin/feedback${toQuery(params)}`,
     ),
   adminResolveFeedback: (id: number) =>
-    call<{ ok: true; feedback: AdminFeedbackRow }>('/api/admin/feedback/resolve', { method: 'POST', body: JSON.stringify({ id }) }),
-  adminListLogs: (params: { status?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ ok: true; feedback: AdminFeedbackRow }>('/api/admin/feedback/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+  adminListLogs: (
+    params: { status?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {},
+  ) =>
     call<{ items: AdminLogRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
-      `/api/admin/logs${toQuery(params)}`
+      `/api/admin/logs${toQuery(params)}`,
     ),
   adminCleanupLogs: (days: number) =>
-    call<{ ok: true; deleted: number; auditDeleted: number; before: string }>('/api/admin/logs/cleanup', { method: 'POST', body: JSON.stringify({ days, confirm: true }) }),
-  adminListAudit: (params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    call<{ ok: true; deleted: number; auditDeleted: number; before: string }>('/api/admin/logs/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ days, confirm: true }),
+    }),
+  adminListAudit: (
+    params: { actorId?: string; action?: string; from?: string; to?: string; page?: number; pageSize?: number } = {},
+  ) =>
     call<{ items: AdminAuditRow[]; total: number; page: number; pageSize: number; users: AdminUserBrief[] }>(
-      `/api/admin/audit${toQuery(params)}`
+      `/api/admin/audit${toQuery(params)}`,
     ),
   /** 公开配置（无需登录）：仅含白名单里的非密钥值 */
   publicConfig: () => call<PublicConfig>('/api/public-config'),
@@ -354,7 +389,7 @@ export const api = {
         source: params.source,
         page: params.page,
         pageSize: params.pageSize,
-      })}`
+      })}`,
     ),
   /** 把某条提示词的第 index 张示例图带进表单的参考图区（服务端抓取 → 落成暂存参考） */
   attachPromptImage: (input: { topicId: string; sourceId: string; entryId: string; index: number }) =>
@@ -364,7 +399,7 @@ export const api = {
   adminRefreshPrompts: (sourceId?: string) =>
     call<{ summary: { total: number; successCount: number; failureCount: number }; sources: AdminPromptSource[] }>(
       '/api/admin/prompts/refresh',
-      { method: 'POST', body: JSON.stringify({ sourceId }) }
+      { method: 'POST', body: JSON.stringify({ sourceId }) },
     ),
   adminSaveDangerSettings: (updates: Record<string, string>) =>
     call<{ ok: true; updated: string[] }>('/api/admin/settings/danger', {

@@ -18,9 +18,8 @@
  */
 const { bootstrapConfig } = await import('../apps/web/src/server/bootstrap-config.ts')
 const { createStorageFromConfig, describeStorageError } = await import('../apps/web/src/server/storage.ts')
-const { assertPruneSafe, listOrphans, planMigration, pruneOrphans, PruneRefusedError, runMigration } = await import(
-  '../apps/web/src/server/storage-migrate.ts'
-)
+const { assertPruneSafe, listOrphans, planMigration, pruneOrphans, PruneRefusedError, runMigration } =
+  await import('../apps/web/src/server/storage-migrate.ts')
 const { resolveConfigValues } = await import('../apps/web/src/server/settings.ts')
 const { getRuntime } = await import('../apps/web/src/server/context.ts')
 
@@ -71,94 +70,92 @@ try {
 }
 
 async function main() {
-// 只搬 DB 里仍在册的对象（#58）：本地残留的孤儿（行已删）不该被重新上传回桶里。
-// #61 起 listAllImageKeys 也含暂存参考图 —— 否则刚上传的参考图会被当成孤儿。
-const liveKeys = new Set(store.listAllImageKeys())
+  // 只搬 DB 里仍在册的对象（#58）：本地残留的孤儿（行已删）不该被重新上传回桶里。
+  // #61 起 listAllImageKeys 也含暂存参考图 —— 否则刚上传的参考图会被当成孤儿。
+  const liveKeys = new Set(store.listAllImageKeys())
 
-if (prune) {
-  // prune 的失败要自己的标签：走到外层那个 catch 会被打上「搬迁失败：…请检查端点/桶/凭据/网络」，
-  // 而 prune 根本没在搬东西，那个提示会把人带偏。
-  try {
-    // 孤儿清单只扫本地：远端不可达时也能看清单（也不做与清理无关的远端探测）
-    const orphaned = listOrphans(dataDir, liveKeys)
-    // 安全闸（空库 / 孤儿占比过高）。dry-run 也走 —— 否则「连错库」时会打出一份看着正常的
-    // 全量清单。被拦时**仍然把清单打出来**：否则运维连「到底会删什么」都看不到，
-    // 只能无脑加 --force-prune，闸就白设了。
-    let refused = null
+  if (prune) {
+    // prune 的失败要自己的标签：走到外层那个 catch 会被打上「搬迁失败：…请检查端点/桶/凭据/网络」，
+    // 而 prune 根本没在搬东西，那个提示会把人带偏。
     try {
-      assertPruneSafe(dataDir, liveKeys, forcePrune)
-    } catch (e) {
-      if (!(e instanceof PruneRefusedError)) throw e
-      refused = e.message
-    }
-    if (refused) {
-      console.error(`[motif] ${refused}`)
-      if (orphaned.length) {
-        console.error(`[motif] 被拦下的清单（${orphaned.length} 个，本次不会删）：`)
-        for (const key of orphaned) console.error(`  ${key}`)
+      // 孤儿清单只扫本地：远端不可达时也能看清单（也不做与清理无关的远端探测）
+      const orphaned = listOrphans(dataDir, liveKeys)
+      // 安全闸（空库 / 孤儿占比过高）。dry-run 也走 —— 否则「连错库」时会打出一份看着正常的
+      // 全量清单。被拦时**仍然把清单打出来**：否则运维连「到底会删什么」都看不到，
+      // 只能无脑加 --force-prune，闸就白设了。
+      let refused = null
+      try {
+        assertPruneSafe(dataDir, liveKeys, forcePrune)
+      } catch (e) {
+        if (!(e instanceof PruneRefusedError)) throw e
+        refused = e.message
       }
-      process.exit(1)
-    }
-    if (dryRun) {
-      if (!orphaned.length) {
-        console.log('[motif] 没有孤儿对象，无需清理。')
+      if (refused) {
+        console.error(`[motif] ${refused}`)
+        if (orphaned.length) {
+          console.error(`[motif] 被拦下的清单（${orphaned.length} 个，本次不会删）：`)
+          for (const key of orphaned) console.error(`  ${key}`)
+        }
+        process.exit(1)
+      }
+      if (dryRun) {
+        if (!orphaned.length) {
+          console.log('[motif] 没有孤儿对象，无需清理。')
+          process.exit(0)
+        }
+        console.log(`[motif] 将被清理的孤儿对象 ${orphaned.length} 个（本地与远端都会删，不可恢复）：`)
+        for (const key of orphaned) console.log(`  ${key}`)
+        console.log('[motif] --dry-run：未删除任何对象。去掉 --dry-run 才会真删。')
         process.exit(0)
       }
-      console.log(`[motif] 将被清理的孤儿对象 ${orphaned.length} 个（本地与远端都会删，不可恢复）：`)
-      for (const key of orphaned) console.log(`  ${key}`)
-      console.log('[motif] --dry-run：未删除任何对象。去掉 --dry-run 才会真删。')
+      const r = await pruneOrphans(dataDir, remote, liveKeys, {
+        force: forcePrune,
+        onProgress: (done, total, key) => console.log(`[motif] ${done}/${total} ${key}`),
+      })
+      // ⚠️ 两侧都要回查：只查本地的话，「远端一个都没删掉」也会打印「清理完成」并以 0 退出 ——
+      // 运维会以为桶已经干净了。
+      const unconfirmed = [...new Set([...r.remainingLocal, ...r.remainingRemote])]
+      console.log(`[motif] 孤儿清理完成：尝试删除 ${r.candidates.length} 个。`)
+      if (unconfirmed.length) {
+        console.error(
+          `[motif] ⚠️ 有 ${unconfirmed.length} 个没能确认删掉（本地 ${r.remainingLocal.length} 个 / 远端 ${r.remainingRemote.length} 个）：`,
+        )
+        for (const key of unconfirmed) console.error(`  ${key}`)
+        process.exit(1)
+      }
       process.exit(0)
-    }
-    const r = await pruneOrphans(dataDir, remote, liveKeys, {
-      force: forcePrune,
-      onProgress: (done, total, key) => console.log(`[motif] ${done}/${total} ${key}`),
-    })
-    // ⚠️ 两侧都要回查：只查本地的话，「远端一个都没删掉」也会打印「清理完成」并以 0 退出 ——
-    // 运维会以为桶已经干净了。
-    const unconfirmed = [...new Set([...r.remainingLocal, ...r.remainingRemote])]
-    console.log(`[motif] 孤儿清理完成：尝试删除 ${r.candidates.length} 个。`)
-    if (unconfirmed.length) {
-      console.error(
-        `[motif] ⚠️ 有 ${unconfirmed.length} 个没能确认删掉（本地 ${r.remainingLocal.length} 个 / 远端 ${r.remainingRemote.length} 个）：`
-      )
-      for (const key of unconfirmed) console.error(`  ${key}`)
+    } catch (e) {
+      if (e instanceof PruneRefusedError) {
+        console.error(`[motif] ${e.message}`)
+        process.exit(1)
+      }
+      console.error(`[motif] 孤儿清理失败：${describeStorageError(e)}`)
+      console.error('请检查「系统设置 → 图片存储」的端点、桶与凭据，以及网络可达性。')
       process.exit(1)
     }
+  }
+
+  if (dryRun) {
+    const plan = await planMigration(dataDir, remote, liveKeys)
+    console.log(
+      `[motif] 待搬迁 ${plan.pending.length} 个对象（共扫描到 ${plan.total} 个，远端已存在 ${plan.skipped.length} 个将跳过）`,
+    )
+    for (const key of plan.pending) console.log(`  ${key}`)
+    if (plan.orphaned.length) {
+      console.log(`[motif] 另有 ${plan.orphaned.length} 个对象已不在数据库中（不搬迁，可自行清理）：`)
+      for (const key of plan.orphaned) console.log(`  ${key}`)
+    }
+    console.log('[motif] --dry-run：未上传任何对象。')
     process.exit(0)
-  } catch (e) {
-    if (e instanceof PruneRefusedError) {
-      console.error(`[motif] ${e.message}`)
-      process.exit(1)
-    }
-    console.error(`[motif] 孤儿清理失败：${describeStorageError(e)}`)
-    console.error('请检查「系统设置 → 图片存储」的端点、桶与凭据，以及网络可达性。')
-    process.exit(1)
   }
-}
 
-if (dryRun) {
-  const plan = await planMigration(dataDir, remote, liveKeys)
-  console.log(
-    `[motif] 待搬迁 ${plan.pending.length} 个对象（共扫描到 ${plan.total} 个，远端已存在 ${plan.skipped.length} 个将跳过）`
+  const r = await runMigration(
+    dataDir,
+    remote,
+    (done, total, key) => {
+      console.log(`[motif] ${done}/${total} ${key}`)
+    },
+    liveKeys,
   )
-  for (const key of plan.pending) console.log(`  ${key}`)
-  if (plan.orphaned.length) {
-    console.log(`[motif] 另有 ${plan.orphaned.length} 个对象已不在数据库中（不搬迁，可自行清理）：`)
-    for (const key of plan.orphaned) console.log(`  ${key}`)
-  }
-  console.log('[motif] --dry-run：未上传任何对象。')
-  process.exit(0)
-}
-
-const r = await runMigration(
-  dataDir,
-  remote,
-  (done, total, key) => {
-    console.log(`[motif] ${done}/${total} ${key}`)
-  },
-  liveKeys
-)
-console.log(
-  `[motif] 搬迁完成：本次上传 ${r.uploaded} 个，跳过已存在 ${r.skipped} 个，跳过已删除 ${r.orphaned} 个。`
-)
+  console.log(`[motif] 搬迁完成：本次上传 ${r.uploaded} 个，跳过已存在 ${r.skipped} 个，跳过已删除 ${r.orphaned} 个。`)
 }

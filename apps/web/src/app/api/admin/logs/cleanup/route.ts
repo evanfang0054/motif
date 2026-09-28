@@ -29,9 +29,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const before = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
     const deleted = getRuntime().store.cleanupMessagesBefore(before)
     // 审计保留期取「请求天数 ∨ 180 天」下限：日志可按需清，追责审计不能被一次 days=1 清空
-    const auditBefore = new Date(Date.now() - Math.max(days, AUDIT_MIN_RETENTION_DAYS) * 24 * 60 * 60 * 1000).toISOString()
+    const auditBefore = new Date(
+      Date.now() - Math.max(days, AUDIT_MIN_RETENTION_DAYS) * 24 * 60 * 60 * 1000,
+    ).toISOString()
     const auditDeleted = getRuntime().store.deleteAuditBefore(auditBefore)
-    writeAudit({ actorId: actor.id, action: 'logs.cleanup', targetType: 'message', detail: { days, before, deleted, auditDeleted, auditBefore } })
+    writeAudit({
+      actorId: actor.id,
+      action: 'logs.cleanup',
+      targetType: 'message',
+      detail: { days, before, deleted, auditDeleted, auditBefore },
+    })
     return NextResponse.json({ ok: true, deleted, auditDeleted, before })
   } catch (e) {
     return jsonError(e)

@@ -20,7 +20,9 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 ## 常用命令
 
 - `pnpm dev` — 本地开发 http://localhost:3100；首次需 `cp apps/web/.env.example apps/web/.env` 并填入 `IMAGE_API_BASE_URL` / `IMAGE_API_KEY`（缺配置不阻断启动：构造占位 provider，首个触发生图的请求才报错，无 mock 降级）
-- `pnpm typecheck` — 全仓 `tsc --noEmit` 严格检查，是唯一的静态检查门禁（项目未配置 ESLint/Prettier）
+- `pnpm typecheck` — 全仓 `tsc --noEmit` 严格检查
+- `pnpm lint` / `pnpm lint:fix` — ESLint（flat config 在根 `eslint.config.mjs`）。⚠️ Next 16 已移除 `next lint`，一律直接跑 `eslint` CLI
+- `pnpm format` / `pnpm format:check` — Prettier（配置 `prettier.config.mjs`，忽略清单 `.prettierignore`）
 - `pnpm test` — 全部 Vitest 单测（core/db/provider/web 各自 `test/*.test.ts`）；单包跑 `pnpm --filter @motif/core test`
 - `pnpm build` — 构建 @motif/web
 - `pnpm cdk <CODE> <N>` / `pnpm cdk --list` — CDK 发放/查询 CLI（与 apps/web 共用数据库）
@@ -39,7 +41,10 @@ Motif —— AI 商业图片批量生成工作台（参考图 + 模板 → 成�
 - 额度按张扣费，生成失败/取消必须退额（额度守恒是验收项）；改动计费、队列或 worker（`apps/web/src/server/worker.ts`）时必须保持守恒。
 - 原生依赖 better-sqlite3 / sharp 首次安装需编译（已通过 pnpm-workspace.yaml `allowBuilds` 放行；.npmrc 走 npmmirror 二进制镜像）。
 - 端口：dev 3100 · e2e 3210 · acceptance 3220；e2e 脚本自行 `next start`、清空 `.data-e2e` / `.data-accept`，缺 `.next/server` 时自动先 build（16 起 dev 产物在 `.next/dev`，用 `.next` 当判据会误判）。
-- CI（main）= `pnpm install --frozen-lockfile` → typecheck → test → build；e2e 不在 CI 中。提交前本地至少通过 typecheck + 单测。
+- CI（main）= `pnpm install --frozen-lockfile` → lint → format:check → typecheck → test → build；e2e 不在 CI 中。提交前本地至少通过 lint + format:check + typecheck + 单测。
+- **ESLint 钉在 9.x 是**被迫**的，不是偏好**：`eslint-config-next@16.3.6` 传递依赖的 `eslint-plugin-react@7.37.5` 仍在调用 ESLint 10 已删除的 `context.getFilename()`，装 eslint 10 会直接崩（`TypeError: ... getFilename is not a function`，实测）。而 ESLint 9.x 已于 2026-08-06 EOL（npm 对该版本打了 deprecated）。等 `eslint-config-next` 刷新插件依赖后再升 10。
+- `react-hooks/set-state-in-effect` 在 `eslint.config.mjs` 里**降级为 `warn`**：本仓 21 处命中全是「取数 + 同步置 loading」的既有写法，正统修法要把「显示 loading」的职责挪到搜索框/分页/筛选的交互回调，属于行为层改动、留待专门批次。
+- **规模类规则**（`max-lines` 500 · `max-lines-per-function` 150 · `max-params` 4 · `complexity` 20 · `max-depth` 4）一律 **`warn`**，当前合计命中 49 处。理由：本仓有 `packages/db/src/store.ts`、`CanvasStage.tsx` 这类「架构上就是单文件」的大件（后者是 AGENTS.md 声明的例外层），设为 error 等于逼着为过门禁去拆它们。阈值按**实测命中数**定的（`max-lines-per-function` 用 ESLint 默认值 50 会命中 125 处、纯噪声，故取 150）。两条行数规则都开了 `skipComments`/`skipBlankLines`，避免惩罚本仓的高注释密度。⚠️ 行数类规则与 Prettier 耦合（折行会改行数），改 `printWidth` 或升 Prettier 大版本后命中数会漂移，需重跑。
 - **Docker 运行时镜像里没有 `apps/web/src`**（拷贝清单见 Dockerfile：`apps/web` 的 `.next` 产物 / `public` / `package.json` / `next.config.ts` + 根 `node_modules`、`packages/`、根 `package.json`、`pnpm-workspace.yaml` + `scripts/admin.mjs`、`scripts/cdk.mjs`）。所以容器内能跑 `node /app/scripts/admin.mjs --reset|--list` 与 `cdk.mjs`（只用 better-sqlite3），但 `scripts/worker.mjs` / `storage-migrate.mjs` 会 `import '../apps/web/src/server/*.ts'`，**容器内跑不了、也就没打进镜像** —— 在仓库检出目录里用 `MOTIF_DATA_DIR` 指向同一份数据目录执行。另外配置只在首次启动播种进库，之后改 `.env` / compose 无效。
 - **部署默认走预构建镜像，不在目标机编译**：`docker-compose.yml` 只写 `image: ghcr.io/evanfang0054/motif:latest`（tag 发布时由 `.github/workflows/docker-publish.yml` 构建多架构产物）。**不要把 `build:` 加回该文件** —— 与 `image:` 并存时 compose 的语义是「本地没有就编译」，低配目标机照样会被拖死（issue #115）。本地改源码要就地构建时用 overlay：`docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`（产物打 `motif:local`）。改镜像路径要同时改 workflow 与 compose 两处，且必须小写。
 

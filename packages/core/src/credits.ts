@@ -37,7 +37,7 @@ export function inviteRewardFor(
   rules: InviteRewardRules = {
     credits: DEFAULT_INVITE_REWARD_CREDITS,
     maxInvitees: DEFAULT_INVITE_REWARD_MAX_INVITEES,
-  }
+  },
 ): number {
   if (invitedCountBefore >= rules.maxInvitees) return 0
   return rules.credits

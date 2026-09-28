@@ -17,13 +17,13 @@ import { ConsoleMailer, ResendMailer, SendGridMailer, SmtpMailer, type MailerCon
 describe('buildResetLink：链接拼装口径', () => {
   it('正常拼接：站点地址 + reset/email/code 三个参数', () => {
     expect(buildResetLink('https://motif.example.com', 'a@b.co', '123456')).toBe(
-      'https://motif.example.com/?reset=1&email=a%40b.co&code=123456'
+      'https://motif.example.com/?reset=1&email=a%40b.co&code=123456',
     )
   })
 
   it('站点地址末尾多斜杠时不会拼出双斜杠', () => {
     expect(buildResetLink('https://motif.example.com///', 'a@b.co', '123456')).toBe(
-      'https://motif.example.com/?reset=1&email=a%40b.co&code=123456'
+      'https://motif.example.com/?reset=1&email=a%40b.co&code=123456',
     )
   })
 
@@ -53,7 +53,7 @@ describe('mailer 各渠道把链接渲染进正文', () => {
   function smtpRecorder(sent: Array<Record<string, unknown>>): SmtpMailer {
     return new SmtpMailer(
       { host: 'h', port: 465, secure: true, user: 'u', pass: 'p', from: 'f@x.io' },
-      () => ({ sendMail: async (o: Record<string, unknown>) => void sent.push(o) }) as never
+      () => ({ sendMail: async (o: Record<string, unknown>) => void sent.push(o) }) as never,
     )
   }
 

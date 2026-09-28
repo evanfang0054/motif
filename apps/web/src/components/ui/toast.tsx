@@ -16,10 +16,14 @@ export function showToast(opts: {
   timeoutMs?: number
 }) {
   const fn =
-    opts.tone === 'success' ? toast.success
-    : opts.tone === 'warning' ? toast.warning
-    : opts.tone === 'danger' ? toast.danger
-    : opts.tone === 'info' ? toast.info
-    : toast
+    opts.tone === 'success'
+      ? toast.success
+      : opts.tone === 'warning'
+        ? toast.warning
+        : opts.tone === 'danger'
+          ? toast.danger
+          : opts.tone === 'info'
+            ? toast.info
+            : toast
   fn(opts.message, opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined)
 }

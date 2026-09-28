@@ -18,7 +18,13 @@ import { detectImageMime, type StagedReference, type User } from '@motif/core'
 import type { MotifStore, PromptEntryRow, PromptSourceRow } from '@motif/db'
 import { zhReason } from '@/lib/error-message'
 import { BUILT_IN_PROMPT_ENTRIES, BUILT_IN_PROMPT_SOURCE } from '@/lib/prompt-builtins'
-import { BUILT_IN_PROMPT_SOURCES, PROMPT_ATTACH_TIMEOUT_MS, PROMPT_FETCH_TIMEOUT_MS, isFetchableSource, type PromptSourceDef } from '@/lib/prompt-sources'
+import {
+  BUILT_IN_PROMPT_SOURCES,
+  PROMPT_ATTACH_TIMEOUT_MS,
+  PROMPT_FETCH_TIMEOUT_MS,
+  isFetchableSource,
+  type PromptSourceDef,
+} from '@/lib/prompt-sources'
 import {
   collectPromptTags,
   filterPromptEntries,
@@ -107,7 +113,10 @@ export function ensurePromptSources(store: MotifStore): void {
   const builtin = store.listPromptSources().find((s) => s.id === BUILT_IN_PROMPT_SOURCE.id)
   const signature = builtinEntriesSignature()
   if (builtin && builtin.signature === signature && builtin.entryCount === BUILT_IN_PROMPT_ENTRIES.length) return
-  store.replacePromptEntries(BUILT_IN_PROMPT_SOURCE.id, BUILT_IN_PROMPT_ENTRIES, { signature, now: new Date().toISOString() })
+  store.replacePromptEntries(BUILT_IN_PROMPT_SOURCE.id, BUILT_IN_PROMPT_ENTRIES, {
+    signature,
+    now: new Date().toISOString(),
+  })
 }
 
 export function listPromptSourceStatuses(store: MotifStore): PromptSourceStatus[] {
@@ -147,7 +156,7 @@ const inFlight = new Map<string, Promise<PromptSourceRefreshResult>>()
 async function doRefreshSource(
   store: MotifStore,
   def: PromptSourceDef,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
 ): Promise<PromptSourceRefreshResult> {
   const signature = sourceSignature(def)
   try {
@@ -172,7 +181,7 @@ async function doRefreshSource(
 function refreshOneSource(
   store: MotifStore,
   def: PromptSourceDef,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
 ): Promise<PromptSourceRefreshResult> {
   const running = inFlight.get(def.id)
   if (running) return running
@@ -184,7 +193,7 @@ function refreshOneSource(
 async function refreshSources(
   store: MotifStore,
   defs: readonly PromptSourceDef[],
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
 ): Promise<PromptSourceRefreshSummary> {
   const results = await Promise.all(defs.map((def) => refreshOneSource(store, def, fetchImpl)))
   return {
@@ -199,14 +208,17 @@ function assemble(
   entries: readonly PromptEntryRow[],
   sources: readonly PromptSourceRow[],
   query: PromptQuery,
-  pending: boolean
+  pending: boolean,
 ): PromptLibraryResult {
   const filtered = filterPromptEntries(entries, { keyword: query.keyword, tags: query.tags, source: query.source })
   // 标签面在「应用了关键词与来源、但**未应用标签**」的结果上收集：
   // 否则一旦选了某个标签，其它标签会从面上消失，用户就取消不掉了（照抄上游）。
   const facetBase = filterPromptEntries(entries, { keyword: query.keyword, tags: [], source: query.source })
   return {
-    items: paginatePromptEntries(filtered, query.page, query.pageSize).map((e) => ({ ...e, images: promptEntryImages(e) })),
+    items: paginatePromptEntries(filtered, query.page, query.pageSize).map((e) => ({
+      ...e,
+      images: promptEntryImages(e),
+    })),
     total: filtered.length,
     tags: collectPromptTags(facetBase),
     sources: sources
@@ -227,14 +239,16 @@ function assemble(
 export async function loadPromptLibrary(
   store: MotifStore,
   query: PromptQuery,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
 ): Promise<PromptLibraryResult> {
   ensurePromptSources(store)
   const sources = store.listPromptSources()
   const entries = store.listPromptEntries()
   const now = Date.now()
   const stale = sources.filter(
-    (s) => isFetchableSource(s) && isSourceStale({ fetchedAt: s.fetchedAt, signature: s.signature, lastError: s.lastError, def: s, now })
+    (s) =>
+      isFetchableSource(s) &&
+      isSourceStale({ fetchedAt: s.fetchedAt, signature: s.signature, lastError: s.lastError, def: s, now }),
   )
   if (stale.length > 0) {
     // 故意不 await、也故意不抛：抓取失败只落 last_error，不影响本次返回的内容
@@ -260,7 +274,7 @@ export async function loadPromptLibrary(
 export async function refreshPromptSources(
   store: MotifStore,
   sourceId?: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
 ): Promise<{ summary: PromptSourceRefreshSummary; sources: PromptSourceStatus[] }> {
   ensurePromptSources(store)
   const all = store.listPromptSources()
@@ -341,7 +355,7 @@ export async function attachPromptImage(
   dataDir: string,
   user: User,
   input: { topicId: string; sourceId: string; entryId: string; index: number },
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
 ): Promise<{ reference: StagedReference }> {
   const topic = store.getTopic(input.topicId)
   if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
@@ -358,7 +372,13 @@ export async function attachPromptImage(
     const localBuffer = readFileSync(abs)
     const localMime = detectImageMime(localBuffer)
     if (!localMime) throw new ServiceError(415, '示例图不是可用的图片格式。')
-    return { reference: await saveReferenceImage(store, dataDir, user, input.topicId, { buffer: localBuffer, mimeType: localMime, name: entry.title }) }
+    return {
+      reference: await saveReferenceImage(store, dataDir, user, input.topicId, {
+        buffer: localBuffer,
+        mimeType: localMime,
+        name: entry.title,
+      }),
+    }
   }
   if (!isSafeRemoteImageUrl(url)) throw new ServiceError(400, '示例图地址不可用。')
 
@@ -380,5 +400,11 @@ export async function attachPromptImage(
   const buffer = await readCapped(res, ATTACH_MAX_BYTES)
   const mime = detectImageMime(buffer)
   if (!mime) throw new ServiceError(415, '示例图不是可用的图片格式。')
-  return { reference: await saveReferenceImage(store, dataDir, user, input.topicId, { buffer, mimeType: mime, name: entry.title }) }
+  return {
+    reference: await saveReferenceImage(store, dataDir, user, input.topicId, {
+      buffer,
+      mimeType: mime,
+      name: entry.title,
+    }),
+  }
 }

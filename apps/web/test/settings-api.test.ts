@@ -79,7 +79,12 @@ describe('GET /api/admin/settings（root 独占）', () => {
     const body = (await (await settingsGET(reqWith(sessionFor('root', 'r6@b.co')))).json()) as {
       items: Array<{ key: string; readOnly: boolean }>
     }
-    expect(body.items.filter((i) => i.readOnly).map((i) => i.key).sort()).toEqual(['MOTIF_DATA_DIR', 'MOTIF_DB_FILE'])
+    expect(
+      body.items
+        .filter((i) => i.readOnly)
+        .map((i) => i.key)
+        .sort(),
+    ).toEqual(['MOTIF_DATA_DIR', 'MOTIF_DB_FILE'])
   })
 })
 
@@ -97,14 +102,16 @@ describe('POST /api/admin/settings（普通配置）', () => {
   })
 
   it('数据位置写入被拒 400，且库中不留痕', async () => {
-    const res = await settingsPOST(reqWith(sessionFor('root', 'r8@b.co'), { updates: { MOTIF_DATA_DIR: '/elsewhere' } }))
+    const res = await settingsPOST(
+      reqWith(sessionFor('root', 'r8@b.co'), { updates: { MOTIF_DATA_DIR: '/elsewhere' } }),
+    )
     expect(res.status).toBe(400)
     expect(store.getSetting('MOTIF_DATA_DIR')).toBeNull()
   })
 
   it('危险区键混进普通保存被拒 400（即使带了 confirm）', async () => {
     const res = await settingsPOST(
-      reqWith(sessionFor('root', 'r9@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true })
+      reqWith(sessionFor('root', 'r9@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true }),
     )
     expect(res.status).toBe(400)
     expect(store.getSetting('PAYMENT_CHANNEL')).toBeNull()
@@ -142,7 +149,7 @@ describe('POST /api/admin/settings/danger（危险区）', () => {
 
   it('带确认时成功并写入审计', async () => {
     const res = await dangerPOST(
-      reqWith(sessionFor('root', 'r13@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true })
+      reqWith(sessionFor('root', 'r13@b.co'), { updates: { PAYMENT_CHANNEL: 'epay' }, confirm: true }),
     )
     expect(res.status).toBe(200)
     expect(store.getSetting('PAYMENT_CHANNEL')).toBe('epay')
@@ -150,7 +157,9 @@ describe('POST /api/admin/settings/danger（危险区）', () => {
   })
 
   it('普通键混进危险区入口被拒 400', async () => {
-    const res = await dangerPOST(reqWith(sessionFor('root', 'r14@b.co'), { updates: { IMAGE_MODEL: 'x' }, confirm: true }))
+    const res = await dangerPOST(
+      reqWith(sessionFor('root', 'r14@b.co'), { updates: { IMAGE_MODEL: 'x' }, confirm: true }),
+    )
     expect(res.status).toBe(400)
   })
 

@@ -155,7 +155,13 @@ describe('角色保护规则', () => {
 describe('审计写入', () => {
   it('写入成功后可按操作者查回', () => {
     const a = actor('admin', 'a7@b.co')
-    writeAudit({ actorId: a.user.id, action: 'credit.adjust', targetType: 'user', targetId: 'usr_x', detail: { delta: 5, reason: '补偿' } })
+    writeAudit({
+      actorId: a.user.id,
+      action: 'credit.adjust',
+      targetType: 'user',
+      targetId: 'usr_x',
+      detail: { delta: 5, reason: '补偿' },
+    })
     const rows = store.listAudit({ actorId: a.user.id })
     expect(rows).toHaveLength(1)
     expect(rows[0].detail).toContain('补偿')

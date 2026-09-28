@@ -27,7 +27,7 @@ export interface ReferenceAddPlan {
 export function planReferenceAdd(
   current: readonly string[],
   incoming: readonly string[],
-  max: number = MAX_REFERENCE_IMAGES
+  max: number = MAX_REFERENCE_IMAGES,
 ): ReferenceAddPlan {
   const accepted: string[] = []
   const alreadyReferenced: string[] = []

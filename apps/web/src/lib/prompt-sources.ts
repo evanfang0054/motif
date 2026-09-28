@@ -16,17 +16,32 @@ export interface PromptSourceDef {
 }
 
 /** 上游 registry 的 JSON 导出根地址（每个源一个 `<id>.json`） */
-export const PROMPT_REGISTRY_SOURCE_BASE =
-  'https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources'
+export const PROMPT_REGISTRY_SOURCE_BASE = 'https://raw.githubusercontent.com/yukkcat/image-prompts/main/dist/sources'
 
 const SOURCE_SEEDS: ReadonlyArray<Omit<PromptSourceDef, 'url'>> = [
   // 只留 **GPT 系** 的源（用户裁决）：Motif 的模型是 gpt-image 系，另一套模型族的提示词
   // （Nano Banana / Banana Prompt Quicker）与它不通用，留着只会让人挑错。
-  { id: 'davidwu-gpt-image2-prompts', name: 'DavidWu GPT Image 2', homepage: 'https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts' },
-  { id: 'freestylefly-gpt-image-2', name: 'Freestylefly GPT Image 2', homepage: 'https://github.com/freestylefly/awesome-gpt-image-2' },
+  {
+    id: 'davidwu-gpt-image2-prompts',
+    name: 'DavidWu GPT Image 2',
+    homepage: 'https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts',
+  },
+  {
+    id: 'freestylefly-gpt-image-2',
+    name: 'Freestylefly GPT Image 2',
+    homepage: 'https://github.com/freestylefly/awesome-gpt-image-2',
+  },
   { id: 'awesome-gpt-image', name: 'Awesome GPT Image', homepage: 'https://github.com/ZeroLu/awesome-gpt-image' },
-  { id: 'awesome-gpt4o-image-prompts', name: 'Awesome GPT-4o', homepage: 'https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts' },
-  { id: 'youmind-gpt-image-2', name: 'YouMind GPT Image 2', homepage: 'https://github.com/YouMind-OpenLab/awesome-gpt-image-2' },
+  {
+    id: 'awesome-gpt4o-image-prompts',
+    name: 'Awesome GPT-4o',
+    homepage: 'https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts',
+  },
+  {
+    id: 'youmind-gpt-image-2',
+    name: 'YouMind GPT Image 2',
+    homepage: 'https://github.com/YouMind-OpenLab/awesome-gpt-image-2',
+  },
 ]
 
 /** 内置的**可抓取**远程源（5 个 GPT 系；单测把这张表逐字钉住，改错会红） */

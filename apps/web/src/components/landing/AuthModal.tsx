@@ -153,7 +153,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       setPasswordConfirm(next.passwordConfirm)
       setInviteCode(next.inviteCode)
     },
-    [onModeChange]
+    [onModeChange],
   )
 
   const submit = useCallback(
@@ -202,7 +202,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode]
+    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode],
   )
 
   const sendCode = useCallback(async () => {
@@ -225,7 +225,10 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       })
       const data = (await res.json()) as { error?: string; devCode?: string }
       if (!res.ok) throw new Error(data.error || '发送失败')
-      setCodeMsg({ kind: 'ok', text: data.devCode ? `验证码已发送（本地开发直出：${data.devCode}）` : '验证码已发送，请查收邮箱' })
+      setCodeMsg({
+        kind: 'ok',
+        text: data.devCode ? `验证码已发送（本地开发直出：${data.devCode}）` : '验证码已发送，请查收邮箱',
+      })
       if (data.devCode) setCode(data.devCode)
       startCooldown()
     } catch (err) {
@@ -268,7 +271,9 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
             <HeroModal.CloseTrigger aria-label="关闭" />
           </HeroModal.Header>
           <HeroModal.Body>
-            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{subtitle}</Typography>
+            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>
+              {subtitle}
+            </Typography>
 
             <form id="auth-form" onSubmit={submit} className="mt-2">
               {mode === 'register' && (
@@ -308,13 +313,24 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                         带 `pointer-events: none`（@heroui/styles utilities status-disabled）+ 原生 disabled，
                         hover 与 focus 都到不了 ⇒ Tooltip 在「想知道还要等多久」的那一刻恰好打不开。
                         倒计时属于「承载状态的文案」，按口径保留可见文字 */}
-                    <Button type="button" variant="outline" className="shrink-0" isDisabled={cooldown > 0} onPress={sendCode}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      isDisabled={cooldown > 0}
+                      onPress={sendCode}
+                    >
                       <PaperPlane />
                       {cooldown > 0 ? `重新发送 (${cooldown}s)` : '发送'}
                     </Button>
                   </div>
                   {codeMsg && (
-                    <Typography type="body-xs" className="mt-1.5" role={codeMsg.kind === 'err' ? 'alert' : 'status'} style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}>
+                    <Typography
+                      type="body-xs"
+                      className="mt-1.5"
+                      role={codeMsg.kind === 'err' ? 'alert' : 'status'}
+                      style={{ color: codeMsg.kind === 'err' ? 'var(--danger-quiet, #b3402e)' : 'var(--muted-strong)' }}
+                    >
                       {codeMsg.text}
                     </Typography>
                   )}
@@ -339,7 +355,13 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
 
               {mode === 'register' && (
                 <div className="mt-3.5">
-                  <PasswordInput label="确认密码" ariaBase="确认密码" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" />
+                  <PasswordInput
+                    label="确认密码"
+                    ariaBase="确认密码"
+                    value={passwordConfirm}
+                    onChange={setPasswordConfirm}
+                    autoComplete="new-password"
+                  />
                 </div>
               )}
               {/* ⚠️ 报错 / 成功 Alert **不在这里**：它们已移到 Footer（见下方说明）——
@@ -401,12 +423,18 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                 {mode === 'login' ? (
-                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>注册账号</Link>
+                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    注册账号
+                  </Link>
                 ) : (
-                  <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>已有账号？登录</Link>
+                  <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    已有账号？登录
+                  </Link>
                 )}
                 {mode !== 'reset' && (
-                  <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>忘记密码？</Link>
+                  <Link onPress={() => switchMode('reset')} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    忘记密码？
+                  </Link>
                 )}
               </div>
             </div>

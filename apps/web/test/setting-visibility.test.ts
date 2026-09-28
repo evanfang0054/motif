@@ -52,7 +52,9 @@ describe('payment 字段按渠道显隐', () => {
   })
   it('一致性：注册表 payment 组每个 EPAY_/STRIPE_ 键都被显隐映射管辖', () => {
     const channels = ['mock', 'epay', 'stripe'] as const
-    for (const def of SETTING_DEFS.filter((d) => d.group === 'payment' && (d.key.startsWith('EPAY_') || d.key.startsWith('STRIPE_')))) {
+    for (const def of SETTING_DEFS.filter(
+      (d) => d.group === 'payment' && (d.key.startsWith('EPAY_') || d.key.startsWith('STRIPE_')),
+    )) {
       const governedSomewhere = channels.some((ch) => !paymentFieldVisible(item(def.key), ch))
       expect(governedSomewhere, `${def.key} 未纳入显隐映射`).toBe(true)
     }

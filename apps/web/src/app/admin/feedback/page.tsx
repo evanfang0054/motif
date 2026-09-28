@@ -47,7 +47,8 @@ export default function AdminFeedbackPage() {
   }, [load])
 
   async function resolve(id: number) {
-    if (!(await confirm({ message: '确认把这条反馈标记为已处理？标记后不可撤销。', confirmLabel: '标记已处理' }))) return
+    if (!(await confirm({ message: '确认把这条反馈标记为已处理？标记后不可撤销。', confirmLabel: '标记已处理' })))
+      return
     setBusy(true)
     setErr(null)
     try {
@@ -63,30 +64,53 @@ export default function AdminFeedbackPage() {
 
   return (
     <section className="admin-panel">
-      <Typography type="h1" className="admin-title">反馈</Typography>
+      <Typography type="h1" className="admin-title">
+        反馈
+      </Typography>
 
       <div className="admin-toolbar">
         {/* ⚠️ HeroUI v3 的 Select 建在 React Aria 上，`value` 就是 `ListBox.Item` 的 id ——
             id 必须**等于要回传给接口的值**（裸值），否则接口白名单判非法后静默降级为「不过滤」。
             「全部状态」用哨兵 `all`（React Aria 不接受空串 id），在 onChange 边界映射回 `''`。 */}
-        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
+        <Select
+          aria-label="状态筛选"
+          value={status || 'all'}
+          onChange={(v) => {
+            setStatus(v === 'all' ? '' : (v as StatusFilter))
+            setPage(1)
+          }}
+        >
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
-              <ListBox.Item key="pending" id="pending">待处理</ListBox.Item>
-              <ListBox.Item key="resolved" id="resolved">已处理</ListBox.Item>
+              <ListBox.Item key="all" id="all">
+                全部状态
+              </ListBox.Item>
+              <ListBox.Item key="pending" id="pending">
+                待处理
+              </ListBox.Item>
+              <ListBox.Item key="resolved" id="resolved">
+                已处理
+              </ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
         <ListCount loading={loading} total={total} unit="条" />
       </div>
 
-      {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
-      {err && <div className="admin-alert-err" role="alert">{err}</div>}
+      {msg && (
+        <div className="admin-alert-ok" role="status">
+          {msg}
+        </div>
+      )}
+      {err && (
+        <div className="admin-alert-err" role="alert">
+          {err}
+        </div>
+      )}
 
       <Table>
         <Table.ScrollContainer className="admin-table-scroll">
@@ -100,18 +124,16 @@ export default function AdminFeedbackPage() {
                   丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
                   合计最小宽 976px（本页各列之和），容器约 1018px：宽屏不滚动，窄屏会出现横向滚动
                   （`table__scroll-container` 自带 `overflow-x-auto`，可接受）。 */}
-              <Table.Column isRowHeader className="min-w-[240px]">内容</Table.Column>
+              <Table.Column isRowHeader className="min-w-[240px]">
+                内容
+              </Table.Column>
               <Table.Column className="min-w-[180px]">提交用户</Table.Column>
               <Table.Column className="min-w-[88px]">状态</Table.Column>
               <Table.Column className="min-w-[180px]">处理人</Table.Column>
               <Table.Column className="min-w-[168px]">提交时间</Table.Column>
               <Table.Column className="min-w-[120px]">操作</Table.Column>
             </Table.Header>
-            <Table.Body
-              renderEmptyState={() =>
-                loading ? null : <ListEmptyContent text="（无匹配的反馈）" />
-              }
-            >
+            <Table.Body renderEmptyState={() => (loading ? null : <ListEmptyContent text="（无匹配的反馈）" />)}>
               {loading ? (
                 <ListLoadingRows cols={6} />
               ) : (
@@ -138,7 +160,9 @@ export default function AdminFeedbackPage() {
                     <Table.Cell data-label="提交时间">{formatDateTime(f.createdAt)}</Table.Cell>
                     <Table.Cell data-label="操作">
                       {f.status === 'pending' ? (
-                        <button className="admin-btn-primary" disabled={busy} onClick={() => void resolve(f.id)}>标记已处理</button>
+                        <button className="admin-btn-primary" disabled={busy} onClick={() => void resolve(f.id)}>
+                          标记已处理
+                        </button>
                       ) : (
                         <span className="admin-muted">—</span>
                       )}

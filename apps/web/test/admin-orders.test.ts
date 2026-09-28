@@ -68,12 +68,27 @@ describe('访问控制', () => {
 describe('列表内容', () => {
   it('返回订单字段且可按状态筛选', async () => {
     const buyer = store.createUser({ email: 'buy@b.co', passwordHash: 'h', name: '买家' })
-    const id = store.createOrder(buyer.id, { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' })
+    const id = store.createOrder(buyer.id, {
+      id: 'credits_50',
+      label: '50 张额度',
+      credits: 50,
+      amountTotal: 868,
+      currency: 'hkd',
+    })
     store.payOrder(id, buyer.id)
-    const id2 = store.createOrder(buyer.id, { id: 'credits_100', label: '100 张额度', credits: 100, amountTotal: 1736, currency: 'hkd' })
+    const id2 = store.createOrder(buyer.id, {
+      id: 'credits_100',
+      label: '100 张额度',
+      credits: 100,
+      amountTotal: 1736,
+      currency: 'hkd',
+    })
 
     const t = sessionFor('admin', 'a2@b.co')
-    const all = (await (await ordersRoute.GET(req(t))).json()) as { items: Array<Record<string, unknown>>; total: number }
+    const all = (await (await ordersRoute.GET(req(t))).json()) as {
+      items: Array<Record<string, unknown>>
+      total: number
+    }
     expect(all.total).toBe(2)
 
     // 字段映射是这段代码真正的风险（库内 snake_case → 接口 camelCase），逐字段断言
@@ -89,14 +104,23 @@ describe('列表内容', () => {
     // 不得把库内 snake_case 列名漏给前端
     expect(Object.keys(pending).some((k) => k.includes('_'))).toBe(false)
 
-    const paid = (await (await ordersRoute.GET(req(t, '?status=paid'))).json()) as { total: number; items: Array<Record<string, unknown>> }
+    const paid = (await (await ordersRoute.GET(req(t, '?status=paid'))).json()) as {
+      total: number
+      items: Array<Record<string, unknown>>
+    }
     expect(paid.total).toBe(1)
     expect(paid.items[0].id).toBe(id)
     expect(paid.items[0].paidAt).toBeTruthy()
 
     // userId 筛选：另一个用户不应出现在结果里
     const other = store.createUser({ email: 'other@b.co', passwordHash: 'h', name: '别人' })
-    store.createOrder(other.id, { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' })
+    store.createOrder(other.id, {
+      id: 'credits_50',
+      label: '50 张额度',
+      credits: 50,
+      amountTotal: 868,
+      currency: 'hkd',
+    })
     const mine = (await (await ordersRoute.GET(req(t, `?userId=${buyer.id}`))).json()) as { total: number }
     expect(mine.total).toBe(2)
   })

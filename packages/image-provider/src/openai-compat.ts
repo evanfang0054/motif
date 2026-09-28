@@ -31,7 +31,7 @@ export class OpenAICompatProvider implements ImageProvider {
     private baseUrl: string,
     private apiKey: string,
     private model = 'gpt-image-2',
-    private fetchFn: FetchFn = fetch
+    private fetchFn: FetchFn = fetch,
   ) {
     this.name = model
   }

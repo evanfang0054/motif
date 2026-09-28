@@ -45,7 +45,10 @@ export const BUILT_IN_PROMPT_ENTRIES: readonly PromptEntryInput[] = [
   {
     id: 'ecommerce-suite',
     title: '电商商品全套图',
-    prompt: suitePrompt('商品电商套图', '纯色底主图、生活方式场景、材质微距、开箱视角、卖点氛围、季节活动图、社媒方图、广告横图'),
+    prompt: suitePrompt(
+      '商品电商套图',
+      '纯色底主图、生活方式场景、材质微距、开箱视角、卖点氛围、季节活动图、社媒方图、广告横图',
+    ),
     description: '上传商品照，一次产出白底主图、使用场景与细节特写，覆盖上新、详情页与投放素材。',
     coverUrl: '/templates/ecommerce-suite.jpg',
     referenceImageUrls: [],
@@ -56,7 +59,10 @@ export const BUILT_IN_PROMPT_ENTRIES: readonly PromptEntryInput[] = [
   {
     id: 'world-landmarks',
     title: '环球地标旅拍',
-    prompt: portraitPrompt('环球地标旅拍', '不同城市地标的日景与夜景、街拍视角、广角环境人像、逆光剪影、标志性建筑前景虚化'),
+    prompt: portraitPrompt(
+      '环球地标旅拍',
+      '不同城市地标的日景与夜景、街拍视角、广角环境人像、逆光剪影、标志性建筑前景虚化',
+    ),
     description: '上传人像，生成多座城市地标前的旅行大片，适配社交封面与生活方式内容。',
     coverUrl: '/templates/world-landmarks.jpg',
     referenceImageUrls: [],
@@ -78,7 +84,10 @@ export const BUILT_IN_PROMPT_ENTRIES: readonly PromptEntryInput[] = [
   {
     id: 'wedding-portrait',
     title: '婚纱旅拍样片',
-    prompt: portraitPrompt('婚纱旅拍样片', '白纱仪式感正面照、海边落日剪影、城市街景拥抱、教堂光影、花田远景、相册扉页构图'),
+    prompt: portraitPrompt(
+      '婚纱旅拍样片',
+      '白纱仪式感正面照、海边落日剪影、城市街景拥抱、教堂光影、花田远景、相册扉页构图',
+    ),
     description: '上传情侣或个人照，生成婚礼样片与纪念相册素材，呈现仪式感与旅行感。',
     coverUrl: '/templates/wedding-portrait.jpg',
     referenceImageUrls: [],

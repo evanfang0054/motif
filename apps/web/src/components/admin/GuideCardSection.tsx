@@ -43,15 +43,19 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
             ))}
           </ol>
           {qr[c.id] && (
-            /* eslint-disable-next-line @next/next/no-img-element */
             <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" className="admin-qr">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qr[c.id]} alt={`${c.linkLabel} 二维码`} width={160} height={160} />
             </InlineText>
           )}
           <a className="admin-guide-link" href={c.linkUrl} target="_blank" rel="noreferrer">
             {c.linkLabel} <ArrowUpRightFromSquare className="ms-1 inline align-[-0.125em]" aria-hidden />
           </a>
-          {c.note && <Typography type="body" className="admin-field-hint">{c.note}</Typography>}
+          {c.note && (
+            <Typography type="body" className="admin-field-hint">
+              {c.note}
+            </Typography>
+          )}
         </div>
       ))}
     </details>

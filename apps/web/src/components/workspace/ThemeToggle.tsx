@@ -5,13 +5,7 @@ import { ButtonGroup } from '@heroui/react'
 import { Display, Moon, Sun } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { applyThemeMode } from '@/components/ThemeWatcher'
-import {
-  DEFAULT_THEME_MODE,
-  THEME_MODES,
-  THEME_STORAGE_KEY,
-  parseThemeMode,
-  type ThemeMode,
-} from '@/lib/theme'
+import { DEFAULT_THEME_MODE, THEME_MODES, THEME_STORAGE_KEY, parseThemeMode, type ThemeMode } from '@/lib/theme'
 
 /**
  * 主题三态切换：浅色 / 深色 / 跟随系统（默认浅色）。

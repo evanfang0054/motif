@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Alert, Button, Card, Typography } from '@heroui/react'
 import { api } from '@/lib/client'
@@ -57,7 +57,9 @@ function PayPanel() {
               <Alert.Title>{message}</Alert.Title>
             </Alert.Content>
           </Alert>
-          <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>返回工作台</Button>
+          <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>
+            返回工作台
+          </Button>
         </>
       ) : (
         <>
@@ -69,10 +71,17 @@ function PayPanel() {
               </Alert.Content>
             </Alert>
           )}
-          <Button variant="primary" className="mt-4 w-full" isDisabled={state !== 'ready' || !orderId} onPress={() => void pay()}>
+          <Button
+            variant="primary"
+            className="mt-4 w-full"
+            isDisabled={state !== 'ready' || !orderId}
+            onPress={() => void pay()}
+          >
             {state === 'paying' ? '支付中…' : '确认支付'}
           </Button>
-          <Button variant="outline" className="mt-2 w-full" render={anchorRender({ href: '/' })}>取消并返回</Button>
+          <Button variant="outline" className="mt-2 w-full" render={anchorRender({ href: '/' })}>
+            取消并返回
+          </Button>
         </>
       )}
     </Card>

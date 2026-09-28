@@ -60,8 +60,8 @@ describe('s3 驱动的配置校验', () => {
           S3_ACCESS_KEY_ID: 'AKIAEXAMPLE',
           S3_SECRET_ACCESS_KEY: 'placeholder-secret',
         },
-        dir
-      )
+        dir,
+      ),
     ).not.toThrow()
   })
 
@@ -117,7 +117,7 @@ describe('双读判定（本地优先）', () => {
 describe('异常渲染成能看的话', () => {
   it('普通 Error 原样返回 message（不加 code）', () => {
     expect(describeStorageError(new Error('STORAGE_DRIVER=s3 缺少配置：S3_BUCKET'))).toBe(
-      'STORAGE_DRIVER=s3 缺少配置：S3_BUCKET'
+      'STORAGE_DRIVER=s3 缺少配置：S3_BUCKET',
     )
   })
 

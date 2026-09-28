@@ -146,7 +146,12 @@ export const SLOT_COLS = 4
  */
 export const LINEAGE_COL_GAP = 120
 
-export interface CanvasRect { x: number; y: number; w: number; h: number }
+export interface CanvasRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 /**
  * `CanvasRect` 的**运行时形状判据**（类型守卫）。
@@ -191,7 +196,12 @@ export function viewportOrigin(v: CanvasViewport): { x: number; y: number } {
  * 原图尺寸未知（上传参考图 width/height 为 0）时回退正方形槽位。
  * 照抄 `.infinite-canvas-ref/src/lib/canvas/canvas-node-size.ts` 的 fitNodeSize。
  */
-export function displaySize(naturalWidth: number, naturalHeight: number, maxW = SLOT_W, maxH = SLOT_W): { width: number; height: number } {
+export function displaySize(
+  naturalWidth: number,
+  naturalHeight: number,
+  maxW = SLOT_W,
+  maxH = SLOT_W,
+): { width: number; height: number } {
   if (!(naturalWidth > 0) || !(naturalHeight > 0)) return { width: maxW, height: maxH }
   const scale = Math.min(1, maxW / naturalWidth, maxH / naturalHeight)
   return { width: naturalWidth * scale, height: naturalHeight * scale }
@@ -211,7 +221,7 @@ export function centerRectsInViewport(
   rects: CanvasRect[],
   origin: { x: number; y: number },
   viewW: number,
-  viewH: number
+  viewH: number,
 ): CanvasRect[] {
   if (rects.length === 0) return rects
   const minX = Math.min(...rects.map((r) => r.x))
@@ -242,7 +252,7 @@ export function rectsIntersect(a: CanvasRect, b: CanvasRect): boolean {
 export function allocateSlots(
   occupied: CanvasRect[],
   sizes: Array<{ width: number; height: number }>,
-  origin: { x: number; y: number }
+  origin: { x: number; y: number },
 ): CanvasRect[] {
   const taken = [...occupied]
   const out: CanvasRect[] = []
@@ -299,7 +309,7 @@ export function planSlotRects(
    * 血缘锚点：本轮第一张参考图的摆放（见 `services.ts` 的 `anchorRectOf`）。
    * 给了就落在它**右侧一列**；没给（纯文生图 / 参考图都不在画布上）走原来的空位槽网格。
    */
-  anchor?: CanvasRect | null
+  anchor?: CanvasRect | null,
 ): CanvasRect[] {
   const px = resolveSize(requestedSize)
   const size = displaySize(px.width, px.height)
@@ -340,7 +350,7 @@ const LINEAGE_MAX_TRIES = 64
 export function planLineageColumn(
   occupied: readonly CanvasRect[],
   sizes: readonly { width: number; height: number }[],
-  anchor: CanvasRect
+  anchor: CanvasRect,
 ): CanvasRect[] | null {
   if (sizes.length === 0) return null
   const x = anchor.x + anchor.w + LINEAGE_COL_GAP

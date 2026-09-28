@@ -23,7 +23,7 @@ export function useMediaQuery(query: string): boolean | null {
       mq.addEventListener('change', onChange)
       return () => mq.removeEventListener('change', onChange)
     },
-    [query]
+    [query],
   )
   const getSnapshot = useCallback(() => window.matchMedia(query).matches, [query])
   // 引用必须稳定：每次返回新函数会让 React 认为快照变了而反复重渲染

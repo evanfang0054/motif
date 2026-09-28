@@ -7,9 +7,9 @@ describe('stripAutoReferenceSentences 只剥机器追加的参考句', () => {
   })
 
   it('剥掉多条（不同编号）', () => {
-    expect(
-      stripAutoReferenceSentences('#001 作为参考图保持主体一致。 一只猫 #002 作为参考图保持主体一致。')
-    ).toBe('一只猫')
+    expect(stripAutoReferenceSentences('#001 作为参考图保持主体一致。 一只猫 #002 作为参考图保持主体一致。')).toBe(
+      '一只猫',
+    )
   })
 
   it('句中夹带也剥，且不留下双空格', () => {
@@ -22,7 +22,7 @@ describe('stripAutoReferenceSentences 只剥机器追加的参考句', () => {
 
   it('用户手写的相近文字不动（位数不符）', () => {
     expect(stripAutoReferenceSentences('画一只猫 #12 作为参考图保持主体一致。')).toBe(
-      '画一只猫 #12 作为参考图保持主体一致。'
+      '画一只猫 #12 作为参考图保持主体一致。',
     )
   })
 

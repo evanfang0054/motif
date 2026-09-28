@@ -29,7 +29,7 @@ services:
     image: ghcr.io/evanfang0054/motif:latest
     container_name: motif
     ports:
-      - "3100:3100"
+      - '3100:3100'
     volumes:
       # SQLite + 生成图片持久化：目录映射到宿主机 ./data
       - ./data:/app/apps/web/.data
@@ -65,7 +65,13 @@ services:
     restart: unless-stopped
     healthcheck:
       # 这个端点不需要登录（公开配置），故可直接当存活探针
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/billing/packages').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3100/api/billing/packages').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -39,7 +39,13 @@ function ledgerRows(): number {
 function enqueue(count = 2) {
   store.deductCredits(userId, count, { source: 'generation_charge' })
   const m = store.createMessage({
-    topicId, userId, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+    topicId,
+    userId,
+    prompt: 'p',
+    finalPrompt: 'p',
+    size: 'auto',
+    requestedCount: count,
+    enhancePrompt: false,
   })
   store.syncTopicStatus(topicId, m.id, 'p', 'queued')
   return m
@@ -49,7 +55,14 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-cancel-'))
   store = new MotifStore(join(dir, 't.db'))
   ;(globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime = {
-    store, provider: { name: 'stub', generate: async () => { throw new Error('不应触发生成') } }, dataDir: join(dir, 'data'),
+    store,
+    provider: {
+      name: 'stub',
+      generate: async () => {
+        throw new Error('不应触发生成')
+      },
+    },
+    dataDir: join(dir, 'data'),
   }
   userId = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'h', role: 'user', credits: 10 }).id
   token = store.createSession(userId, 60_000)

@@ -1,7 +1,17 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Description, Dropdown, Label, NumberField, TextArea, TextField, Typography } from '@heroui/react'
+import {
+  Alert,
+  Button,
+  Description,
+  Dropdown,
+  Label,
+  NumberField,
+  TextArea,
+  TextField,
+  Typography,
+} from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ArrowRotateRight, ArrowUpToLine, BookOpen, ChevronDown, Eraser, Plus, Xmark } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
@@ -87,14 +97,16 @@ const SHORT_VIEWPORT_QUERY = '(max-height: 720px)'
 function StatusBadge({ status }: { status: string }) {
   const label = TOPIC_STATUS_LABEL[status as keyof typeof TOPIC_STATUS_LABEL] ?? status
   const color =
-    ({
-      running: 'var(--status-running)',
-      pending: 'var(--status-pending)',
-      canceling: 'var(--status-canceling)',
-      failed: 'var(--status-failed)',
-      canceled: 'var(--status-canceled)',
-      completed: 'var(--status-completed)',
-    } as Record<string, string>)[status] ?? 'var(--status-idle)'
+    (
+      {
+        running: 'var(--status-running)',
+        pending: 'var(--status-pending)',
+        canceling: 'var(--status-canceling)',
+        failed: 'var(--status-failed)',
+        canceled: 'var(--status-canceled)',
+        completed: 'var(--status-completed)',
+      } as Record<string, string>
+    )[status] ?? 'var(--status-idle)'
   return (
     <InlineText type="body-xs" className="ws-badge">
       <span className="ws-status-dot" style={{ background: color }} />
@@ -199,9 +211,7 @@ function TaskPanel(p: Props) {
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Title>{p.lastError}</Alert.Title>
-              <Alert.Description>
-                可以用失败那一轮的提示词、张数与尺寸直接重试。
-              </Alert.Description>
+              <Alert.Description>可以用失败那一轮的提示词、张数与尺寸直接重试。</Alert.Description>
               <Button variant="secondary" size="sm" className="mt-2 w-fit" onPress={p.onRetryLast}>
                 <ArrowRotateRight />
                 重试
@@ -216,7 +226,9 @@ function TaskPanel(p: Props) {
               提示浮层打不开，用户既看不到「几／几」也不知道为什么点不动 —— 段标题永远可见，且下面还有一行
               文字直说原因（见下方 atReferenceCap 分支） */}
           <div className="mb-2 flex items-center justify-between">
-            <InlineText type="body-sm" className="ws-panel-label">参考图</InlineText>
+            <InlineText type="body-sm" className="ws-panel-label">
+              参考图
+            </InlineText>
             <InlineText type="body-xs" style={{ color: atReferenceCap ? 'var(--danger-quiet)' : 'var(--muted)' }}>
               {p.referenceCount} / {MAX_REFERENCE_IMAGES}
             </InlineText>
@@ -269,7 +281,12 @@ function TaskPanel(p: Props) {
                       <Xmark />
                     </IconButton>
                   </div>
-                  <InlineText type="body-xs" className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={`${label} ${c.name}`}>
+                  <InlineText
+                    type="body-xs"
+                    className="w-full truncate text-center text-[11px]"
+                    style={{ color: 'var(--muted)' }}
+                    title={`${label} ${c.name}`}
+                  >
                     {label}
                   </InlineText>
                 </div>
@@ -309,7 +326,12 @@ function TaskPanel(p: Props) {
                     <Xmark />
                   </IconButton>
                 </div>
-                <InlineText type="body-xs" className="w-full truncate text-center text-[11px]" style={{ color: 'var(--muted)' }} title={s.name}>
+                <InlineText
+                  type="body-xs"
+                  className="w-full truncate text-center text-[11px]"
+                  style={{ color: 'var(--muted)' }}
+                  title={s.name}
+                >
                   {s.name}
                 </InlineText>
               </div>
@@ -335,7 +357,9 @@ function TaskPanel(p: Props) {
           {/* 张数与尺寸并排：两个都是短字段，各占一行纯属浪费垂直空间 */}
           <div className="flex items-end gap-4">
             <div>
-              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>张数（{COUNT_MIN}–{COUNT_MAX} 张）</div>
+              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>
+                张数（{COUNT_MIN}–{COUNT_MAX} 张）
+              </div>
               <NumberField
                 aria-label={`张数（${COUNT_MIN}–${COUNT_MAX} 张）`}
                 minValue={COUNT_MIN}
@@ -378,7 +402,9 @@ function TaskPanel(p: Props) {
               )}
             </div>
             <div className="min-w-0">
-              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>尺寸</div>
+              <div className="mb-1 text-xs" style={{ color: 'var(--muted)' }}>
+                尺寸
+              </div>
               {/* 触发件必须是 Dropdown 的**直接子元素**：Dropdown.Trigger 内部会再渲染一个 HeroUI Button，
                   写成 <Trigger><Button/></Trigger> 会得到 <button> 套 <button>（React 19 报 validateDOMNesting，
                   且 isDisabled 落在内层、靠冒泡被吃掉才偶然生效） */}
@@ -444,7 +470,7 @@ function TaskPanel(p: Props) {
               减掉 24px 内边距后内容宽度是**负数**，数字被 `overflow: clip` 整段裁掉。
               `flex-wrap` 是配套的：两个 144px 字段 + × + 说明文字在窄屏放不下一行，允许换行而不是溢出。 */}
           {p.size === 'custom' && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted)' }}>
               <NumberField
                 aria-label="自定义宽度"
                 minValue={SIZE_MIN}
@@ -476,9 +502,16 @@ function TaskPanel(p: Props) {
                   <NumberField.IncrementButton />
                 </NumberField.Group>
               </NumberField>
-              <InlineText type="body-sm">像素（{SIZE_MIN}–{SIZE_MAX}）</InlineText>
+              <InlineText type="body-sm">
+                像素（{SIZE_MIN}–{SIZE_MAX}）
+              </InlineText>
               {sizeNote && (
-                <InlineText type="body-xs" role="status" className="basis-full" style={{ color: 'var(--muted-strong)' }}>
+                <InlineText
+                  type="body-xs"
+                  role="status"
+                  className="basis-full"
+                  style={{ color: 'var(--muted-strong)' }}
+                >
                   {sizeNote}
                 </InlineText>
               )}
@@ -490,7 +523,9 @@ function TaskPanel(p: Props) {
         <div className="ws-panel-section">
           {/* 唯一的提示词入口：系统自带的 8 套模板提示词也都在库里（用户裁决 2026-09-21 并入） */}
           <div className="mb-2 flex items-center justify-between">
-            <InlineText type="body-sm" className="ws-panel-label">提示词</InlineText>
+            <InlineText type="body-sm" className="ws-panel-label">
+              提示词
+            </InlineText>
             <div className="flex items-center gap-1">
               {/* 字数计数（#83-1.3）：超限变色，配合下方的内联提示与置灰的主按钮阻断提交 */}
               <InlineText
@@ -540,7 +575,10 @@ function TaskPanel(p: Props) {
       <div className="ws-panel-footer">
         {/* 提交前的额度预期：本次消耗多少、余额是否够，都亮在按钮旁边而不是等服务端报错 */}
         {!p.busy && (
-          <div className="text-xs" style={{ color: insufficient ? 'var(--danger-quiet)' : 'var(--muted)', minHeight: 16 }}>
+          <div
+            className="text-xs"
+            style={{ color: insufficient ? 'var(--danger-quiet)' : 'var(--muted)', minHeight: 16 }}
+          >
             {insufficient
               ? `本次将消耗 ${displayCount} 张，当前余额仅 ${credits} 张，请充值或调小张数`
               : typeof credits === 'number'

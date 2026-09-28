@@ -134,7 +134,14 @@ describe('DELETE /api/topics/[id] 要清存储', () => {
     const other = store.createUser({ name: 'x', email: 'x@e.com', passwordHash: 'h', role: 'user' })
     const otherTopic = store.createTopic(other.id, '别人的').id
     const key = seedObject('users/x/topics/o/a.png')
-    store.insertReferenceUpload({ topicId: otherTopic, userId: other.id, name: 'r', imageKey: key, mimeType: 'image/png', bytes: 1 })
+    store.insertReferenceUpload({
+      topicId: otherTopic,
+      userId: other.id,
+      name: 'r',
+      imageKey: key,
+      mimeType: 'image/png',
+      bytes: 1,
+    })
 
     expect((await DELETE(req(token), params(otherTopic))).status).toBe(404)
     expect(store.getTopic(otherTopic)).not.toBeNull()

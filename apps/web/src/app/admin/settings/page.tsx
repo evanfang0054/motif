@@ -1,7 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, Input, Label, ListBox, Select, Skeleton, Switch, Tabs, TextField, Typography } from '@heroui/react'
+import {
+  Button,
+  Checkbox,
+  Input,
+  Label,
+  ListBox,
+  Select,
+  Skeleton,
+  Switch,
+  Tabs,
+  TextField,
+  Typography,
+} from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, CircleExclamation } from '@gravity-ui/icons'
 import { api, type AdminConfigHealth, type AdminSettingItem } from '@/lib/client'
@@ -27,7 +39,17 @@ const GROUP_TITLE: Record<AdminSettingItem['group'], string> = {
   data: '数据位置（只读）',
 }
 
-const GROUP_ORDER: AdminSettingItem['group'][] = ['generation', 'credits', 'payment', 'mailer', 'llm', 'storage', 'prompts', 'security', 'data']
+const GROUP_ORDER: AdminSettingItem['group'][] = [
+  'generation',
+  'credits',
+  'payment',
+  'mailer',
+  'llm',
+  'storage',
+  'prompts',
+  'security',
+  'data',
+]
 
 const HEALTH_LABEL: Record<string, string> = {
   generation: '生图网关',
@@ -177,10 +199,7 @@ export default function AdminSettingsPage() {
       )
     }
     return (
-      <TextField
-        value={dirty[item.key] ?? item.value ?? ''}
-        onChange={(v) => setField(item.key, v)}
-      >
+      <TextField value={dirty[item.key] ?? item.value ?? ''} onChange={(v) => setField(item.key, v)}>
         <Input placeholder={item.defaultHint ? `默认 ${item.defaultHint}` : ''} />
       </TextField>
     )
@@ -285,12 +304,24 @@ export default function AdminSettingsPage() {
               {item.label}
               <InlineText type="body-xs" className="admin-field-key">
                 {item.key}
-                {item.readOnly && <InlineText type="body-xs" className="admin-badge-readonly">只读</InlineText>}
-                {item.source === 'env' && <InlineText type="body-xs" className="admin-badge-readonly">来自环境变量</InlineText>}
+                {item.readOnly && (
+                  <InlineText type="body-xs" className="admin-badge-readonly">
+                    只读
+                  </InlineText>
+                )}
+                {item.source === 'env' && (
+                  <InlineText type="body-xs" className="admin-badge-readonly">
+                    来自环境变量
+                  </InlineText>
+                )}
               </InlineText>
             </label>
             {field(item)}
-            {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}
+            {item.hint && (
+              <Typography type="body" className="admin-field-hint">
+                {item.hint}
+              </Typography>
+            )}
           </div>
         ))}
         {group !== 'data' && groupItems.length > 0 && (
@@ -316,7 +347,7 @@ export default function AdminSettingsPage() {
                   setTestResult(
                     r.via === 'console'
                       ? { ok: true, text: '当前是 console 渠道：不会真实发信，测试内容已打印到服务端日志。' }
-                      : { ok: true, text: `测试邮件已通过 ${r.via} 渠道发出，请查收。` }
+                      : { ok: true, text: `测试邮件已通过 ${r.via} 渠道发出，请查收。` },
                   )
                 } catch (e) {
                   setTestResult({ ok: false, text: describeAdminError(e) })
@@ -327,7 +358,9 @@ export default function AdminSettingsPage() {
             >
               {testing ? '发送中…' : '发送测试邮件'}
             </Button>
-            <Typography type="body" className="admin-field-hint">先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。</Typography>
+            <Typography type="body" className="admin-field-hint">
+              先点上方「保存」再测试；失败原因（如 SMTP 535 授权码错误）会原样显示在这里。
+            </Typography>
             {testResult && (
               <div className={testResult.ok ? 'admin-alert-ok' : 'admin-alert-err'} role="status">
                 {testResult.text}
@@ -343,8 +376,12 @@ export default function AdminSettingsPage() {
 
   return (
     <section className="admin-panel" id="settings-root">
-      <Typography type="h1" className="admin-title">系统设置</Typography>
-      <Typography type="body" className="admin-muted">配置以数据库为准：环境变量仅首次播种，此后一律在这里改。</Typography>
+      <Typography type="h1" className="admin-title">
+        系统设置
+      </Typography>
+      <Typography type="body" className="admin-muted">
+        配置以数据库为准：环境变量仅首次播种，此后一律在这里改。
+      </Typography>
 
       {loading && (
         <div className="mt-3 flex flex-col gap-5" aria-hidden>
@@ -389,41 +426,57 @@ export default function AdminSettingsPage() {
           ))}
           {dangerItems.length > 0 && (
             <Tabs.Panel id="danger">
-              <Typography type="body" className="admin-muted">以下开关会削弱系统安全基线，变更需二次确认并留痕。</Typography>
+              <Typography type="body" className="admin-muted">
+                以下开关会削弱系统安全基线，变更需二次确认并留痕。
+              </Typography>
               {dangerItems.map((item) => (
                 <div className="admin-field" key={item.key}>
                   <label htmlFor={`setting-${item.key}`}>
                     {item.label}
-                    <InlineText type="body-xs" className="admin-field-key">{item.key}</InlineText>
+                    <InlineText type="body-xs" className="admin-field-key">
+                      {item.key}
+                    </InlineText>
                   </label>
                   {field(item)}
-                  {item.hint && <Typography type="body" className="admin-field-hint">{item.hint}</Typography>}
-                  {item.key === 'PAYMENT_CHANNEL' && (() => {
-                    const paymentHealth = health.find((h) => h.group === 'payment')
-                    return (
-                      <Typography type="body" className="admin-field-hint">
-                        当前支付配置：
-                        {paymentHealth?.ready ? (
-                          <>
-                            <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
-                            已就绪
-                          </>
-                        ) : (
-                          <>
-                            <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
-                            未就绪：{paymentHealth?.reason ?? '配置不完整'}
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setTab('payment')}
-                          style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                        >
-                          前往「支付与套餐」
-                        </button>
-                      </Typography>
-                    )
-                  })()}
+                  {item.hint && (
+                    <Typography type="body" className="admin-field-hint">
+                      {item.hint}
+                    </Typography>
+                  )}
+                  {item.key === 'PAYMENT_CHANNEL' &&
+                    (() => {
+                      const paymentHealth = health.find((h) => h.group === 'payment')
+                      return (
+                        <Typography type="body" className="admin-field-hint">
+                          当前支付配置：
+                          {paymentHealth?.ready ? (
+                            <>
+                              <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                              已就绪
+                            </>
+                          ) : (
+                            <>
+                              <CircleExclamation className="me-1 inline align-[-0.125em]" aria-hidden />
+                              未就绪：{paymentHealth?.reason ?? '配置不完整'}
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setTab('payment')}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'inherit',
+                              cursor: 'pointer',
+                              padding: 0,
+                              textDecoration: 'underline',
+                            }}
+                          >
+                            前往「支付与套餐」
+                          </button>
+                        </Typography>
+                      )
+                    })()}
                 </div>
               ))}
               {/* 未选中态必须有可见边框（WCAG 2.1 SC 1.4.11 要求控件边界对相邻背景 ≥3:1）。
@@ -435,11 +488,7 @@ export default function AdminSettingsPage() {
                   ⚠️ 必须只在**未选中**态生效：HeroUI 组件样式在 layer(components)、Tailwind 工具类
                   在 layer(utilities)，后者层序在后 —— 无条件加边框会盖掉组件自己的状态边框，
                   导致选中态在珊瑚方块外多出一圈灰环。故用 group + data-[selected=true] 把它让回去。 */}
-              <Checkbox
-                className="group my-3"
-                isSelected={confirmed}
-                onChange={(sel) => setConfirmed(sel)}
-              >
+              <Checkbox className="group my-3" isSelected={confirmed} onChange={(sel) => setConfirmed(sel)}>
                 <Checkbox.Content>
                   <Checkbox.Control className="border border-solid border-[var(--muted)] group-data-[selected=true]:border-transparent">
                     <Checkbox.Indicator />

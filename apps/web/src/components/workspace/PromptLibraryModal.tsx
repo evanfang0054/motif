@@ -72,7 +72,12 @@ function EntryCard({
       className="flex flex-col overflow-hidden rounded-lg border"
       style={{ borderColor: 'var(--border)', background: 'var(--surface-primary)' }}
     >
-      <button type="button" onClick={onSelect} aria-label={`选用提示词：${entry.title}`} className="block w-full text-start">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`选用提示词：${entry.title}`}
+        className="block w-full text-start"
+      >
         <span className="relative block w-full">
           {hasCover && !coverLoaded && <Skeleton className="absolute inset-0 rounded-none" />}
           {hasCover ? (
@@ -101,7 +106,9 @@ function EntryCard({
           )}
         </span>
         <InlineText type="body-sm" className="block px-3 pt-2">
-          <InlineText type="body-sm" className="line-clamp-1 block font-medium">{entry.title}</InlineText>
+          <InlineText type="body-sm" className="line-clamp-1 block font-medium">
+            {entry.title}
+          </InlineText>
           <InlineText type="body-xs" className="mt-1 line-clamp-3 block leading-5" style={{ color: 'var(--muted)' }}>
             {entry.description || entry.prompt}
           </InlineText>
@@ -109,7 +116,13 @@ function EntryCard({
       </button>
       <div className="mt-auto flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-2">
         {onOpenDetail && (
-          <Button variant="secondary" size="sm" className="text-[11px]" aria-label={`查看示例图：${entry.title}`} onPress={onOpenDetail}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="text-[11px]"
+            aria-label={`查看示例图：${entry.title}`}
+            onPress={onOpenDetail}
+          >
             示例图{entry.images.length > 0 ? `（${entry.images.length}）` : ''}
           </Button>
         )}
@@ -206,7 +219,13 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
       if (mode === 'replace') setLoading(true)
       else setLoadingMore(true)
       try {
-        const r = await api.listPrompts({ q: debouncedKeyword, tags, source, page: targetPage, pageSize: PROMPT_PAGE_SIZE })
+        const r = await api.listPrompts({
+          q: debouncedKeyword,
+          tags,
+          source,
+          page: targetPage,
+          pageSize: PROMPT_PAGE_SIZE,
+        })
         if (seq !== seqRef.current) return
         setItems((prev) => {
           if (mode === 'replace') return r.items
@@ -229,7 +248,7 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
         }
       }
     },
-    [debouncedKeyword, tags, source]
+    [debouncedKeyword, tags, source],
   )
 
   const loadRef = useRef(load)
@@ -355,15 +374,23 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                  那样**已经渲染出来的卡片会被整块换成骨架、再换回来**（图片重挂 + 高度抖动），与「避免跳动」正相反。 */
               <EntryGridSkeleton />
             ) : error ? (
-              <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm" style={{ color: 'var(--muted)' }}>
-                <InlineText color="muted" type="body-sm">{error}</InlineText>
+              <div
+                className="flex h-40 flex-col items-center justify-center gap-2 text-sm"
+                style={{ color: 'var(--muted)' }}
+              >
+                <InlineText color="muted" type="body-sm">
+                  {error}
+                </InlineText>
                 <Button variant="secondary" size="sm" onPress={() => void load(1, 'replace')}>
                   <ArrowRotateRight />
                   重试
                 </Button>
               </div>
             ) : items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm" style={{ color: 'var(--muted)' }}>
+              <div
+                className="flex flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm"
+                style={{ color: 'var(--muted)' }}
+              >
                 {/* ⚠️ 下面这些 `align="center"` 不能省：本容器靠 `text-center` 居中，而 `Typography` 自己在
                     元素上带 `text-align: start`。单行时看不出差别（子元素按 fit-content 居中），
                     一旦折行第二行起就是左对齐。 */}
@@ -372,12 +399,18 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                     {/* 上游还在抓：内容形状同样可预判（卡片网格）。⚠️ 这里不能限高（原来的 h-40 装不下三张卡），
                         也不能让 grid 按 fit-content 收缩 —— 否则骨架塌成一条缝（见 EntryGridSkeleton 的说明）。 */}
                     <EntryGridSkeleton count={3} />
-                    <InlineText color="muted" type="body-sm" align="center">正在加载提示词…</InlineText>
+                    <InlineText color="muted" type="body-sm" align="center">
+                      正在加载提示词…
+                    </InlineText>
                   </>
                 ) : emptyKind === 'filtered' ? (
-                  <InlineText color="muted" type="body-sm" align="center">没有匹配的提示词，换个关键词或标签试试</InlineText>
+                  <InlineText color="muted" type="body-sm" align="center">
+                    没有匹配的提示词，换个关键词或标签试试
+                  </InlineText>
                 ) : (
-                  <InlineText color="muted" type="body-sm" align="center">提示词库还没有内容</InlineText>
+                  <InlineText color="muted" type="body-sm" align="center">
+                    提示词库还没有内容
+                  </InlineText>
                 )}
               </div>
             ) : (
@@ -403,8 +436,14 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
                 <Skeleton className="inline-block h-3.5 w-14 rounded-medium" />
               ) : (
                 <>
-                  <InlineText color="muted" type="body-xs">{loadingMore ? '正在加载更多…' : `共 ${total} 条`}</InlineText>
-                  {showPending && <InlineText color="muted" type="body-xs" className="ms-2">（正在加载提示词…）</InlineText>}
+                  <InlineText color="muted" type="body-xs">
+                    {loadingMore ? '正在加载更多…' : `共 ${total} 条`}
+                  </InlineText>
+                  {showPending && (
+                    <InlineText color="muted" type="body-xs" className="ms-2">
+                      （正在加载提示词…）
+                    </InlineText>
+                  )}
                 </>
               )}
             </div>
@@ -412,7 +451,6 @@ function PromptLibraryModal({ onClose, onSelect, referenceCount, maxReferences, 
           </div>
         </section>
       </div>
-
 
       {detailEntry && (
         <PromptDetailDialog

@@ -106,7 +106,10 @@ export interface CanvasSync {
   /** 结构变更（增删图片/改尺寸）：立即提交，不参与防抖 */
   commitStructural(topicId: string, patch: CanvasPatch): Promise<{ applied: string[]; rejected: string[] }>
   /** 位置变更：进防抖队列；窗口结束时随合并补丁一起提交，返回值即 driver.save 的结果 */
-  commitPlacement(topicId: string, placements: CanvasImagePlacement[]): Promise<{ applied: string[]; rejected: string[] }>
+  commitPlacement(
+    topicId: string,
+    placements: CanvasImagePlacement[],
+  ): Promise<{ applied: string[]; rejected: string[] }>
   /** 视口/背景变更：与位置共用同一条防抖队列（避免两次 PATCH）；失败不阻断编辑，故无返回值 */
   commitMeta(topicId: string, meta: Partial<CanvasMeta>): void
   /** 立即冲掉待提交队列（页面卸载 / 切任务前调用） */
@@ -118,7 +121,7 @@ export interface CanvasSync {
 export function createCanvasPersistence(
   driver: CanvasPersistence,
   debounceMs = 400,
-  draft?: CanvasPersistence
+  draft?: CanvasPersistence,
 ): CanvasSync {
   let timer: ReturnType<typeof setTimeout> | null = null
   let queued: {
@@ -147,7 +150,7 @@ export function createCanvasPersistence(
   const send = async (
     topicId: string,
     patch: CanvasPatch,
-    placementsForParking: CanvasImagePlacement[]
+    placementsForParking: CanvasImagePlacement[],
   ): Promise<{ applied: string[]; rejected: string[] }> => {
     try {
       return await driver.save(topicId, patch)

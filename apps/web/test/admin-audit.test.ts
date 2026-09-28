@@ -46,14 +46,23 @@ describe('GET /api/admin/audit（root 独占）', () => {
 
   it('查询得到管理动作，且 action 精确匹配（不被同前缀动作污染）', async () => {
     const actor = store.createUser({ email: 'act@b.co', passwordHash: 'h', name: '操作者' })
-    store.insertAudit({ actorId: actor.id, action: 'credit.adjust', targetType: 'user', targetId: 'usr_x', detail: '{"delta":5}' })
+    store.insertAudit({
+      actorId: actor.id,
+      action: 'credit.adjust',
+      targetType: 'user',
+      targetId: 'usr_x',
+      detail: '{"delta":5}',
+    })
     store.insertAudit({ actorId: actor.id, action: 'credit.adjust.rollback', targetType: 'user', targetId: 'usr_x' })
     const t = sessionFor('root', 'r2@b.co')
 
     const all = (await (await auditGET(req(t))).json()) as { items: AuditLogRow[]; total: number }
     expect(all.total).toBe(2)
 
-    const exact = (await (await auditGET(req(t, '?action=credit.adjust'))).json()) as { items: AuditLogRow[]; total: number }
+    const exact = (await (await auditGET(req(t, '?action=credit.adjust'))).json()) as {
+      items: AuditLogRow[]
+      total: number
+    }
     expect(exact.total).toBe(1) // 前缀匹配会变成 2 → 必红
     expect(exact.items[0].action).toBe('credit.adjust')
     expect(exact.items[0].detail).toBe('{"delta":5}')

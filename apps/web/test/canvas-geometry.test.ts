@@ -48,7 +48,12 @@ describe('boundsOf（世界包围盒）', () => {
   })
   it('单矩形即自身；多矩形取并集', () => {
     expect(boundsOf([{ x: 10, y: 20, w: 30, h: 40 }])).toEqual({ x: 10, y: 20, w: 30, h: 40 })
-    expect(boundsOf([{ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 5, w: 10, h: 20 }])).toEqual({ x: 0, y: 0, w: 30, h: 25 })
+    expect(
+      boundsOf([
+        { x: 0, y: 0, w: 10, h: 10 },
+        { x: 20, y: 5, w: 10, h: 20 },
+      ]),
+    ).toEqual({ x: 0, y: 0, w: 30, h: 25 })
   })
 })
 

@@ -81,7 +81,8 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
                   return (
                     <div key={url} className="flex flex-col gap-1">
                       {broken.includes(index) ? (
-                        <InlineText type="body-xs"
+                        <InlineText
+                          type="body-xs"
                           className="grid aspect-square w-full place-items-center rounded-md text-[10px]"
                           style={{ background: 'var(--canvas-background)', color: 'var(--muted)' }}
                         >
@@ -127,12 +128,7 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
 
         <div className="flex flex-wrap items-center gap-2">
           {attachableAt(0) && (
-            <Button
-              variant="primary"
-              size="sm"
-              isDisabled={busyIndex !== null || atCap}
-              onPress={() => void attach(0)}
-            >
+            <Button variant="primary" size="sm" isDisabled={busyIndex !== null || atCap} onPress={() => void attach(0)}>
               {busyIndex === 0 ? '加入中…' : atCap ? `参考图已达上限 ${maxReferences} 张` : '把封面用作参考图'}
             </Button>
           )}
@@ -158,7 +154,9 @@ function PromptDetailDialog({ entry, referenceCount, maxReferences, onClose, onA
               {entry.description}
             </Typography>
           )}
-          <Typography type="body-sm" className="mt-2 whitespace-pre-wrap leading-7">{entry.prompt}</Typography>
+          <Typography type="body-sm" className="mt-2 whitespace-pre-wrap leading-7">
+            {entry.prompt}
+          </Typography>
         </div>
 
         {hasAttachable && (

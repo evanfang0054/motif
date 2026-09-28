@@ -102,8 +102,11 @@ function BillingDialog({
     try {
       const { orderId, checkoutUrl } = await api.checkout(pkg.id)
       if (/^https?:\/\//i.test(checkoutUrl)) {
-        // 真实渠道：整页跳网关/Stripe 收银页，支付完成由 return_url 带回结果页
-        window.location.href = checkoutUrl
+        // 真实渠道：整页跳网关/Stripe 收银页，支付完成由 return_url 带回结果页。
+        // 用 assign 而非 `location.href =`：后者是对全局对象赋值，会被 react-hooks/immutability
+        // 判为「This value cannot be modified」。两者对绝对地址行为一致，且上面的正则已保证
+        // checkoutUrl 是绝对地址（Next 的 no-location-assign-relative-destination 只拦相对地址）。
+        window.location.assign(checkoutUrl)
         return
       }
       // mock 渠道：站内模拟收银台确认
@@ -124,7 +127,9 @@ function BillingDialog({
 
   return (
     <Modal title="充值额度" onClose={onClose}>
-      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>{payNote}</Typography>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>
+        {payNote}
+      </Typography>
       <div className="mt-3 grid grid-cols-2 gap-2">
         {packages.map((pkg) => (
           <Button
@@ -185,7 +190,9 @@ function RedeemDialog({ onClose, onRedeemed }: { onClose: () => void; onRedeemed
 
   return (
     <Modal title="CDK 兑换" onClose={onClose}>
-      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>如果你已经持有 CDK，可在这里输入并兑换额度。</Typography>
+      <Typography type="body-sm" style={{ color: 'var(--muted)' }}>
+        如果你已经持有 CDK，可在这里输入并兑换额度。
+      </Typography>
       <form onSubmit={submit} className="mt-3 flex gap-2">
         <TextField aria-label="CDK" className="min-w-0 flex-1" value={code} onChange={setCode}>
           <Input placeholder="输入 CDK" />
@@ -217,8 +224,8 @@ function InviteDialog({ user, onClose }: { user: User; onClose: () => void }) {
       <Typography type="body-sm" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
         {cfg ? (
           <>
-            好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励{' '}
-            {cfg.inviteRewardMaxInvitees} 人。
+            好友通过你的链接注册成功后，你获得 {cfg.inviteRewardCredits} 张额度，最多奖励 {cfg.inviteRewardMaxInvitees}{' '}
+            人。
           </>
         ) : (
           // 配置未取到时**不写数字**（而不是写 0）—— 与入口显隐、注册页文案同一口径
@@ -347,7 +354,9 @@ function ProfileDialog({
 
   return (
     <Modal title="个人资料" onClose={onClose}>
-      <Typography type="body-xs" style={{ color: 'var(--muted)' }}>{user.email}</Typography>
+      <Typography type="body-xs" style={{ color: 'var(--muted)' }}>
+        {user.email}
+      </Typography>
 
       <form onSubmit={saveProfile} className="mt-3">
         <div className="flex items-end gap-2">
@@ -358,18 +367,32 @@ function ProfileDialog({
             <Label>昵称</Label>
             <Input data-testid="profile-name" />
           </TextField>
-          <Button type="submit" variant="primary" isDisabled={busy || !name.trim()}>保存昵称</Button>
+          <Button type="submit" variant="primary" isDisabled={busy || !name.trim()}>
+            保存昵称
+          </Button>
         </div>
       </form>
 
       <div className="my-4" style={{ borderTop: '1px solid var(--border)' }} />
 
       <form onSubmit={changePassword}>
-        <TextField type="password" autoComplete="current-password" value={oldPassword} onChange={setOldPassword} className="mt-3.5">
+        <TextField
+          type="password"
+          autoComplete="current-password"
+          value={oldPassword}
+          onChange={setOldPassword}
+          className="mt-3.5"
+        >
           <Label>当前密码</Label>
           <Input data-testid="profile-old-password" />
         </TextField>
-        <TextField type="password" autoComplete="new-password" value={newPassword} onChange={setNewPassword} className="mt-3.5">
+        <TextField
+          type="password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={setNewPassword}
+          className="mt-3.5"
+        >
           <Label>新密码</Label>
           <Input data-testid="profile-new-password" />
         </TextField>
@@ -377,7 +400,12 @@ function ProfileDialog({
         <Typography type="body-xs" className="mt-1.5" style={{ color: 'var(--muted)' }}>
           {PASSWORD_RULE_TEXT}
         </Typography>
-        <Button className="mt-3 w-full" type="submit" variant="secondary" isDisabled={busy || !oldPassword || !newPassword}>
+        <Button
+          className="mt-3 w-full"
+          type="submit"
+          variant="secondary"
+          isDisabled={busy || !oldPassword || !newPassword}
+        >
           修改密码
         </Button>
       </form>

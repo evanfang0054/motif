@@ -43,7 +43,11 @@ try {
 const [code, credits] = process.argv.slice(2)
 
 if (code === '--list') {
-  const rows = db.prepare('SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks ORDER BY created_at DESC').all()
+  const rows = db
+    .prepare(
+      'SELECT code, credits, redeemed_by, redeemed_at, revoked_at, created_at FROM cdks ORDER BY created_at DESC',
+    )
+    .all()
   if (rows.length === 0) {
     console.log('（暂无 CDK）')
   } else {
@@ -58,7 +62,7 @@ if (code === '--list') {
   // 但拿到一张永远兑换不了的码」。
   db.prepare(
     `INSERT INTO cdks (code, credits, created_at) VALUES (?, ?, ?)
-     ON CONFLICT(code) DO UPDATE SET credits = excluded.credits, redeemed_by = NULL, redeemed_at = NULL, revoked_at = NULL`
+     ON CONFLICT(code) DO UPDATE SET credits = excluded.credits, redeemed_by = NULL, redeemed_at = NULL, revoked_at = NULL`,
   ).run(String(code).toUpperCase(), Number(credits), new Date().toISOString())
   console.log(`✅ CDK 已发放：${String(code).toUpperCase()}（${Number(credits)} 张额度）`)
 } else {

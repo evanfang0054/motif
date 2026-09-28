@@ -51,7 +51,11 @@ describe('内置源清单', () => {
     // 只留 GPT 系是用户裁决 —— Motif 的模型是 gpt-image 系，另一套模型族
     // （Nano Banana / Banana Prompt Quicker）的提示词不通用。
     expect(REMOTE_PROMPT_SOURCES.map((s) => [s.id, s.name, s.homepage])).toEqual([
-      ['davidwu-gpt-image2-prompts', 'DavidWu GPT Image 2', 'https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts'],
+      [
+        'davidwu-gpt-image2-prompts',
+        'DavidWu GPT Image 2',
+        'https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts',
+      ],
       ['freestylefly-gpt-image-2', 'Freestylefly GPT Image 2', 'https://github.com/freestylefly/awesome-gpt-image-2'],
       ['awesome-gpt-image', 'Awesome GPT Image', 'https://github.com/ZeroLu/awesome-gpt-image'],
       ['awesome-gpt4o-image-prompts', 'Awesome GPT-4o', 'https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts'],
@@ -62,7 +66,7 @@ describe('内置源清单', () => {
 
   it('url 由 registry 根地址与 id 拼出', () => {
     expect(REMOTE_PROMPT_SOURCES.map((s) => s.url)).toEqual(
-      REMOTE_PROMPT_SOURCES.map((s) => `${PROMPT_REGISTRY_SOURCE_BASE}/${s.id}.json`)
+      REMOTE_PROMPT_SOURCES.map((s) => `${PROMPT_REGISTRY_SOURCE_BASE}/${s.id}.json`),
     )
     expect(REMOTE_PROMPT_SOURCES.every((s) => s.url.startsWith('https://raw.githubusercontent.com/'))).toBe(true)
   })
@@ -110,7 +114,7 @@ describe('parsePromptSourcePayload', () => {
   it('缺 title 或 prompt 的条目跳过，其余照收', () => {
     const out = parsePromptSourcePayload(
       [{ title: '只有标题' }, { prompt: '只有提示词' }, { title: '好条目', prompt: '正文' }, {}, null, 42],
-      SRC
+      SRC,
     )
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({ title: '好条目', prompt: '正文' })
@@ -118,8 +122,12 @@ describe('parsePromptSourcePayload', () => {
 
   it('id 缺失时用源 id + 4 位补零序号兜底（序号 = 数组下标 + 1）', () => {
     const out = parsePromptSourcePayload(
-      [{ title: 'a', prompt: 'a' }, { title: 'b', prompt: 'b' }, { title: 'c', prompt: 'c', id: '自带的' }],
-      SRC
+      [
+        { title: 'a', prompt: 'a' },
+        { title: 'b', prompt: 'b' },
+        { title: 'c', prompt: 'c', id: '自带的' },
+      ],
+      SRC,
     )
     expect(out.map((e) => e.id)).toEqual(['src-a-0001', 'src-a-0002', '自带的'])
   })
@@ -131,7 +139,7 @@ describe('parsePromptSourcePayload', () => {
         { id: '7', title: '第二', prompt: 'p2' },
         { id: 8, title: '第三', prompt: 'p3' },
       ],
-      SRC
+      SRC,
     )
     expect(out.map((e) => [e.id, e.title])).toEqual([
       ['7', '第一'],
@@ -141,14 +149,25 @@ describe('parsePromptSourcePayload', () => {
 
   it('相对 URL 绝对化；coverUrl 回退到第一张参考图', () => {
     const out = parsePromptSourcePayload(
-      [{ title: 't', prompt: 'p', coverUrl: './cover.png', referenceImageUrls: ['../img/1.png'], sourceUrl: 'detail/1' }],
-      SRC
+      [
+        {
+          title: 't',
+          prompt: 'p',
+          coverUrl: './cover.png',
+          referenceImageUrls: ['../img/1.png'],
+          sourceUrl: 'detail/1',
+        },
+      ],
+      SRC,
     )
     expect(out[0].coverUrl).toBe('https://example.com/sources/cover.png')
     expect(out[0].referenceImageUrls).toEqual(['https://example.com/img/1.png'])
     expect(out[0].sourceUrl).toBe('https://example.com/sources/detail/1')
 
-    const noCover = parsePromptSourcePayload([{ title: 't', prompt: 'p', referenceImageUrls: ['https://cdn.example.com/a.png'] }], SRC)
+    const noCover = parsePromptSourcePayload(
+      [{ title: 't', prompt: 'p', referenceImageUrls: ['https://cdn.example.com/a.png'] }],
+      SRC,
+    )
     expect(noCover[0].coverUrl).toBe('https://cdn.example.com/a.png')
 
     const nothing = parsePromptSourcePayload([{ title: 't', prompt: 'p' }], SRC)
@@ -167,7 +186,7 @@ describe('parsePromptSourcePayload', () => {
         { title: 't', prompt: 'p', tags: [' 写实 ', '', '海报', 7] },
         { title: 't2', prompt: 'p2', tags: 'not-an-array' },
       ],
-      SRC
+      SRC,
     )
     expect(out[0].tags).toEqual(['写实', '海报', '7'])
     expect(out[1].tags).toEqual([])
@@ -175,11 +194,20 @@ describe('parsePromptSourcePayload', () => {
 
   it('不产出表单不用的图片参数（有类型无列会把实现带进死路）', () => {
     const out = parsePromptSourcePayload(
-      [{ title: 't', prompt: 'p', imageMode: 'edit', imageModel: 'gpt-image-2', imageSize: '1024x1024', imageCount: 4 }],
-      SRC
+      [
+        {
+          title: 't',
+          prompt: 'p',
+          imageMode: 'edit',
+          imageModel: 'gpt-image-2',
+          imageSize: '1024x1024',
+          imageCount: 4,
+        },
+      ],
+      SRC,
     )
     expect(Object.keys(out[0]).sort()).toEqual(
-      ['author', 'coverUrl', 'description', 'id', 'prompt', 'referenceImageUrls', 'sourceUrl', 'tags', 'title'].sort()
+      ['author', 'coverUrl', 'description', 'id', 'prompt', 'referenceImageUrls', 'sourceUrl', 'tags', 'title'].sort(),
     )
   })
 
@@ -233,7 +261,9 @@ describe('isSourceStale', () => {
     expect(isSourceStale({ ...failed, fetchedAt: '2026-09-21T11:58:00.000Z' })).toBe(false)
     expect(isSourceStale({ ...failed, fetchedAt: '2026-09-21T11:54:00.000Z' })).toBe(true)
     // 显式传参时以传入值为准
-    expect(isSourceStale({ ...failed, fetchedAt: '2026-09-21T11:54:00.000Z', failureRetryMs: 60 * 60 * 1000 })).toBe(false)
+    expect(isSourceStale({ ...failed, fetchedAt: '2026-09-21T11:54:00.000Z', failureRetryMs: 60 * 60 * 1000 })).toBe(
+      false,
+    )
     expect(PROMPT_FAILURE_RETRY_MS).toBe(5 * 60 * 1000)
   })
 
@@ -261,22 +291,43 @@ describe('抓取超时常量', () => {
 
 describe('filterPromptEntries', () => {
   const entries = [
-    row({ id: '1', title: '猫咪写真', prompt: 'a cat portrait', description: '室内', tags: ['写实', '宠物'], sourceName: '源 A' }),
+    row({
+      id: '1',
+      title: '猫咪写真',
+      prompt: 'a cat portrait',
+      description: '室内',
+      tags: ['写实', '宠物'],
+      sourceName: '源 A',
+    }),
     row({ id: '2', title: '海报排版', prompt: 'POSTER layout', description: '', tags: ['海报'], sourceName: '源 B' }),
     row({ id: '3', title: '风景', prompt: 'landscape', description: '写实风格', tags: [], sourceName: '源 A' }),
   ]
 
   it('关键词对 标题/正文/描述/源名/标签 做小写子串匹配', () => {
-    expect(filterPromptEntries(entries, { keyword: 'CAT', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['1'])
-    expect(filterPromptEntries(entries, { keyword: '海报', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['2'])
-    expect(filterPromptEntries(entries, { keyword: '写实', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['1', '3'])
-    expect(filterPromptEntries(entries, { keyword: '源 B', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['2'])
+    expect(
+      filterPromptEntries(entries, { keyword: 'CAT', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id),
+    ).toEqual(['1'])
+    expect(
+      filterPromptEntries(entries, { keyword: '海报', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id),
+    ).toEqual(['2'])
+    expect(
+      filterPromptEntries(entries, { keyword: '写实', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id),
+    ).toEqual(['1', '3'])
+    expect(
+      filterPromptEntries(entries, { keyword: '源 B', tags: [], source: ALL_PROMPTS_OPTION }).map((e) => e.id),
+    ).toEqual(['2'])
     expect(filterPromptEntries(entries, { keyword: '   ', tags: [], source: ALL_PROMPTS_OPTION })).toHaveLength(3)
   })
 
   it('标签多选 = OR（命中任一即留）', () => {
-    expect(filterPromptEntries(entries, { keyword: '', tags: ['海报'], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['2'])
-    expect(filterPromptEntries(entries, { keyword: '', tags: ['宠物', '海报'], source: ALL_PROMPTS_OPTION }).map((e) => e.id)).toEqual(['1', '2'])
+    expect(
+      filterPromptEntries(entries, { keyword: '', tags: ['海报'], source: ALL_PROMPTS_OPTION }).map((e) => e.id),
+    ).toEqual(['2'])
+    expect(
+      filterPromptEntries(entries, { keyword: '', tags: ['宠物', '海报'], source: ALL_PROMPTS_OPTION }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['1', '2'])
   })
 
   it('来源是源名精确匹配；all / 空串不筛', () => {
@@ -287,18 +338,20 @@ describe('filterPromptEntries', () => {
   })
 
   it('三个条件叠加', () => {
-    expect(
-      filterPromptEntries(entries, { keyword: 'cat', tags: ['写实'], source: '源 A' }).map((e) => e.id)
-    ).toEqual(['1'])
+    expect(filterPromptEntries(entries, { keyword: 'cat', tags: ['写实'], source: '源 A' }).map((e) => e.id)).toEqual([
+      '1',
+    ])
     expect(filterPromptEntries(entries, { keyword: 'cat', tags: ['海报'], source: '源 A' })).toHaveLength(0)
   })
 })
 
 describe('collectPromptTags', () => {
   it('去重且按首次出现顺序（翻页不会重排下拉）', () => {
-    expect(
-      collectPromptTags([{ tags: ['b', 'a'] }, { tags: ['a', 'c'] }, { tags: ['', 'b'] }, { tags: [] }])
-    ).toEqual(['b', 'a', 'c'])
+    expect(collectPromptTags([{ tags: ['b', 'a'] }, { tags: ['a', 'c'] }, { tags: ['', 'b'] }, { tags: [] }])).toEqual([
+      'b',
+      'a',
+      'c',
+    ])
   })
 })
 
@@ -354,12 +407,17 @@ describe('parsePromptQuery', () => {
 describe('promptEntryImages（详情弹窗与「用作参考图」共用的唯一算法）', () => {
   it('封面在最前，其余按原顺序；封面重复出现在参考图里会被去掉', () => {
     expect(
-      promptEntryImages({ coverUrl: 'https://a/c.png', referenceImageUrls: ['https://a/c.png', 'https://a/2.png', 'https://a/1.png'] })
+      promptEntryImages({
+        coverUrl: 'https://a/c.png',
+        referenceImageUrls: ['https://a/c.png', 'https://a/2.png', 'https://a/1.png'],
+      }),
     ).toEqual(['https://a/c.png', 'https://a/2.png', 'https://a/1.png'])
   })
 
   it('没有封面时只列参考图；空串一律丢掉', () => {
-    expect(promptEntryImages({ coverUrl: '', referenceImageUrls: ['', 'https://a/1.png', '  '] })).toEqual(['https://a/1.png'])
+    expect(promptEntryImages({ coverUrl: '', referenceImageUrls: ['', 'https://a/1.png', '  '] })).toEqual([
+      'https://a/1.png',
+    ])
     expect(promptEntryImages({ coverUrl: '', referenceImageUrls: [] })).toEqual([])
   })
 
@@ -371,10 +429,12 @@ describe('promptEntryImages（详情弹窗与「用作参考图」共用的唯�
   })
 
   it('重复 URL 只留第一次出现的位置（保序）', () => {
-    expect(promptEntryImages({ coverUrl: '', referenceImageUrls: ['https://a/1.png', 'https://a/1.png', 'https://a/2.png'] })).toEqual([
-      'https://a/1.png',
-      'https://a/2.png',
-    ])
+    expect(
+      promptEntryImages({
+        coverUrl: '',
+        referenceImageUrls: ['https://a/1.png', 'https://a/1.png', 'https://a/2.png'],
+      }),
+    ).toEqual(['https://a/1.png', 'https://a/2.png'])
   })
 })
 
@@ -392,7 +452,13 @@ describe('isSafeRemoteImageUrl（远程示例图的安全闸）', () => {
   })
 
   it('只允许 http/https：其它协议一律拒绝', () => {
-    for (const url of ['ftp://example.com/x.png', 'file:///etc/passwd', 'data:image/png;base64,AAAA', 'javascript:alert(1)', 'ws://example.com/x']) {
+    for (const url of [
+      'ftp://example.com/x.png',
+      'file:///etc/passwd',
+      'data:image/png;base64,AAAA',
+      'javascript:alert(1)',
+      'ws://example.com/x',
+    ]) {
       expect(isSafeRemoteImageUrl(url), url).toBe(false)
     }
   })
@@ -450,7 +516,15 @@ describe('isSafeRemoteImageUrl（远程示例图的安全闸）', () => {
   })
 
   it('拒绝内网域名后缀与畸形输入', () => {
-    for (const url of ['http://a.local/x.png', 'http://svc.internal/x.png', 'http://x.localhost/x.png', 'http://db.corp/x.png', 'not a url', '', 'http://']) {
+    for (const url of [
+      'http://a.local/x.png',
+      'http://svc.internal/x.png',
+      'http://x.localhost/x.png',
+      'http://db.corp/x.png',
+      'not a url',
+      '',
+      'http://',
+    ]) {
       expect(isSafeRemoteImageUrl(url), url).toBe(false)
     }
   })

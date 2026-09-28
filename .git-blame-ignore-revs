@@ -1,0 +1,4 @@
+# Prettier 全仓格式化（无语义改动）。
+# 用法：git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub / GitLab 会自动识别本文件。
+685907b59ac792ee0e07956cfb5fe34d9e23e03c

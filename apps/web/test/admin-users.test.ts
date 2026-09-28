@@ -29,8 +29,10 @@ function sessionFor(role: 'user' | 'admin' | 'root', email: string): string {
   return store.createSession(u.id, 60_000)
 }
 
-const ledgerSum = (): number => (store.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
-const balance = (): number => (store.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
+const ledgerSum = (): number =>
+  (store.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
+const balance = (): number =>
+  (store.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-admin-users-'))
@@ -164,7 +166,16 @@ describe('禁用 / 启用', () => {
     const u = store.createUser({ email: 'ban2@b.co', passwordHash: 'h', name: '被封2', credits: 17 })
     // 造一轮「排队中」的生成，制造「禁用会不会顺手退额」的可观测面
     const tp = store.createTopic(u.id, 't')
-    store.createMessage({ topicId: tp.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: 3, enhancePrompt: false, referenceIds: [] })
+    store.createMessage({
+      topicId: tp.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'f',
+      size: '1:1',
+      requestedCount: 3,
+      enhancePrompt: false,
+      referenceIds: [],
+    })
     expect((await statusPOST(req(t, { userId: u.id, status: 'disabled' }))).status).toBe(200)
     expect(store.getUserById(u.id)!.credits).toBe(17)
     expect(ledgerSum()).toBe(balance())
@@ -172,7 +183,12 @@ describe('禁用 / 启用', () => {
 
   it('启用后可以重新登录；启用本身不改额度', async () => {
     const t = sessionFor('admin', 'a11@b.co')
-    const u = store.createUser({ email: 'unban@b.co', passwordHash: hashPassword('pw-123456'), name: '解封', credits: 4 })
+    const u = store.createUser({
+      email: 'unban@b.co',
+      passwordHash: hashPassword('pw-123456'),
+      name: '解封',
+      credits: 4,
+    })
     await statusPOST(req(t, { userId: u.id, status: 'disabled' }))
     expect(() => login(store, 'unban@b.co', 'pw-123456')).toThrow(/禁用/)
     expect((await statusPOST(req(t, { userId: u.id, status: 'active' }))).status).toBe(200)

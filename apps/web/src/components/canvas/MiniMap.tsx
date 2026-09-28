@@ -53,7 +53,7 @@ function MiniMap({ size, onJump }: Props) {
           height: Math.max(r.h * fit.scale, MINIMAP_MIN_NODE),
         }
       }),
-    [rects, bounds, fit]
+    [rects, bounds, fit],
   )
 
   const draggingRef = useRef<number | null>(null)
@@ -113,7 +113,14 @@ function MiniMap({ size, onJump }: Props) {
         <div
           key={i}
           className="absolute rounded-[1px]"
-          style={{ left: s.left, top: s.top, width: s.width, height: s.height, background: 'var(--muted-strong)', opacity: 0.8 }}
+          style={{
+            left: s.left,
+            top: s.top,
+            width: s.width,
+            height: s.height,
+            background: 'var(--muted-strong)',
+            opacity: 0.8,
+          }}
         />
       ))}
       {/* 视口矩形：只作指示，不吃指针事件 */}

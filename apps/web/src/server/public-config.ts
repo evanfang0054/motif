@@ -41,7 +41,12 @@ export function readPublicConfig(store: MotifStore, env: Record<string, string |
   return {
     inviteRewardEnabled: resolveBool(store, env, 'INVITE_REWARD_ENABLED', false),
     inviteRewardCredits: resolvePositiveInt(store, env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
-    inviteRewardMaxInvitees: resolvePositiveInt(store, env, 'INVITE_REWARD_MAX_INVITEES', DEFAULT_INVITE_REWARD_MAX_INVITEES),
+    inviteRewardMaxInvitees: resolvePositiveInt(
+      store,
+      env,
+      'INVITE_REWARD_MAX_INVITEES',
+      DEFAULT_INVITE_REWARD_MAX_INVITEES,
+    ),
     signupBonusCredits: resolvePositiveInt(store, env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS),
     llmEnhanceEnabled: resolveBool(store, env, 'LLM_ENHANCE_ENABLED', false),
     // ⚠️ 兜底值必须与 SETTING_DEFS 的 defaultHint、以及服务端两处 `resolveBool` 的兜底一致：

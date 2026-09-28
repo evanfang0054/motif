@@ -276,8 +276,13 @@ export function applySchema(db: Database): void {
   // 仅当这张表是本次新建时才补期初结存（判据见函数顶部）。老库用户的额度是历史累积的、没有对应流水，
   // 补一条 opening_balance 让不变式在升级库上立刻成立；表已存在则一律不动（缺口如实保留，可被巡检发现）。
   if (!ledgerExisted) {
-    const holders = db.prepare('SELECT id, credits FROM users WHERE credits <> 0').all() as Array<{ id: string; credits: number }>
-    const insert = db.prepare('INSERT INTO credit_ledger (user_id, delta, source, ref_id, note, created_at) VALUES (?, ?, ?, NULL, ?, ?)')
+    const holders = db.prepare('SELECT id, credits FROM users WHERE credits <> 0').all() as Array<{
+      id: string
+      credits: number
+    }>
+    const insert = db.prepare(
+      'INSERT INTO credit_ledger (user_id, delta, source, ref_id, note, created_at) VALUES (?, ?, ?, NULL, ?, ?)',
+    )
     const t = new Date().toISOString()
     const tx = db.transaction(() => {
       for (const u of holders) insert.run(u.id, u.credits, 'opening_balance', '升级时的期初结存', t)

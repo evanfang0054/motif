@@ -46,8 +46,16 @@ async function enqueue(count: number, credits = 8) {
 function seedGenerated(messageId: string, userId: string, topicId: string, n: number) {
   for (let k = 0; k < n; k++) {
     store.insertCanvasImage({
-      topicId, userId, messageId, origin: 'generated',
-      name: `图片 ${k + 1}`, imageKey: `pre-${k}`, mimeType: 'image/png', bytes: 4, width: 1, height: 1,
+      topicId,
+      userId,
+      messageId,
+      origin: 'generated',
+      name: `图片 ${k + 1}`,
+      imageKey: `pre-${k}`,
+      mimeType: 'image/png',
+      bytes: 4,
+      width: 1,
+      height: 1,
     })
   }
 }
@@ -69,9 +77,7 @@ function claim(messageId: string): void {
 
 /** 把消息租约改成已过期（模拟执行者消失，供回收路径兜底） */
 function expireLease(messageId: string): void {
-  store.db
-    .prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?')
-    .run('2000-01-01T00:00:00.000Z', messageId)
+  store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', messageId)
 }
 
 /**
@@ -192,7 +198,12 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     // 请求 auto（1:1 占位），实际出横图 2:1 —— 平滑过渡到 240×120，坐标钉在计划槽
     const user = store.createUser({ email: 'wide@b.co', passwordHash: 'h', name: 'w', credits: 4 })
     const res = await enqueueGeneration(store, countingProvider([]), dir, user, {
-      prompt: '横图', count: 2, size: 'auto', enhance: false, topicId: null, referenceCanvasImageIds: [],
+      prompt: '横图',
+      count: 2,
+      size: 'auto',
+      enhance: false,
+      topicId: null,
+      referenceCanvasImageIds: [],
     })
     const plan = store.getMessage(res.messageId)!.slotPlan
     claim(res.messageId)
@@ -216,8 +227,16 @@ describe('槽位计划落位（#88：出图与骨架同坐标，出图就地填�
     claim(messageId)
     const draggedRect = { x: plan[0].x, y: plan[0].y, w: plan[0].w, h: plan[0].h }
     const dragged = store.insertCanvasImage({
-      topicId, userId: user.id, messageId: null, origin: 'generated', name: '手拖图', imageKey: 'drag',
-      mimeType: 'image/png', bytes: 1, width: 1024, height: 1024,
+      topicId,
+      userId: user.id,
+      messageId: null,
+      origin: 'generated',
+      name: '手拖图',
+      imageKey: 'drag',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
       placement: { x: draggedRect.x, y: draggedRect.y, width: draggedRect.w, height: draggedRect.h },
     })
     const full: ImageProvider = {
@@ -310,7 +329,7 @@ describe('血缘落位（新图挨着参考图，不从视野左上角另起一�
     user: Parameters<typeof enqueueGeneration>[3],
     topicId: string,
     count: number,
-    referenceCanvasImageIds: string[]
+    referenceCanvasImageIds: string[],
   ) =>
     enqueueGeneration(store, countingProvider([]), dir, user, {
       prompt: '以它为参考',
@@ -392,7 +411,9 @@ describe('血缘落位（新图挨着参考图，不从视野左上角另起一�
     // 「0 右缘 + 列间距」这种与它无关的位置，比不锚定更糟。
     const { user, topicId, refId } = seedReference('legacy@b.co')
     store.db
-      .prepare("UPDATE canvas_images SET canvas_x = 0, canvas_y = 0, canvas_w = 0, canvas_h = 0, updated_at = '' WHERE id = ?")
+      .prepare(
+        "UPDATE canvas_images SET canvas_x = 0, canvas_y = 0, canvas_w = 0, canvas_h = 0, updated_at = '' WHERE id = ?",
+      )
       .run(refId)
     const res = await enqueueWithRefs(user, topicId, 1, [refId])
     expect(store.getMessage(res.messageId)!.slotPlan[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })

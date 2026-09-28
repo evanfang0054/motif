@@ -23,18 +23,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const raw = await req.text() // 单次读取；失败审计降噪要用同一份 raw 提取订单号
   try {
     const gateway = createPaymentGateway('stripe', resolveConfigValues(store, process.env))
-    const parsed =
-      gateway.parseNotifyRaw
-        ? await gateway.parseNotifyRaw(raw, req.headers.get('stripe-signature') ?? '')
-        : await gateway.parseNotify(req)
+    const parsed = gateway.parseNotifyRaw
+      ? await gateway.parseNotifyRaw(raw, req.headers.get('stripe-signature') ?? '')
+      : await gateway.parseNotify(req)
     if (parsed === null) return NextResponse.json({ received: true }) // 非入账事件（含未 paid）
     const result = creditPaidOrder(store, parsed.orderId, parsed.amountTotal)
     if (result === 'not_found') {
-      writeAudit({ actorId: 'system', action: 'billing.notify_rejected', targetType: 'order', targetId: parsed.orderId, detail: { channel: 'stripe', reason: 'order_not_found', ip } })
+      writeAudit({
+        actorId: 'system',
+        action: 'billing.notify_rejected',
+        targetType: 'order',
+        targetId: parsed.orderId,
+        detail: { channel: 'stripe', reason: 'order_not_found', ip },
+      })
       return NextResponse.json({ error: 'order not found' }, { status: 400 })
     }
     if (result === 'mismatch') {
-      writeAudit({ actorId: 'system', action: 'billing.notify_rejected', targetType: 'order', targetId: parsed.orderId, detail: { channel: 'stripe', reason: 'amount_mismatch', ip } })
+      writeAudit({
+        actorId: 'system',
+        action: 'billing.notify_rejected',
+        targetType: 'order',
+        targetId: parsed.orderId,
+        detail: { channel: 'stripe', reason: 'amount_mismatch', ip },
+      })
       return NextResponse.json({ error: 'amount mismatch' }, { status: 400 })
     }
     return NextResponse.json({ received: true })
@@ -46,13 +57,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // 只有命中真实 pending 订单的失败才写审计（疑似针对性伪造），其余扫描流量只留日志
     let suspectOrderId: string | undefined
     try {
-      suspectOrderId = (JSON.parse(raw) as { data?: { object?: { metadata?: { orderId?: string } } } })?.data?.object?.metadata?.orderId
+      suspectOrderId = (JSON.parse(raw) as { data?: { object?: { metadata?: { orderId?: string } } } })?.data?.object
+        ?.metadata?.orderId
     } catch {
       /* 非 JSON body：保持 undefined */
     }
     const suspect = suspectOrderId ? store.getOrder(suspectOrderId) : undefined
     if (suspect?.status === 'pending') {
-      writeAudit({ actorId: 'system', action: 'billing.notify_rejected', targetType: 'order', targetId: suspectOrderId, detail: { channel: 'stripe', reason, ip } })
+      writeAudit({
+        actorId: 'system',
+        action: 'billing.notify_rejected',
+        targetType: 'order',
+        targetId: suspectOrderId,
+        detail: { channel: 'stripe', reason, ip },
+      })
     } else {
       console.warn(`[billing] stripe webhook 验签失败已忽略 ip=${ip} reason=${reason}`)
     }

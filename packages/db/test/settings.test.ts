@@ -53,7 +53,7 @@ describe('settings 存取层', () => {
       store.setSettings([
         { key: 'B', value: '2' },
         { key: 'C', value: null as unknown as string },
-      ])
+      ]),
     ).toThrow()
     expect(store.getSetting('B')).toBeNull()
     expect(store.getSetting('A')).toBe('1')

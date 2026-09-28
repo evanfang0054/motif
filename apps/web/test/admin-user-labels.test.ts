@@ -77,7 +77,10 @@ describe('GET /api/admin/audit：附带操作者摘要 + 三路筛选', () => {
     store.insertAudit({ actorId: other.id, action: 'user.disable' })
     const t = sessionFor('root', 'r2@b.co')
 
-    const byEmail = (await (await auditGET(req(t, '/api/admin/audit', '?actorId=ops@b.co'))).json()) as { items: Array<{ actorId: string }>; total: number }
+    const byEmail = (await (await auditGET(req(t, '/api/admin/audit', '?actorId=ops@b.co'))).json()) as {
+      items: Array<{ actorId: string }>
+      total: number
+    }
     expect(byEmail.total).toBe(1)
     expect(byEmail.items[0].actorId).toBe(actor.id)
   })
@@ -87,8 +90,12 @@ describe('GET /api/admin/audit：附带操作者摘要 + 三路筛选', () => {
     store.insertAudit({ actorId: actor.id, action: 'credit.adjust' })
     const t = sessionFor('root', 'r3@b.co')
 
-    expect(((await (await auditGET(req(t, '/api/admin/audit', '?actorId=运维小王'))).json()) as { total: number }).total).toBe(1)
-    expect(((await (await auditGET(req(t, '/api/admin/audit', `?actorId=${actor.id}`))).json()) as { total: number }).total).toBe(1)
+    expect(
+      ((await (await auditGET(req(t, '/api/admin/audit', '?actorId=运维小王'))).json()) as { total: number }).total,
+    ).toBe(1)
+    expect(
+      ((await (await auditGET(req(t, '/api/admin/audit', `?actorId=${actor.id}`))).json()) as { total: number }).total,
+    ).toBe(1)
   })
 
   it('筛选词匹配不到任何人时返回 0 条（不能退化成「不过滤」）', async () => {
@@ -96,7 +103,11 @@ describe('GET /api/admin/audit：附带操作者摘要 + 三路筛选', () => {
     store.insertAudit({ actorId: actor.id, action: 'credit.adjust' })
     const t = sessionFor('root', 'r4@b.co')
 
-    const body = (await (await auditGET(req(t, '/api/admin/audit', '?actorId=查无此人'))).json()) as { items: unknown[]; total: number; users: UserBrief[] }
+    const body = (await (await auditGET(req(t, '/api/admin/audit', '?actorId=查无此人'))).json()) as {
+      items: unknown[]
+      total: number
+      users: UserBrief[]
+    }
     expect(body.total).toBe(0)
     expect(body.items).toHaveLength(0)
     expect(body.users).toEqual([])
@@ -133,15 +144,23 @@ describe('GET /api/admin/logs：附带用户摘要 + 三路筛选', () => {
     seedMessage(other.id, t2.id, '别人的提示词')
     const admin = sessionFor('admin', 'a@b.co')
 
-    const all = (await (await logsGET(req(admin, '/api/admin/logs'))).json()) as { items: AdminLogRow[]; users: UserBrief[] }
+    const all = (await (await logsGET(req(admin, '/api/admin/logs'))).json()) as {
+      items: AdminLogRow[]
+      users: UserBrief[]
+    }
     expect(all.users.map((x) => x.id).sort()).toEqual([u.id, other.id].sort())
     expect(userDisplayLabel(userBriefMap(all.users).get(u.id), u.id)).toBe('出图的人（gen@b.co）')
 
-    const byName = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=出图的人'))).json()) as { items: AdminLogRow[]; total: number }
+    const byName = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=出图的人'))).json()) as {
+      items: AdminLogRow[]
+      total: number
+    }
     expect(byName.total).toBe(1)
     expect(byName.items[0].prompt).toBe('我要的提示词')
 
-    const byEmail = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=other2@b.co'))).json()) as { total: number }
+    const byEmail = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=other2@b.co'))).json()) as {
+      total: number
+    }
     expect(byEmail.total).toBe(1)
 
     const byId = (await (await logsGET(req(admin, '/api/admin/logs', `?userId=${u.id}`))).json()) as { total: number }
@@ -154,7 +173,10 @@ describe('GET /api/admin/logs：附带用户摘要 + 三路筛选', () => {
     seedMessage(u.id, t1.id, 'x')
     const admin = sessionFor('admin', 'a2@b.co')
 
-    const body = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=查无此人'))).json()) as { items: unknown[]; total: number }
+    const body = (await (await logsGET(req(admin, '/api/admin/logs', '?userId=查无此人'))).json()) as {
+      items: unknown[]
+      total: number
+    }
     expect(body.total).toBe(0)
     expect(body.items).toHaveLength(0)
   })
@@ -169,7 +191,10 @@ describe('GET /api/admin/feedback：提交用户与处理人都带摘要', () =>
     store.resolveFeedback(row.id, handler.id)
     const admin = sessionFor('admin', 'a3@b.co')
 
-    const body = (await (await feedbackGET(req(admin, '/api/admin/feedback'))).json()) as { items: FeedbackRow[]; users: UserBrief[] }
+    const body = (await (await feedbackGET(req(admin, '/api/admin/feedback'))).json()) as {
+      items: FeedbackRow[]
+      users: UserBrief[]
+    }
     const map = userBriefMap(body.users)
     expect(map.get(author.id)?.email).toBe('author@b.co')
     expect(map.get(handler.id)?.email).toBe('handler@b.co')
@@ -204,7 +229,9 @@ describe('GET /api/admin/orders：筛选词同样按人解析', () => {
     expect(all.total).toBe(3)
 
     for (const term of ['buyer@b.co', '买家甲', buyer.id]) {
-      const body = (await (await ordersGET(req(admin, '/api/admin/orders', `?userId=${encodeURIComponent(term)}`))).json()) as { total: number }
+      const body = (await (
+        await ordersGET(req(admin, '/api/admin/orders', `?userId=${encodeURIComponent(term)}`))
+      ).json()) as { total: number }
       expect(body.total, `按 ${term} 筛选`).toBe(1)
     }
   })
@@ -214,7 +241,10 @@ describe('GET /api/admin/orders：筛选词同样按人解析', () => {
     store.createOrder(buyer.id, pkg)
     const admin = sessionFor('admin', 'a6@b.co')
 
-    const body = (await (await ordersGET(req(admin, '/api/admin/orders', '?userId=查无此人'))).json()) as { items: unknown[]; total: number }
+    const body = (await (await ordersGET(req(admin, '/api/admin/orders', '?userId=查无此人'))).json()) as {
+      items: unknown[]
+      total: number
+    }
     expect(body.total).toBe(0)
     expect(body.items).toHaveLength(0)
   })

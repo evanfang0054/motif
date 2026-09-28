@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { clampScale, clampToolbarCenter, fitView, panBy, sameViewport, screenToWorld, toolbarAnchor, toolbarBand, worldToScreen, zoomAt, zoomStepsToFactor, MAX_SCALE, MIN_SCALE, TOOLBAR_DROP, TOOLBAR_EDGE_GAP, TOOLBAR_LIFT, ZOOM_STEP } from '@/lib/canvas/viewport'
+import {
+  clampScale,
+  clampToolbarCenter,
+  fitView,
+  panBy,
+  sameViewport,
+  screenToWorld,
+  toolbarAnchor,
+  toolbarBand,
+  worldToScreen,
+  zoomAt,
+  zoomStepsToFactor,
+  MAX_SCALE,
+  MIN_SCALE,
+  TOOLBAR_DROP,
+  TOOLBAR_EDGE_GAP,
+  TOOLBAR_LIFT,
+  ZOOM_STEP,
+} from '@/lib/canvas/viewport'
 import { gridStyle } from '@/lib/canvas/grid'
 
 describe('sameViewport：视口逐字段相等（store 值级短路的判据）', () => {
@@ -157,8 +175,8 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
           { x: 100, y: 230, w: 240, h: 240 },
           { x: 340, y: 200, w: 240, h: 240 },
         ],
-        { x: 0, y: 0, k: 1 }
-      )
+        { x: 0, y: 0, k: 1 },
+      ),
     ).toEqual({ left: 340, top: 200 - TOOLBAR_LIFT })
   })
 
@@ -193,7 +211,7 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
         { x: 100, y: 0, w: 240, h: 240 },
         { x: 340, y: 0, w: 240, h: 300 },
       ],
-      { x: 0, y: 0, k: 1 }
+      { x: 0, y: 0, k: 1 },
     )!
     expect(a.left).toBe(340)
     expect(a.top).toBe(300 + TOOLBAR_DROP) // 底边取最高的那张（h=300）

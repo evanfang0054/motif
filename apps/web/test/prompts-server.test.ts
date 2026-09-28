@@ -5,7 +5,13 @@ import { join } from 'node:path'
 import { MotifStore } from '@motif/db'
 import { BUILT_IN_PROMPT_ENTRIES, BUILT_IN_PROMPT_SOURCE } from '@/lib/prompt-builtins'
 import { BUILT_IN_PROMPT_SOURCES, REMOTE_PROMPT_SOURCES, isFetchableSource } from '@/lib/prompt-sources'
-import { attachPromptImage, isAttachableImage, isSafePublicAssetPath, loadPromptLibrary, refreshPromptSources } from '@/server/prompts'
+import {
+  attachPromptImage,
+  isAttachableImage,
+  isSafePublicAssetPath,
+  loadPromptLibrary,
+  refreshPromptSources,
+} from '@/server/prompts'
 import { resetRateLimiter } from '@/server/rate-limit'
 import { ServiceError } from '@/server/services'
 import { existsSync, readdirSync } from 'node:fs'
@@ -107,7 +113,9 @@ describe('首次打开不阻塞', () => {
     expect(Object.keys(r).sort()).toEqual(['items', 'pending', 'sources', 'tags', 'total'])
     // 失败信息不是被丢弃，只是**换了个面**：管理端仍能逐源读到原文
     const admin = await refreshPromptSources(store, undefined, impl)
-    expect(admin.sources.filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id).every((s) => s.lastError === 'fetch failed')).toBe(true)
+    expect(
+      admin.sources.filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id).every((s) => s.lastError === 'fetch failed'),
+    ).toBe(true)
   })
 })
 
@@ -117,7 +125,11 @@ describe('抓取与落库', () => {
     const r = await refreshPromptSources(store, undefined, impl)
     expect(r.summary.successCount).toBe(REMOTE)
     expect(r.summary.total).toBe(REMOTE * 3)
-    expect(r.sources.filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id).every((s) => s.entryCount === 3 && s.lastError === '' && s.lastSuccessAt)).toBe(true)
+    expect(
+      r.sources
+        .filter((s) => s.id !== BUILT_IN_PROMPT_SOURCE.id)
+        .every((s) => s.entryCount === 3 && s.lastError === '' && s.lastSuccessAt),
+    ).toBe(true)
   })
 
   it('失败时旧条目不变、last_success_at 不变，只记原因', async () => {
@@ -288,7 +300,11 @@ describe('检索结果组装', () => {
     const all = await loadPromptLibrary(store, { ...query, source: REMOTE_PROMPT_SOURCES[0].name }, impl)
     expect(all.sources.map((s) => s.id)).toEqual([REMOTE_PROMPT_SOURCES[0].id, BUILT_IN_PROMPT_SOURCE.id])
 
-    const tagged = await loadPromptLibrary(store, { ...query, source: REMOTE_PROMPT_SOURCES[0].name, tags: ['标签0'] }, impl)
+    const tagged = await loadPromptLibrary(
+      store,
+      { ...query, source: REMOTE_PROMPT_SOURCES[0].name, tags: ['标签0'] },
+      impl,
+    )
     expect(tagged.total).toBe(2)
     // 选了「标签0」之后，「标签1」仍在面上（否则用户取消不掉）
     expect(tagged.tags).toEqual(['标签0', '标签1'])
@@ -296,7 +312,9 @@ describe('检索结果组装', () => {
 
   it('分页与总数一致；越界页返回空数组', async () => {
     const { impl } = fakeFetch((url) => (url.includes(REMOTE_PROMPT_SOURCES[0].id) ? payloadFor('a', 25) : []))
-    const ok = fakeFetch((url) => (url.includes(REMOTE_PROMPT_SOURCES[0].id) ? payloadFor('a', 25) : payloadFor('b', 0)))
+    const ok = fakeFetch((url) =>
+      url.includes(REMOTE_PROMPT_SOURCES[0].id) ? payloadFor('a', 25) : payloadFor('b', 0),
+    )
     await refreshPromptSources(store, undefined, ok.impl)
 
     const scoped = { ...query, source: REMOTE_PROMPT_SOURCES[0].name }
@@ -317,9 +335,14 @@ describe('源清单以代码为真相', () => {
     ensurePromptSources(store)
     const statuses = listPromptSourceStatuses(store)
     expect(statuses).toHaveLength(ALL)
-    expect(statuses.filter(isFetchableSource).every((s) => s.entryCount === 0 && s.fetchedAt === null && s.lastError === '')).toBe(true)
+    expect(
+      statuses.filter(isFetchableSource).every((s) => s.entryCount === 0 && s.fetchedAt === null && s.lastError === ''),
+    ).toBe(true)
     // 「系统自带」是本地播种的：条目数 8、从未「抓取」过，但状态列不是空的
-    expect(statuses.find((s) => s.id === BUILT_IN_PROMPT_SOURCE.id)).toMatchObject({ entryCount: BUILTIN, lastError: '' })
+    expect(statuses.find((s) => s.id === BUILT_IN_PROMPT_SOURCE.id)).toMatchObject({
+      entryCount: BUILTIN,
+      lastError: '',
+    })
   })
 
   it('清单改名后状态列保留（抓取成果不因改代码而丢）', async () => {
@@ -383,11 +406,30 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 
 /** 造一条带示例图的提示词（直接落库，跳过抓取） */
 function seedEntryWithImages(sourceId: string, entryId: string, images: string[]) {
-  store.seedPromptSources([{ id: sourceId, name: `源 ${sourceId}`, url: `https://example.com/${sourceId}.json`, homepage: 'https://example.com' }])
+  store.seedPromptSources([
+    {
+      id: sourceId,
+      name: `源 ${sourceId}`,
+      url: `https://example.com/${sourceId}.json`,
+      homepage: 'https://example.com',
+    },
+  ])
   store.replacePromptEntries(
     sourceId,
-    [{ id: entryId, title: '苹果风格海报', prompt: '正文', description: '', coverUrl: images[0] ?? '', referenceImageUrls: images.slice(1), tags: [], author: '', sourceUrl: '' }],
-    { signature: 's', now: 'T' }
+    [
+      {
+        id: entryId,
+        title: '苹果风格海报',
+        prompt: '正文',
+        description: '',
+        coverUrl: images[0] ?? '',
+        referenceImageUrls: images.slice(1),
+        tags: [],
+        author: '',
+        sourceUrl: '',
+      },
+    ],
+    { signature: 's', now: 'T' },
   )
 }
 
@@ -408,7 +450,13 @@ function imageFetch(handler: (url: string, init?: RequestInit) => unknown) {
 const fetchableSources = () => store.listPromptSources().filter(isFetchableSource)
 
 const pngResponse = (bytes: Buffer = PNG) =>
-  ({ ok: true, status: 200, headers: new Headers({ 'content-length': String(bytes.length) }), body: null, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) }) as unknown as Response
+  ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-length': String(bytes.length) }),
+    body: null,
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
+  }) as unknown as Response
 
 /** 流式响应：**故意不带 content-length**，用来验「不能只信声明值」的累计截断 */
 const streamResponse = (chunks: Buffer[], headers = new Headers()) =>
@@ -437,7 +485,13 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const before = store.listPromptEntries().length
 
     const { impl, calls } = imageFetch(() => pngResponse())
-    const { reference } = await attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)
+    const { reference } = await attachPromptImage(
+      store,
+      dir,
+      user,
+      { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 },
+      impl,
+    )
 
     expect(reference.id.startsWith('refu_')).toBe(true)
     expect(reference.name).toBe('苹果风格海报')
@@ -453,7 +507,11 @@ describe('把示例图带进表单（attachPromptImage）', () => {
   it('抓的是「服务端库里那条 URL」，客户端只说第几张（index 落在正确的图）', async () => {
     const user = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' })
     const topicId = newTopic(user.id)
-    seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png', 'https://cdn.example.com/2.png', 'https://cdn.example.com/3.png'])
+    seedEntryWithImages('src-a', 'e1', [
+      'https://cdn.example.com/cover.png',
+      'https://cdn.example.com/2.png',
+      'https://cdn.example.com/3.png',
+    ])
     const { impl, calls } = imageFetch(() => pngResponse())
     await attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 2 }, impl)
     expect(calls[0].url).toBe('https://cdn.example.com/3.png')
@@ -464,7 +522,9 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['http://127.0.0.1:3100/api/auth/me'])
     const { impl, calls } = imageFetch(() => pngResponse())
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/地址不可用/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/地址不可用/)
     expect(calls).toHaveLength(0)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })
@@ -474,9 +534,17 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl, calls } = imageFetch(
-      () => ({ ok: false, status: 302, headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }), body: null }) as unknown as Response
+      () =>
+        ({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }),
+          body: null,
+        }) as unknown as Response,
     )
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/地址不可用/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/地址不可用/)
     expect(calls).toHaveLength(1)
   })
 
@@ -486,10 +554,21 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl, calls } = imageFetch((url) =>
       url === 'https://cdn.example.com/cover.png'
-        ? ({ ok: false, status: 301, headers: new Headers({ location: 'https://cdn2.example.com/real.png' }), body: null } as unknown as Response)
-        : pngResponse()
+        ? ({
+            ok: false,
+            status: 301,
+            headers: new Headers({ location: 'https://cdn2.example.com/real.png' }),
+            body: null,
+          } as unknown as Response)
+        : pngResponse(),
     )
-    const { reference } = await attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)
+    const { reference } = await attachPromptImage(
+      store,
+      dir,
+      user,
+      { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 },
+      impl,
+    )
     expect(reference.id.startsWith('refu_')).toBe(true)
     expect(calls.map((c) => c.url)).toEqual(['https://cdn.example.com/cover.png', 'https://cdn2.example.com/real.png'])
   })
@@ -499,9 +578,17 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl, calls } = imageFetch(
-      () => ({ ok: false, status: 302, headers: new Headers({ location: 'https://cdn.example.com/next.png' }), body: null }) as unknown as Response
+      () =>
+        ({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: 'https://cdn.example.com/next.png' }),
+          body: null,
+        }) as unknown as Response,
     )
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/跳转次数过多/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/跳转次数过多/)
     expect(calls).toHaveLength(3) // 首跳 + 2 次跟随
   })
 
@@ -510,9 +597,12 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(
-      () => ({ ok: false, status: 302, headers: new Headers({ location: 'http://[' }), body: null }) as unknown as Response
+      () =>
+        ({ ok: false, status: 302, headers: new Headers({ location: 'http://[' }), body: null }) as unknown as Response,
     )
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/跳转不合法/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/跳转不合法/)
   })
 
   it('没有 content-length 且流式累计超 10MB ⇒ 413（声明值可以缺失或撒谎）', async () => {
@@ -520,7 +610,9 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(() => streamResponse([Buffer.alloc(6 * 1024 * 1024), Buffer.alloc(6 * 1024 * 1024)]))
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/超过 10MB/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/超过 10MB/)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })
 
@@ -529,7 +621,13 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(() => streamResponse([PNG.subarray(0, 10), PNG.subarray(10)]))
-    const { reference } = await attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)
+    const { reference } = await attachPromptImage(
+      store,
+      dir,
+      user,
+      { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 },
+      impl,
+    )
     expect(reference.id.startsWith('refu_')).toBe(true)
   })
 
@@ -537,8 +635,12 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const user = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' })
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
-    const { impl } = imageFetch(() => ({ ok: false, status: 503, headers: new Headers(), body: null }) as unknown as Response)
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/HTTP 503/)
+    const { impl } = imageFetch(
+      () => ({ ok: false, status: 503, headers: new Headers(), body: null }) as unknown as Response,
+    )
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/HTTP 503/)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })
 
@@ -547,7 +649,9 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(() => pngResponse(Buffer.from('<!doctype html><html>…')))
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/不是可用的图片格式/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/不是可用的图片格式/)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })
 
@@ -556,9 +660,18 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(
-      () => ({ ok: true, status: 200, headers: new Headers({ 'content-length': String(11 * 1024 * 1024) }), body: null, arrayBuffer: async () => new ArrayBuffer(0) }) as unknown as Response
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-length': String(11 * 1024 * 1024) }),
+          body: null,
+          arrayBuffer: async () => new ArrayBuffer(0),
+        }) as unknown as Response,
     )
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/超过 10MB/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/超过 10MB/)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })
 
@@ -571,7 +684,9 @@ describe('把示例图带进表单（attachPromptImage）', () => {
       e.name = 'TimeoutError'
       return e
     })
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/抓取超时/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/抓取超时/)
   })
 
   it('任务不属于当前用户 ⇒ 404，且不发请求', async () => {
@@ -580,7 +695,9 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(owner.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl, calls } = imageFetch(() => pngResponse())
-    await expect(attachPromptImage(store, dir, other, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)).rejects.toThrow(/任务不存在/)
+    await expect(
+      attachPromptImage(store, dir, other, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl),
+    ).rejects.toThrow(/任务不存在/)
     expect(calls).toHaveLength(0)
   })
 
@@ -593,12 +710,34 @@ describe('把示例图带进表单（attachPromptImage）', () => {
       { id: 'src-a', name: '源 A', url: 'https://example.com/a.json', homepage: 'https://example.com' },
       { id: 'src-b', name: '源 B', url: 'https://example.com/b.json', homepage: 'https://example.com' },
     ])
-    store.replacePromptEntries('src-b', [{ id: 'e2', title: '无图', prompt: 'p', description: '', coverUrl: '', referenceImageUrls: [], tags: [], author: '', sourceUrl: '' }], { signature: 's', now: 'T' })
+    store.replacePromptEntries(
+      'src-b',
+      [
+        {
+          id: 'e2',
+          title: '无图',
+          prompt: 'p',
+          description: '',
+          coverUrl: '',
+          referenceImageUrls: [],
+          tags: [],
+          author: '',
+          sourceUrl: '',
+        },
+      ],
+      { signature: 's', now: 'T' },
+    )
 
     const { impl, calls } = imageFetch(() => pngResponse())
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: '不存在', index: 0 }, impl)).rejects.toThrow(/已不在库里/)
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 5 }, impl)).rejects.toThrow(/没有可用的示例图/)
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-b', entryId: 'e2', index: 0 }, impl)).rejects.toThrow(/没有可用的示例图/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: '不存在', index: 0 }, impl),
+    ).rejects.toThrow(/已不在库里/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 5 }, impl),
+    ).rejects.toThrow(/没有可用的示例图/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-b', entryId: 'e2', index: 0 }, impl),
+    ).rejects.toThrow(/没有可用的示例图/)
     expect(calls).toHaveLength(0)
   })
 
@@ -629,7 +768,13 @@ describe('把示例图带进表单（attachPromptImage）', () => {
     const topicId = newTopic(user.id)
     seedEntryWithImages('src-a', 'e1', ['https://cdn.example.com/cover.png'])
     const { impl } = imageFetch(() => pngResponse())
-    const { reference } = await attachPromptImage(store, dir, user, { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 }, impl)
+    const { reference } = await attachPromptImage(
+      store,
+      dir,
+      user,
+      { topicId, sourceId: 'src-a', entryId: 'e1', index: 0 },
+      impl,
+    )
     const rows = store.listReferenceUploads(topicId)
     expect(rows[0].id).toBe(reference.id)
     // storagePathFor 的路径规则：dataDir/storage/<imageKey>
@@ -715,7 +860,7 @@ describe('把「系统自带」的模板图带进表单（本地静态资源，�
       dir,
       user,
       { topicId, sourceId: BUILT_IN_PROMPT_SOURCE.id, entryId: first.id, index: 0 },
-      net.impl
+      net.impl,
     )
     expect(net.calls).toHaveLength(callsBefore)
     expect(reference.id.startsWith('refu_')).toBe(true)
@@ -729,9 +874,27 @@ describe('把「系统自带」的模板图带进表单（本地静态资源，�
     const user = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' })
     const topicId = newTopic(user.id)
     store.seedPromptSources([{ id: 'src-z', name: '源 Z', url: 'https://example.com/z.json', homepage: '' }])
-    store.replacePromptEntries('src-z', [{ id: 'e1', title: '缺图', prompt: 'p', description: '', coverUrl: '/templates/does-not-exist.jpg', referenceImageUrls: [], tags: [], author: '', sourceUrl: '' }], { signature: 's', now: 'T' })
+    store.replacePromptEntries(
+      'src-z',
+      [
+        {
+          id: 'e1',
+          title: '缺图',
+          prompt: 'p',
+          description: '',
+          coverUrl: '/templates/does-not-exist.jpg',
+          referenceImageUrls: [],
+          tags: [],
+          author: '',
+          sourceUrl: '',
+        },
+      ],
+      { signature: 's', now: 'T' },
+    )
     const net = fakeFetch(() => pngResponse())
-    await expect(attachPromptImage(store, dir, user, { topicId, sourceId: 'src-z', entryId: 'e1', index: 0 }, net.impl)).rejects.toThrow(/文件不存在/)
+    await expect(
+      attachPromptImage(store, dir, user, { topicId, sourceId: 'src-z', entryId: 'e1', index: 0 }, net.impl),
+    ).rejects.toThrow(/文件不存在/)
     expect(net.calls).toHaveLength(0)
     expect(store.listReferenceUploads(topicId)).toHaveLength(0)
   })

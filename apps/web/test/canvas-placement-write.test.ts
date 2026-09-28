@@ -50,8 +50,14 @@ afterEach(() => {
 describe('生成产出自动带位置', () => {
   it('N=4：画布新增 4 行，各有非零位置、两两不重叠、各带 serial', async () => {
     const msg = store.createMessage({
-      topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
-      requestedCount: 4, enhancePrompt: false, referenceIds: [],
+      topicId,
+      userId,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 4,
+      enhancePrompt: false,
+      referenceIds: [],
     })
     claim()
     await executeMessage({ store, provider: stubProvider(1024, 768), dataDir, workerId: 'w1' }, msg.id)
@@ -80,8 +86,14 @@ describe('生成产出自动带位置', () => {
   it('新产出落在当前视口内（视口平移后，新图出现在平移后的可见区）', async () => {
     store.setCanvasMeta(topicId, { viewport: { x: -2800, y: -2800, k: 1 }, background: 'lines', version: 1 })
     const msg = store.createMessage({
-      topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
-      requestedCount: 1, enhancePrompt: false, referenceIds: [],
+      topicId,
+      userId,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 1,
+      enhancePrompt: false,
+      referenceIds: [],
     })
     claim()
     await executeMessage({ store, provider: stubProvider(1024, 1024), dataDir, workerId: 'w1' }, msg.id)
@@ -92,16 +104,30 @@ describe('生成产出自动带位置', () => {
 
   it('断点续跑：已有 2 张时补跑，4 张仍两两不重叠（不压住已有图）', async () => {
     const msg = store.createMessage({
-      topicId, userId, prompt: 'p', finalPrompt: 'p', size: '1024x1024',
-      requestedCount: 4, enhancePrompt: false, referenceIds: [],
+      topicId,
+      userId,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 4,
+      enhancePrompt: false,
+      referenceIds: [],
     })
     // 造「崩溃前已跑出 2 张」：手工插 2 行带位置、message_id 指向本条消息
     const origin = viewportOrigin(store.getCanvasMeta(topicId).viewport)
     const slots = allocateSlots([], [displaySize(1024, 1024), displaySize(1024, 1024)], origin)
     slots.forEach((s, i) => {
       store.insertCanvasImage({
-        topicId, userId, messageId: msg.id, origin: 'generated', name: `图片 ${i + 1}`,
-        imageKey: `pre${i}`, mimeType: 'image/png', bytes: 1, width: 1024, height: 1024,
+        topicId,
+        userId,
+        messageId: msg.id,
+        origin: 'generated',
+        name: `图片 ${i + 1}`,
+        imageKey: `pre${i}`,
+        mimeType: 'image/png',
+        bytes: 1,
+        width: 1024,
+        height: 1024,
         placement: { x: s.x, y: s.y, width: s.w, height: s.h },
       })
     })
@@ -130,7 +156,11 @@ describe('生成产出自动带位置', () => {
 describe('暂存参考转正也带位置', () => {
   it('上传后画布为空；转正后该图有非零位置、origin=uploaded，且读的是原图真实尺寸', async () => {
     const user = store.getUserById(userId)!
-    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: '参考图.png' })
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, {
+      buffer: PNG,
+      mimeType: 'image/png',
+      name: '参考图.png',
+    })
     expect(store.listCanvasImages(topicId)).toHaveLength(0) // 上传不进画布
     // 上传的是坏字节（只有 PNG 头）：读尺寸失败 → 回退 0，仍要能转正
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
@@ -146,8 +176,14 @@ describe('暂存参考转正也带位置', () => {
   it('转正时按原图真实像素尺寸落库并据此分配显示尺寸（横版 400×300）', async () => {
     const user = store.getUserById(userId)!
     const file = join(dir, 'landscape.png')
-    await sharp({ create: { width: 400, height: 300, channels: 3, background: '#fff' } }).png().toFile(file)
-    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '横版.png' })
+    await sharp({ create: { width: 400, height: 300, channels: 3, background: '#fff' } })
+      .png()
+      .toFile(file)
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, {
+      buffer: readFileSync(file),
+      mimeType: 'image/png',
+      name: '横版.png',
+    })
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     const img = store.getCanvasImage(ids[0])!
     expect(img.width).toBe(400)
@@ -160,8 +196,14 @@ describe('暂存参考转正也带位置', () => {
   it('竖版参考图（300×400）落库后高 > 宽 —— 这正是「渲染按原图比例、模型按 240 方形」分歧的成因', async () => {
     const user = store.getUserById(userId)!
     const file = join(dir, 'portrait.png')
-    await sharp({ create: { width: 300, height: 400, channels: 3, background: '#fff' } }).png().toFile(file)
-    const ref = await saveReferenceImage(store, dataDir, user, topicId, { buffer: readFileSync(file), mimeType: 'image/png', name: '竖版.png' })
+    await sharp({ create: { width: 300, height: 400, channels: 3, background: '#fff' } })
+      .png()
+      .toFile(file)
+    const ref = await saveReferenceImage(store, dataDir, user, topicId, {
+      buffer: readFileSync(file),
+      mimeType: 'image/png',
+      name: '竖版.png',
+    })
     const ids = await resolveStagedReferences(store, dataDir, user, topicId, [ref.id])
     const img = store.getCanvasImage(ids[0])!
     expect(img.width).toBe(300)

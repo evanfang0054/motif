@@ -81,7 +81,7 @@ describe('s3 驱动下「本地」仍指本地目录', () => {
       local.exists('nope.png'),
       remote!.exists(KEY).then(
         () => 'reachable',
-        () => 'unreachable'
+        () => 'unreachable',
       ),
     ]).then(([localHas, remoteState]) => {
       expect(localHas).toBe(false)
