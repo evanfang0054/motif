@@ -60,7 +60,7 @@ import { createCloudDriver, createLocalDriver, createCanvasPersistence, type Can
 import { MiniMap } from './MiniMap'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, type ToolbarPanelRect } from '@/lib/canvas/viewport'
+import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, zoomStepsToFactor, type ToolbarPanelRect } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
@@ -164,6 +164,21 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean; lastDx?: number; lastDy?: number } | null>(null)
   const frameRef = useRef<number | null>(null)
   const pendingPanRef = useRef<{ dx: number; dy: number } | null>(null)
+  // 滚轮缩放与卡片拖拽各自的 rAF 槽：与平移的 frameRef 分开，避免一次手势把另一边的待处理值吃掉
+  const zoomFrameRef = useRef<number | null>(null)
+  const pendingZoomRef = useRef<{ steps: number; anchorX: number; anchorY: number } | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingDragRef = useRef<{ dx: number; dy: number } | null>(null)
+
+  // 卸载时取消在途的 rAF：否则回调会在组件卸载后仍去写 store
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
+      if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+    },
+    []
+  )
   // 最新图片集合：首屏 init 是异步的，init 之后要用「当前」的图片对账，不能靠闭包里的旧值
   const imagesRef = useRef(images)
   imagesRef.current = images
@@ -451,20 +466,48 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     const stepX = drag.moved ? (e.clientX - (drag.lastX ?? drag.startX)) / k : dx
     const stepY = drag.moved ? (e.clientY - (drag.lastY ?? drag.startY)) / k : dy
     drag.moved = true
+    // ⚠️ lastX/lastY 仍在**每个事件**里推进：增量之和与逐次调用数值等价（浮点 ≤1 ULP），
+    // 只是把「一帧一次 moveBy」交给 rAF。moved 也必须在这里置位，否则 endCardDrag 会走
+    // cancelGesture（点选语义）而不是 commit。
     drag.lastX = e.clientX
     drag.lastY = e.clientY
-    useCanvasStore.getState().moveBy(drag.ids, stepX, stepY)
+
+    const prev = pendingDragRef.current
+    pendingDragRef.current = { dx: (prev?.dx ?? 0) + stepX, dy: (prev?.dy ?? 0) + stepY }
+    if (dragFrameRef.current !== null) return
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const p = pendingDragRef.current
+      pendingDragRef.current = null
+      if (!p) return
+      const d = dragRef.current
+      if (!d) return // 手势已结束：位移由 endCardDrag 的同步 flush 负责，这里跳过
+      useCanvasStore.getState().moveBy(d.ids, p.dx, p.dy)
+    })
   }, [])
 
   const endCardDrag = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
     dragRef.current = null
-    // 只是点选（没拖动）：作废手势而不是入栈 —— 否则第一次 Ctrl+Z 会先消费这个「空步」
-    // （看起来像撤销失灵），50 步上限也会被点选挤光
     const store = useCanvasStore.getState()
-    if (drag.moved) store.endGesture()
-    else store.cancelGesture()
+    if (drag.moved) {
+      // ⚠️ 必须**先**把待处理的位移同步补上，再 endGesture：否则最后一次 pointermove 排的 rAF
+      // 会在 endGesture 之后执行 moveBy，变成「手势已提交、位移又写回」（平移路径是丢弃未 flush
+      // 的增量，这里选择**不丢位移**，故用同步 flush 而不是 cancel）。
+      const p = pendingDragRef.current
+      pendingDragRef.current = null
+      if (dragFrameRef.current !== null) {
+        cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      if (p) store.moveBy(drag.ids, p.dx, p.dy)
+      store.endGesture()
+    } else {
+      // 只是点选（没拖动）：作废手势而不是入栈 —— 否则第一次 Ctrl+Z 会先消费这个「空步」
+      // （看起来像撤销失灵），50 步上限也会被点选挤光
+      store.cancelGesture()
+    }
   }, [])
 
   /**
@@ -987,11 +1030,31 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           // 于是「在小地图上滚轮」仍会缩放。再按指针位置判一次，与 target 无关。
           const under = typeof document !== 'undefined' ? document.elementFromPoint(e.clientX, e.clientY) : null
           if (under?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
+          // ⚠️ preventDefault 必须留在**同步**阶段：一旦挪进 rAF，浏览器已经开始滚动，
+          // 缩放会与页面滚动同时发生。
           e.preventDefault()
+
           const el = containerRef.current
           if (!el) return
+          if (e.deltaY === 0) return
           const rect = el.getBoundingClientRect()
-          useCanvasStore.getState().zoomAt(e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, e.clientX - rect.left, e.clientY - rect.top)
+          // 同帧累积：步数累加，锚点取**本帧最后一个事件**的坐标（语义 = 以最后指针位置为中心）。
+          // 一帧只 flush 一次 ⇒ 连续滚轮不再每事件重渲染一次（实测 19ms/次）。
+          const prev = pendingZoomRef.current
+          pendingZoomRef.current = {
+            steps: (prev?.steps ?? 0) + (e.deltaY < 0 ? 1 : -1),
+            anchorX: e.clientX - rect.left,
+            anchorY: e.clientY - rect.top,
+          }
+          if (zoomFrameRef.current !== null) return
+          zoomFrameRef.current = requestAnimationFrame(() => {
+            zoomFrameRef.current = null
+            const p = pendingZoomRef.current
+            pendingZoomRef.current = null
+            if (!p || p.steps === 0) return
+            // 一次算总倍率 ⇒ 缩放总量与逐次缩放等价（`zoomStepsToFactor` 有单测钉住可加性）
+            useCanvasStore.getState().zoomAt(zoomStepsToFactor(p.steps), p.anchorX, p.anchorY)
+          })
         }}
       >
         {/* 背景图案：照抄上游 CanvasGrid（图案联动视口），底色取中性 --canvas-background */}
