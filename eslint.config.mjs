@@ -33,6 +33,38 @@ export default defineConfig([
     // 待专门的重构批次处理，不在「引入 lint 工具」这一次里做。
     rules: { 'react-hooks/set-state-in-effect': 'warn' },
   },
+  {
+    /**
+     * 规模类规则（文件/函数行数、参数个数、圈复杂度、嵌套深度）。
+     *
+     * 一律 `warn` 而非 `error`：本仓有几个「架构上就是单文件」的大件 —— SQLite 存储层
+     * `packages/db/src/store.ts`、画布手势层 `CanvasStage.tsx`（AGENTS.md 里明确列为
+     * 保留自定义的例外层）。设为 error 等于逼着为过门禁去拆它们，属于行为层重构，
+     * 不该由「引入 lint 工具」这件事裹挟。先当待办提示，后续单独批次处理。
+     *
+     * `max-lines` / `max-lines-per-function` 必须开 skipComments + skipBlankLines：
+     * 否则就是在惩罚「把为什么写清楚」，与本仓高注释密度的风格直接冲突
+     * （store.ts 2545 行里有 621 行是注释/空行）。
+     *
+     * 阈值是按首次全量跑的实测命中数定的，不是照抄默认值：
+     *   max-lines 500                  →   8 处
+     *   max-lines-per-function 150     →  21 处（50 是 ESLint 默认值，会命中 125 处，纯噪声）
+     *   max-params 4                   →   9 处（默认值 3 会命中 39 处，本仓服务层函数签名偏长）
+     *   complexity 20                  →   8 处（ESLint 默认值）
+     *   max-depth 4                    →   3 处（ESLint 默认值）
+     *
+     * ⚠️ 这两条行数规则与 Prettier 有耦合：Prettier 的折行/并行动作会直接改变行数。
+     * 本仓已全量格式化，故当前计数是稳定的；但改 `printWidth` 或升 Prettier 大版本后，
+     * 命中数可能整体漂移，需要重跑一次看看。
+     */
+    rules: {
+      'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+      'max-params': ['warn', 4],
+      complexity: ['warn', 20],
+      'max-depth': ['warn', 4],
+    },
+  },
   globalIgnores([
     // 注意：flat config 的 ignores 是**相对配置文件所在目录**的 glob，所以嵌套产物必须写成
     // `**/.next/**`。只写 `.next/**` 匹配不到 apps/web/.next，会把 Turbopack 产物当源码 lint
