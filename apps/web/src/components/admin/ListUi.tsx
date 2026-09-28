@@ -10,7 +10,7 @@
  * 旧 tr/td 形态（ListLoadingRow / ListEmptyRow）保留给未迁移页，全部迁移完成后删除。
  */
 
-import { EmptyState, Pagination, Skeleton, Table, Tooltip, Typography } from '@heroui/react'
+import { EmptyState, Pagination, Skeleton, Table, Tooltip } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 
 /** HeroUI Table 加载态：骨架填充行（Table.Cell 无 colSpan，按列数铺满） */

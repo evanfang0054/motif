@@ -102,8 +102,11 @@ function BillingDialog({
     try {
       const { orderId, checkoutUrl } = await api.checkout(pkg.id)
       if (/^https?:\/\//i.test(checkoutUrl)) {
-        // 真实渠道：整页跳网关/Stripe 收银页，支付完成由 return_url 带回结果页
-        window.location.href = checkoutUrl
+        // 真实渠道：整页跳网关/Stripe 收银页，支付完成由 return_url 带回结果页。
+        // 用 assign 而非 `location.href =`：后者是对全局对象赋值，会被 react-hooks/immutability
+        // 判为「This value cannot be modified」。两者对绝对地址行为一致，且上面的正则已保证
+        // checkoutUrl 是绝对地址（Next 的 no-location-assign-relative-destination 只拦相对地址）。
+        window.location.assign(checkoutUrl)
         return
       }
       // mock 渠道：站内模拟收银台确认

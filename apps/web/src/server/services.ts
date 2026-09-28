@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 import {
   DEFAULT_INVITE_REWARD_CREDITS,
@@ -21,7 +20,6 @@ import {
   validateReferenceCount,
   validateSize,
   viewportOrigin,
-  type CanvasImage,
   type CanvasImagePlacement,
   type CanvasRect,
   type CreditPackage,
@@ -34,7 +32,7 @@ import {
 import { buildImageKey, type MotifStore } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
 import { hasChinese, isNetworkFailureReason } from '@/lib/error-message'
-import { hashPassword, verifyPassword, SESSION_TTL_MS } from './auth'
+import { hashPassword, verifyPassword } from './auth'
 import { ConfigError } from './config-error'
 import type { MailerConfig } from './mailer'
 import { removeFromAllStorages, resolveReadStorages, resolveStorage } from './context'
@@ -128,12 +126,13 @@ export function register(
   store: MotifStore,
   input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string }
 ): User {
-  for (const [check, err] of [
-    [input.name, validateName(input.name || '')],
-    [input.email, validateEmail(input.email || '')],
-    [input.code, /^.{6}$/.test(input.code || '') ? null : '请输入 6 位邮箱验证码。'],
-    [input.password, validatePassword(input.password || '')],
-  ] as const) {
+  // 逐项校验：数组只承载「错误信息」，命中的第一条直接抛。
+  for (const err of [
+    validateName(input.name || ''),
+    validateEmail(input.email || ''),
+    /^.{6}$/.test(input.code || '') ? null : '请输入 6 位邮箱验证码。',
+    validatePassword(input.password || ''),
+  ]) {
     if (err) throw new ServiceError(400, err)
   }
   // 一致性与复杂度都走 core 的纯函数：客户端先行校验用的是同一份判据与同一句文案，

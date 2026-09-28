@@ -20,7 +20,9 @@ function Panel() {
   const dead = useRef(false) // StrictMode 双挂载防护：cleanup 置位后，在途回调全部自弃
 
   const query = useCallback(
-    async (attempt: number) => {
+    // 具名函数表达式：内部递归用内层名 `poll` 而不是外层的 `query` —— 在外层 const 初始化完成前
+    // 引用它会触发 react-hooks/immutability「Cannot access variable before it is declared」。
+    async function poll(attempt: number) {
       if (dead.current) return
       try {
         const r = await api.billingOrderStatus(orderId)
@@ -36,7 +38,7 @@ function Panel() {
           return
         }
         timer.current = setTimeout(() => {
-          if (!dead.current) void query(attempt + 1)
+          if (!dead.current) void poll(attempt + 1)
         }, 3000)
       } catch (e) {
         if (dead.current) return

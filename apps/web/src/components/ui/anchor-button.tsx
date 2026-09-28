@@ -5,7 +5,8 @@
  */
 export const anchorRender =
   <A extends { href: string }>(extra: A) =>
-  (p: React.ComponentPropsWithRef<'button'>) => {
+  // 具名函数表达式：匿名箭头会被 react/display-name 判为「Component definition is missing display name」
+  function AnchorRender(p: React.ComponentPropsWithRef<'button'>) {
     const anchorProps = p as unknown as React.ComponentPropsWithRef<'a'> & A
     return <a {...anchorProps} {...extra} />
   }

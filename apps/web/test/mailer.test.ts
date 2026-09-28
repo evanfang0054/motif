@@ -42,7 +42,7 @@ describe('SMTP / API 发信载荷', () => {
     const sent: Array<Record<string, unknown>> = []
     const mailer = new SmtpMailer(
       { host: 'smtp.qq.com', port: 465, secure: true, user: 'a@qq.com', pass: 'auth', from: 'a@qq.com' },
-      (opts) =>
+      () =>
         ({
           sendMail: async (mail: Record<string, unknown>) => {
             sent.push(mail)

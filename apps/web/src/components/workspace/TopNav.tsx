@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Avatar, Button, Chip, Popover, Tooltip, Typography } from '@heroui/react'
+import { Avatar, Button, Chip, Popover, Tooltip } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { ChevronDown, Palette, Person, Power, Shield, Wallet } from '@gravity-ui/icons'
 import { anchorRender } from '@/components/ui/anchor-button'

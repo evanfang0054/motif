@@ -13,7 +13,7 @@
  */
 import Database from 'better-sqlite3'
 import { randomBytes, scryptSync } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 

@@ -21,7 +21,7 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import {
   Archive,
@@ -42,7 +42,6 @@ import {
   Plus,
   SquareDashed,
   TrashBin,
-  Xmark,
 } from '@gravity-ui/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMeta, Message } from '@motif/core'
@@ -151,7 +150,10 @@ interface Props {
 function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onAddReferences, onRegenerate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<CanvasImage | null>(null)
-  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  // 框选选框：`moved` 与坐标同放 state —— 渲染期不能读 marqueeRef.current
+  // （react-hooks/refs：Cannot access refs during render）。ref 那份 `moved` 仍由手势处理函数
+  // 读写（判定是否越过 3px 阈值），这里只是把同一事实镜像进 state 供渲染用。
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; moved: boolean } | null>(null)
   const syncRef = useRef<CanvasSync | null>(null)
 
   const placements = useCanvasStore((s) => s.placements)
@@ -189,13 +191,21 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   )
   // 最新图片集合：首屏 init 是异步的，init 之后要用「当前」的图片对账，不能靠闭包里的旧值
   const imagesRef = useRef(images)
-  imagesRef.current = images
   // 选中集同理：键盘 effect 只挂一次（[] 依赖），要用「当前」的选中集
   const selectedRef = useRef(selected)
-  selectedRef.current = selected
   // 删除回调同理：父级传的是内联箭头（每次渲染换新引用），进依赖数组会让 keydown 监听每帧重挂
   const onRemoveImagesRef = useRef(onRemoveImages)
-  onRemoveImagesRef.current = onRemoveImages
+
+  // ⚠️ 这三个「最新值」ref 只能在 effect 里刷新，不能在渲染期直接赋值：
+  // 渲染期写 ref 会被 react-hooks/refs 判为「Cannot access refs during render」——
+  // 并发渲染下这次渲染可能被丢弃/重放，写入会落到不该落的那一次。
+  // 不写依赖数组 ⇒ 每次提交后同步一次；读它们的地方（首屏 init 的异步回调、keydown 监听）
+  // 都在事件/异步时机读，拿到的仍是「当前已提交」的最新值，语义与原先一致。
+  useEffect(() => {
+    imagesRef.current = images
+    selectedRef.current = selected
+    onRemoveImagesRef.current = onRemoveImages
+  })
 
   /**
    * ⚠️ 首屏 init 完成前**不得**提交 meta。
@@ -385,7 +395,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         // 另注：平移分支的 pointerup 里也有一次「没移动就清空」，那是给「点空白」用的。
         useCanvasStore.getState().clearSelection()
         marqueeRef.current = { pointerId: e.pointerId, startX: sx, startY: sy, moved: false }
-        setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy })
+        setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy, moved: false })
       }
       e.currentTarget.setPointerCapture(e.pointerId)
     },
@@ -426,7 +436,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       if (Math.hypot(sx - m.startX, sy - m.startY) < CLICK_THRESHOLD) return
       m.moved = true
     }
-    setMarquee({ x1: m.startX, y1: m.startY, x2: sx, y2: sy })
+    setMarquee({ x1: m.startX, y1: m.startY, x2: sx, y2: sy, moved: true })
     // 实时命中预览：屏幕选框 → 世界坐标 → 与卡片矩形相交（沿用既有 hitTest 语义：贴边不算）
     const v = useCanvasStore.getState().meta.viewport
     const a = toWorld(Math.min(m.startX, sx), Math.min(m.startY, sy), { x: v.x, y: v.y, scale: v.k })
@@ -1077,7 +1087,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         />
 
         {/* 框选选框（屏幕坐标覆盖层） */}
-        {marquee && marqueeRef.current?.moved && (
+        {marquee?.moved && (
           <div
             className="canvas-marquee"
             style={{

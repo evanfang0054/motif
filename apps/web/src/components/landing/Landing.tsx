@@ -99,6 +99,7 @@ function Landing() {
         <section className="lp-hero">
           {/* banner 图层：desktop 右置 ~52% 渐变融合；tablet/mobile 全幅垫顶（dragonpass 手法，见 globals.css lp-hero 段） */}
           <div className="lp-hero-visual" aria-hidden>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/landing/hero-banner.jpg" alt="" />
             <div className="lp-hero-fade" />
           </div>
@@ -159,18 +160,22 @@ function Landing() {
               </div>
               <div className="lp-shot">
                 <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/templates/ecommerce-suite.jpg" alt="商品套图示例" width={1536} height={1024} />
                   <figcaption>电商商品全套图 · 示例成片</figcaption>
                 </figure>
                 <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/templates/portrait-editorial.jpg" alt="人物写真示例" width={1536} height={1024} />
                   <figcaption>个人形象写真 · 示例成片</figcaption>
                 </figure>
                 <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/templates/world-landmarks.jpg" alt="旅拍示例" width={1536} height={1024} />
                   <figcaption>环球地标旅拍 · 示例成片</figcaption>
                 </figure>
                 <figure>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/templates/wedding-portrait.jpg" alt="婚纱样片示例" width={1536} height={1024} />
                   <figcaption>婚纱旅拍样片 · 示例成片</figcaption>
                 </figure>
@@ -208,6 +213,7 @@ function Landing() {
           <div className="lp-container lp-cta-inner">
             {/* 完整纹样版印章（含墨色小 m 变奏）：只在 ≥64px 的大画幅出场，
                 顶栏/favicon 用减法版 BrandMark，分层约定见 docs/brand/README.md */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/brand/motif-logo-editorial.svg"
               alt="Motif 印章"

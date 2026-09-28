@@ -2,7 +2,6 @@
 
 import type {
   BillingPackagesResponse,
-  CanvasImage,
   CanvasMeta,
   CanvasPatch,
   CanvasSnapshot,

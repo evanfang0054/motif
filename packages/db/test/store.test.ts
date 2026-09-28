@@ -755,7 +755,6 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     s.insertFeedback(fresh.id, '概览用反馈')
 
     const o = s.overviewStats('2026-09-18T00:00:00.000Z')
-    const q = <T>(sql: string, ...p: unknown[]) => s.db.prepare(sql).get(...p) as T
     const qc = (sql: string, ...p: unknown[]) => (s.db.prepare(sql).get(...p) as { c: number }).c
 
     // 用户

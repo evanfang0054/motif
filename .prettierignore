@@ -1,0 +1,31 @@
+# ⚠️ Prettier 会读仓库的 .gitignore，但**不会**读全局 gitignore（~/.gitignore_global）。
+# 下列目录只被全局 gitignore 覆盖，所以必须在这里显式列出，否则会被格式化。
+.heroui-docs/
+.infinite-canvas-ref/
+.agents/
+.agent-harness/
+.vscode/
+docs/agent-harness/
+dogfood-output/
+dsh-image-gen/
+
+# 生成物与缓存（已在 .gitignore 里，此处显式列出以求自洽）
+node_modules/
+.next/
+.turbo/
+dist/
+.data/
+.data-e2e/
+.data-accept/
+data/
+*.tsbuildinfo
+
+# 锁文件与类型声明产物：pnpm / Next 会重写它们，格式化只会造成假 diff。
+pnpm-lock.yaml
+next-env.d.ts
+
+# CLAUDE.md 里含 `heroui agents-md` 生成的块（START/END 标记之间），
+# 该工具每次都会整段重写且不带空行，而 Prettier 会在注释后插空行 —— 格式化它必然来回翻。
+# AGENTS.md 是指向 CLAUDE.md 的符号链接，一并列出以免有人显式传路径。
+CLAUDE.md
+AGENTS.md

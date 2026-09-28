@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Alert, Button, Card, Typography } from '@heroui/react'
 import { api } from '@/lib/client'

@@ -203,7 +203,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       })()
     }
     return topics
-  }, [])
+  }, [refreshUser])
 
   /**
    * 拉详情并落地。
@@ -373,7 +373,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       stopped = true
       ac.abort()
     }
-  }, [activeId, sessionExpired, refreshDetail, refreshTopics])
+  }, [activeId, sessionExpired, refreshDetail, refreshTopics, refreshUser])
 
   /**
    * 任务列表级监看：切到别的任务后，在跑的那个任务结束了也要有回执。
@@ -526,7 +526,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
         submittingRef.current = false
       }
     },
-    [ensureTopic, refreshTopics, refreshDetail, publicCfg?.llmEnhanceEnabled, publicCfg?.billingEnabled, publicCfg?.cdkRedeemEnabled]
+    // 依赖整份 publicCfg 而非三个具体开关：react-hooks/preserve-manual-memoization 要求手写依赖
+    // 不能比自己推断的（publicCfg）更细，否则 React Compiler 会直接跳过本组件的优化。
+    [ensureTopic, refreshTopics, refreshDetail, publicCfg, applyUser]
   )
 
   const submitGenerate = useCallback(
@@ -623,7 +625,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
     } catch (e) {
       showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '取消失败' })
     }
-  }, [detail, refreshDetail])
+  }, [detail, refreshDetail, refreshUser])
 
   const renameTopic = useCallback(
     async (id: string, title: string) => {
@@ -903,7 +905,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       setDialog(null)
       showToast({ tone: 'success', message: `支付成功，已到账 ${paidCredits} 张额度` })
     },
-    []
+    [applyUser]
   )
 
   return (
@@ -981,6 +983,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
                 <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }}>
                   登录已过期，请重新登录后再继续。
                 </InlineText>
+                {/* 会话已失效：这里要的是**整页硬跳转**去重登（顺带清掉全部客户端状态），
+                    不是 Next 的客户端路由 —— 故保留 location.assign 并显式豁免该规则。 */}
+                {/* eslint-disable-next-line @next/next/no-location-assign-relative-destination */}
                 <Button size="sm" variant="secondary" onPress={() => window.location.assign('/')}>
                   重新登录
                 </Button>
