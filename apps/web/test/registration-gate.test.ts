@@ -35,6 +35,20 @@ function stubMailer(): { cfg: MailerConfig; count: () => number } {
   return { cfg, count: () => sent }
 }
 
+/**
+ * 抓 `ServiceError` 的 `status` 与 `message` 做**逐字对照** —— `toThrowError(/re/)` 只能看文案，
+ * 证明不了「两种输入拿到的是同一个响应」。
+ */
+function captureError(fn: () => unknown): { status: number; message: string } {
+  try {
+    fn()
+  } catch (e) {
+    const err = e as { status?: number; message?: string }
+    return { status: err.status ?? 0, message: err.message ?? '' }
+  }
+  throw new Error('预期抛错，但没有抛')
+}
+
 const base = {
   name: '小张',
   email: 'a@example.com',
@@ -126,6 +140,34 @@ describe('注册准入码', () => {
     store.createUser({ email: 'a@example.com', passwordHash: 'h', name: '老用户' })
     store.createRegistrationInvite({ code: 'CODE999999' })
     expect(() => register(store, { ...base, code: '', registrationCode: 'CODE999999' })).toThrowError(/已注册/)
+    expect(store.listRegistrationInvites({})[0].usedBy).toBeNull()
+  })
+
+  it('⚠️ 防枚举：**无效码**下，「邮箱已注册」与「邮箱未注册」必须给出同一响应', () => {
+    // 攻击者不需要任何凭据：随便填一个非空 registrationCode 就能进准入码分支。
+    // 若先查邮箱再验码，两种邮箱会得到 409 / 400 两个可区分的响应 ⇒ 邮箱是否已注册可被匿名探测。
+    store.createUser({ email: 'taken@example.com', passwordHash: 'h', name: '已注册' })
+    const taken = captureError(() =>
+      register(store, { ...base, email: 'taken@example.com', code: '', registrationCode: 'BOGUS00001' }),
+    )
+    const free = captureError(() =>
+      register(store, { ...base, email: 'free@example.com', code: '', registrationCode: 'BOGUS00001' }),
+    )
+    expect(taken.status).toBe(400)
+    expect(free.status).toBe(400)
+    expect(taken.message).toBe(free.message)
+    // 反向断言：两个响应若相同，这条用例在「先查邮箱」的实现下必然变红（见下方对照）
+    expect(taken.message).not.toMatch(/已注册/)
+  })
+
+  it('对照：**有效码**下「邮箱已注册」仍给出 409（帮助性文案未被误删）', () => {
+    store.createUser({ email: 'taken2@example.com', passwordHash: 'h', name: '已注册' })
+    store.createRegistrationInvite({ code: 'VALID00001' })
+    const e = captureError(() =>
+      register(store, { ...base, email: 'taken2@example.com', code: '', registrationCode: 'VALID00001' }),
+    )
+    expect(e.status).toBe(409)
+    expect(e.message).toMatch(/已注册/)
     expect(store.listRegistrationInvites({})[0].usedBy).toBeNull()
   })
 

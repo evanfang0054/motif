@@ -161,7 +161,14 @@ export interface RegisterInput {
  * 两条路径共用前面的校验，但落库与奖励各自独立，拆开后各自的意图也更清楚。
  */
 function registerWithAccessCode(store: MotifStore, input: RegisterInput, accessCode: string): User {
-  // ⚠️ 顺序：先查重再核销 —— 准入码是稀缺凭据，不该因邮箱重复被白烧。
+  // ⚠️ 顺序（安全，**别调换**）：先确认码**可用**（只读、不核销），再查邮箱是否已注册。
+  //    反过来的话，「垃圾码 + 已注册邮箱」得 409、「垃圾码 + 未注册邮箱」得 400 —— 两个不同响应
+  //    把「这个邮箱是否已注册」变成**无需任何凭据即可探测**的枚举信号，恰好抵消掉下方邮箱验证码
+  //    路径刻意保留的那层防枚举保护（见 `register` 里「先消费验证码再做邮箱查重」的注释）。
+  if (!store.isRegistrationCodeUsable(accessCode)) {
+    throw new ServiceError(400, '注册准入码无效或已被使用。')
+  }
+  // ⚠️ 顺序（额度）：查重在核销之前 —— 准入码是稀缺凭据，不该因邮箱重复被白烧。
   if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
   // 额度与奖励配置：与邮箱验证码路径共用同一份读法（读一次、传下去，避免同函数内多处现读造成口径漂移）
   const inviteOn = resolveBool(store, process.env, 'INVITE_REWARD_ENABLED', false)

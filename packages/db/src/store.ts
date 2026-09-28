@@ -2002,6 +2002,15 @@ export class MotifStore {
     }))
   }
 
+  /**
+   * 准入码总数（与 `listRegistrationInvites` 同一张表、不带筛选）—— 分页器要的是**总条数**，
+   * 而不是当前页的条数；少了它分页器永远只看到第一页（`Pager` 在 `total <= pageSize` 时不渲染）。
+   */
+  countRegistrationInvites(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM registration_invites').get() as { n: number }
+    return row.n
+  }
+
   revokeRegistrationInvite(code: string): boolean {
     const res = this.db
       .prepare(
@@ -2009,6 +2018,21 @@ export class MotifStore {
       )
       .run(nowIso(), code.toUpperCase())
     return res.changes === 1
+  }
+
+  /**
+   * 准入码当前是否**可用**（存在、未使用、未作废）—— **只读**，不核销。
+   *
+   * 存在的理由（安全）：`registerWithAccessCode` 必须**先**确认码可用、**再**查邮箱是否已注册。
+   * 反过来的话，「垃圾码 + 已注册邮箱」会得 409、「垃圾码 + 未注册邮箱」得 400 —— 两个不同响应
+   * 把「这个邮箱是否已注册」变成**无需任何凭据即可探测**的枚举信号，恰好抵消掉邮箱验证码路径
+   * 刻意保留的那层防枚举保护（见 `services.ts` 的 `register`）。
+   */
+  isRegistrationCodeUsable(code: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM registration_invites WHERE code = ? AND used_by IS NULL AND revoked_at IS NULL')
+      .get(code.toUpperCase())
+    return Boolean(row)
   }
 
   /**

@@ -58,6 +58,24 @@ describe('注册准入码：存储层', () => {
     expect(store.getUserByEmail('d@example.com')).toBeNull()
   })
 
+  it('isRegistrationCodeUsable：只读判定三种不可用原因，且**不改动**码的状态', () => {
+    store.createRegistrationInvite({ code: 'USABLE0001' })
+    store.createRegistrationInvite({ code: 'USED000001' })
+    store.createRegistrationInvite({ code: 'REVOKED001' })
+    store.createRegistrationInvite({ code: 'REVOKED002' })
+    store.createUserWithRegistrationCode(user('used@example.com'), 'USED000001')
+    store.revokeRegistrationInvite('REVOKED001')
+    expect(store.isRegistrationCodeUsable('USABLE0001')).toBe(true)
+    expect(store.isRegistrationCodeUsable('USED000001')).toBe(false)
+    expect(store.isRegistrationCodeUsable('REVOKED001')).toBe(false)
+    expect(store.isRegistrationCodeUsable('NOPE000001')).toBe(false)
+    // 小写入参按大小写归一处理（与核销路径同一套 toUpperCase）
+    expect(store.isRegistrationCodeUsable('usable0001')).toBe(true)
+    // 只读：查完之后码仍然可用（没被顺手核销）
+    expect(store.isRegistrationCodeUsable('USABLE0001')).toBe(true)
+    expect(store.listRegistrationInvites({}).find((r) => r.code === 'USABLE0001')!.usedBy).toBeNull()
+  })
+
   it('已核销的码不可再作废（作废只对未使用生效）', () => {
     store.createRegistrationInvite({ code: 'EEEE5555' })
     store.createUserWithRegistrationCode(user('e@example.com', 'E'), 'EEEE5555')
