@@ -20,6 +20,51 @@ function seed() {
   return store
 }
 
+describe('画布 store：视口值未变时不通知订阅者（消掉滚轮撞上限的空转）', () => {
+  it('缩放已撞 MAX_SCALE 时，继续放大不改变 meta.viewport 引用、也不触发订阅者', () => {
+    const s = seed()
+    for (let i = 0; i < 40; i++) s.getState().zoomAt(1.1, 100, 100) // 撞到 MAX_SCALE
+    expect(s.getState().meta.viewport.k).toBe(3)
+
+    const before = s.getState().meta.viewport
+    let calls = 0
+    const unsub = s.subscribe(() => { calls++ })
+    s.getState().zoomAt(1.1, 100, 100) // 已在上限，值不会变
+    unsub()
+
+    expect(s.getState().meta.viewport).toBe(before) // 同一引用
+    expect(calls).toBe(0)                            // 订阅者一次都没被调用
+  })
+
+  it('panBy(0, 0) 同理：引用不变、订阅者不被调用', () => {
+    const s = seed()
+    const before = s.getState().meta.viewport
+    let calls = 0
+    const unsub = s.subscribe(() => { calls++ })
+    s.getState().panBy(0, 0)
+    unsub()
+    expect(s.getState().meta.viewport).toBe(before)
+    expect(calls).toBe(0)
+  })
+
+  it('反方向缩放仍能改变视口（防「短路写过头」）', () => {
+    const s = seed()
+    for (let i = 0; i < 40; i++) s.getState().zoomAt(1.1, 100, 100)
+    const atMax = s.getState().meta.viewport
+    s.getState().zoomAt(1 / 1.1, 100, 100)
+    expect(s.getState().meta.viewport).not.toBe(atMax)
+    expect(s.getState().meta.viewport.k).toBeLessThan(3)
+  })
+
+  it('真实平移仍会改视口', () => {
+    const s = seed()
+    const before = s.getState().meta.viewport
+    s.getState().panBy(10, -5)
+    expect(s.getState().meta.viewport).not.toBe(before)
+    expect(s.getState().meta.viewport.x).toBe(before.x + 10)
+  })
+})
+
 describe('画布 store：新出现的图片必须补上摆放（生成后不刷新也要看得见）', () => {
   it('detail 刷新带来的新图用**服务端落库的**摆放，不需要重取快照', () => {
     const s = seed()
