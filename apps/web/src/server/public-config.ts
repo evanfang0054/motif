@@ -27,6 +27,10 @@ export const PUBLIC_CONFIG_KEYS = [
   // 注册入口开关：前端据此隐藏注册入口。**服务端各自也把一道**（register / send-code），
   // 前端隐藏只是体验，不是防线。
   'REGISTRATION_ENABLED',
+  // 注册是否要求邮箱验证码：前端据此隐藏验证码行与发送按钮。
+  // 代价是向匿名访客暴露「本站不要求邮箱验证码」—— 这一信息一次注册尝试即可探测到，
+  // 隐藏它不产生安全收益，却会让前端 UX 分叉（用户提交后才知道不用填验证码）。
+  'REGISTRATION_REQUIRE_EMAIL_CODE',
 ] as const
 
 export interface PublicConfig {
@@ -38,6 +42,7 @@ export interface PublicConfig {
   billingEnabled: boolean
   cdkRedeemEnabled: boolean
   registrationEnabled: boolean
+  registrationRequireEmailCode: boolean
 }
 
 /** 读公开配置。只回白名单里的非密钥值；数值类键非法时回退默认值（口径与注册链路共用 resolvePositiveInt）。 */
@@ -59,5 +64,6 @@ export function readPublicConfig(store: MotifStore, env: Record<string, string |
     cdkRedeemEnabled: resolveBool(store, env, 'CDK_REDEEM_ENABLED', true),
     // 兜底值必须与 SETTING_DEFS 的 defaultHint 一致（三处各写一份就是三次漂移机会）
     registrationEnabled: resolveBool(store, env, 'REGISTRATION_ENABLED', true),
+    registrationRequireEmailCode: resolveBool(store, env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true),
   }
 }

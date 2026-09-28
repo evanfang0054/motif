@@ -137,6 +137,8 @@ export interface PublicConfig {
   cdkRedeemEnabled: boolean
   /** 是否开放注册（默认开）；前端据此隐藏注册入口（服务端各自也把一道） */
   registrationEnabled: boolean
+  /** 注册是否要求邮箱验证码（默认要求）；前端据此隐藏验证码行与发送按钮 */
+  registrationRequireEmailCode: boolean
 }
 
 export interface AdminSettingItem {

@@ -39,31 +39,43 @@ export interface AuthFieldState extends AuthFields {
  *
  * 顺序刻意与用户填写顺序一致（必填 → 格式 → 规则 → 两次一致），一次只报一条，改一个填一个。
  */
-export function clientAuthError(mode: AuthMode, f: AuthFields): string | null {
-  if (mode === 'register') {
-    if (!f.name.trim()) return '请输入昵称。'
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入密码。'
-    if (!f.passwordConfirm) return '请再次输入密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
+/** 注册视图的先行校验。`requireCode` 由后台开关决定（关闭时不要求也不校验验证码）。 */
+function registerAuthError(f: AuthFields, requireCode: boolean): string | null {
+  if (!f.name.trim()) return '请输入昵称。'
+  if (!f.email.trim()) return '请输入邮箱。'
+  if (requireCode && !f.code.trim()) return '请输入 6 位邮箱验证码。'
+  if (!f.password) return '请输入密码。'
+  if (!f.passwordConfirm) return '请再次输入密码。'
+  const emailErr = validateEmail(f.email)
+  if (emailErr) return emailErr
+  if (requireCode) {
     const codeErr = validateVerificationCode(f.code)
     if (codeErr) return codeErr
-    const pwdErr = validatePassword(f.password)
-    if (pwdErr) return pwdErr
-    return validatePasswordConfirm(f.password, f.passwordConfirm)
   }
-  if (mode === 'reset') {
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入新密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
-    const codeErr = validateVerificationCode(f.code)
-    if (codeErr) return codeErr
-    return validatePassword(f.password)
-  }
+  const pwdErr = validatePassword(f.password)
+  if (pwdErr) return pwdErr
+  return validatePasswordConfirm(f.password, f.passwordConfirm)
+}
+
+/** 找回密码视图的先行校验。⚠️ 验证码**始终必填** —— 注册那个开关与它无关。 */
+function resetAuthError(f: AuthFields): string | null {
+  if (!f.email.trim()) return '请输入邮箱。'
+  if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
+  if (!f.password) return '请输入新密码。'
+  const emailErr = validateEmail(f.email)
+  if (emailErr) return emailErr
+  const codeErr = validateVerificationCode(f.code)
+  if (codeErr) return codeErr
+  return validatePassword(f.password)
+}
+
+export function clientAuthError(
+  mode: AuthMode,
+  f: AuthFields,
+  opts: { requireEmailCode?: boolean } = {},
+): string | null {
+  if (mode === 'register') return registerAuthError(f, opts.requireEmailCode ?? true)
+  if (mode === 'reset') return resetAuthError(f)
   // 登录：只拦空值 —— 邮箱格式错误与凭据错误都归服务端统一口径（「邮箱或密码不正确。」），
   // 免得客户端把「账号不存在」与「邮箱写错」说成两句不同的话，反而泄露账号是否存在。
   if (!f.email.trim()) return '请输入邮箱。'
@@ -75,9 +87,13 @@ export function clientAuthError(mode: AuthMode, f: AuthFields): string | null {
  * 必填是否齐全（只判「非空」，不判格式与规则）—— 用于提交按钮置灰。
  * 与 clientAuthError 分工：空表单直接不让点（#74-2.2），格式/规则类错误点下去就地报（能说清为什么）。
  */
-export function isFormFilled(mode: AuthMode, f: AuthFields): boolean {
+export function isFormFilled(mode: AuthMode, f: AuthFields, opts: { requireEmailCode?: boolean } = {}): boolean {
   if (mode === 'register') {
-    return Boolean(f.name.trim() && f.email.trim() && f.code.trim() && f.password && f.passwordConfirm)
+    // ⚠️ 本开关只作用于注册；reset 走下面那行，验证码始终必填（opts 对它无效）。
+    const requireCode = opts.requireEmailCode ?? true
+    return Boolean(
+      f.name.trim() && f.email.trim() && f.password && f.passwordConfirm && (!requireCode || f.code.trim()),
+    )
   }
   if (mode === 'reset') return Boolean(f.email.trim() && f.code.trim() && f.password)
   return Boolean(f.email.trim() && f.password)

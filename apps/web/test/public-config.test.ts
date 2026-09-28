@@ -46,6 +46,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       billingEnabled: false,
       cdkRedeemEnabled: true,
       registrationEnabled: true, // 键未设置 → 兜底 true
+      registrationRequireEmailCode: true, // 同上
     })
   })
 
@@ -59,6 +60,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       { key: 'BILLING_ENABLED', value: 'true' },
       { key: 'CDK_REDEEM_ENABLED', value: 'false' },
       { key: 'REGISTRATION_ENABLED', value: 'false' },
+      { key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'false' },
     ])
     expect(readPublicConfig(store, {})).toEqual({
       inviteRewardEnabled: true,
@@ -69,6 +71,7 @@ describe('公开配置（面向未登录用户的白名单）', () => {
       billingEnabled: true,
       cdkRedeemEnabled: false,
       registrationEnabled: false, // 库中显式设了 false
+      registrationRequireEmailCode: false, // 同上
     })
   })
 

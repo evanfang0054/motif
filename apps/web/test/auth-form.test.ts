@@ -143,3 +143,39 @@ describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）',
     expect(filled.code).toBe('123456')
   })
 })
+
+describe('注册免邮箱验证码（后台开关 REGISTRATION_REQUIRE_EMAIL_CODE）', () => {
+  it('clientAuthError：requireEmailCode=false 时不再报「验证码缺失」', () => {
+    expect(
+      clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' }, { requireEmailCode: false }),
+    ).toBe('请输入密码。')
+  })
+
+  it('clientAuthError：requireEmailCode=false 时也不再校验验证码格式', () => {
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' }, { requireEmailCode: false })).toBeNull()
+  })
+
+  it('clientAuthError：不传 opts 时保持既有语义（仍要求 6 位数字）', () => {
+    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' })).toBe('验证码应为 6 位数字。')
+  })
+
+  it('clientAuthError：本开关只作用于注册，找回密码的验证码始终必填', () => {
+    expect(clientAuthError('reset', { ...empty, email: 'me@example.com' }, { requireEmailCode: false })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+  })
+
+  it('isFormFilled：requireEmailCode=false 时注册不再要求验证码', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: false })).toBe(true)
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true })).toBe(false)
+    // 不传 opts → 与改动前逐字一致
+    expect(isFormFilled('register', { ...filled, code: '' })).toBe(false)
+  })
+
+  it('isFormFilled：reset 模式的验证码始终必填（opts 对它无效）', () => {
+    expect(isFormFilled('reset', { ...filled, code: '' }, { requireEmailCode: false })).toBe(false)
+  })
+})

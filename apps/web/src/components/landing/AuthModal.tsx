@@ -158,12 +158,25 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
     [onModeChange],
   )
 
+  const cfg = usePublicConfig()
+  // 未知态（`cfg` 首帧为 null）取**服务端默认值** —— 本仓既有口径（见 `workspace/dialogs.tsx:87`）。
+  // 这里刻意**不**按「未知即隐藏」：验证码是**必填输入**，隐藏它会让表单在配置到达前无法提交；
+  // 而按默认值（要求验证码）渲染，最坏只是多显示一个字段、配置到达后自动消失。
+  // ⚠️ 必须声明在 `submit` **之前**：`submit` 的 useCallback 闭包要用它，声明在后会命中
+  //    「Cannot access variable before it is declared」且闭包会捕获到过期值。
+  const registrationEnabled = cfg?.registrationEnabled ?? true
+  const registrationRequireEmailCode = cfg?.registrationRequireEmailCode ?? true
+
   const submit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
       // 客户端先行校验：空表单 / 格式 / 密码规则 / 两次不一致都在这里就地报错，不发请求。
       // 命中时只 setError 后 return —— 对话框保持打开，用户能立刻看到原因（#80-1.1）。
-      const localErr = clientAuthError(mode, { name, email, code, password, passwordConfirm })
+      const localErr = clientAuthError(
+        mode,
+        { name, email, code, password, passwordConfirm },
+        { requireEmailCode: registrationRequireEmailCode },
+      )
       if (localErr) {
         setNotice(null)
         setError(localErr)
@@ -204,7 +217,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode],
+    [mode, name, email, code, password, passwordConfirm, inviteCode, registrationRequireEmailCode, router, switchMode],
   )
 
   const sendCode = useCallback(async () => {
@@ -239,10 +252,6 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
   }, [mode, email, cooldown, startCooldown])
 
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
-  const cfg = usePublicConfig()
-  // 未知态（cfg 首帧为 null）按「不渲染入口」处理 —— 与本仓 `usePublicConfig` 的既定口径一致
-  //（见其 JSDoc：入口按不渲染、文案按不写数字）。服务端各自也把一道，前端隐藏只是体验。
-  const registrationEnabled = cfg?.registrationEnabled === true
   const subtitle =
     mode === 'reset'
       ? '输入注册邮箱与验证码设置新密码。'
@@ -307,7 +316,7 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
                 </TextField>
               )}
 
-              {mode !== 'login' && (
+              {mode !== 'login' && (mode !== 'register' || registrationRequireEmailCode) && (
                 <>
                   <div className="mt-3.5 flex items-end gap-2">
                     <TextField className="min-w-0 flex-1" value={code} onChange={setCode}>
@@ -412,7 +421,14 @@ function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: Auth
                 form="auth-form"
                 variant="primary"
                 className="w-full"
-                isDisabled={busy || !isFormFilled(mode, { name, email, code, password, passwordConfirm })}
+                isDisabled={
+                  busy ||
+                  !isFormFilled(
+                    mode,
+                    { name, email, code, password, passwordConfirm },
+                    { requireEmailCode: registrationRequireEmailCode },
+                  )
+                }
               >
                 {busy
                   ? '处理中…'
