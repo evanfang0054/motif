@@ -251,6 +251,8 @@ export const api = {
     password: string
     passwordConfirm: string
     inviteCode?: string
+    /** 注册准入码（**不是**推荐用的邀请码） */
+    registrationCode?: string
   }) => call<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) }),
   login: (email: string, password: string) =>
     call<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),

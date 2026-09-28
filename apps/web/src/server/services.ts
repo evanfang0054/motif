@@ -144,7 +144,16 @@ export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ 
 
 export function register(
   store: MotifStore,
-  input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string },
+  input: {
+    name: string
+    email: string
+    code: string
+    password: string
+    passwordConfirm: string
+    inviteCode?: string
+    /** 注册准入码（**不是**推荐用的邀请码，两者正交） */
+    registrationCode?: string
+  },
 ): User {
   // 注册总开关：关闭时任何组合都在这里终止，不触碰任何一张表。
   if (!resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
@@ -154,10 +163,13 @@ export function register(
   // ⚠️ 验证码格式判据走 core 的纯函数（前端先行校验用的是同一份），不再内联 /^.{6}$/ ——
   //    后者接受任意 6 字符，与前端 inputMode="numeric" 的「6 位数字」提示不一致。
   const requireCode = resolveBool(store, process.env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true)
+  const accessCode = input.registrationCode?.trim()
   for (const err of [
     validateName(input.name || ''),
     validateEmail(input.email || ''),
-    requireCode ? validateVerificationCode(input.code || '') : null,
+    // ⚠️ 顺序约束：有准入码时它本身就是凭据，跳过邮箱验证码的格式判据。
+    //    若这里不认准入码，「带准入码 + 不填验证码」会先被 400 拦死，准入码路径根本不可达。
+    accessCode || !requireCode ? null : validateVerificationCode(input.code || ''),
     validatePassword(input.password || ''),
   ]) {
     if (err) throw new ServiceError(400, err)
@@ -166,6 +178,49 @@ export function register(
   // 避免「前端说没问题、后端却拒」这种只在某一侧改过规则才会出现的分叉。
   const confirmErr = validatePasswordConfirm(input.password || '', input.passwordConfirm || '')
   if (confirmErr) throw new ServiceError(400, confirmErr)
+
+  // 准入码路径：码本身就是凭据，**不消费邮箱验证码**。
+  // ⚠️ 顺序：先查重再核销 —— 准入码是稀缺凭据，不该因邮箱重复被白烧。
+  if (accessCode) {
+    if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
+    // 额度与奖励配置：与下方原路径共用同一份读法（读一次、传下去，避免同函数内多处现读造成口径漂移）
+    const inviteOn = resolveBool(store, process.env, 'INVITE_REWARD_ENABLED', false)
+    const bonus = resolvePositiveInt(store, process.env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS)
+    // ⚠️ 准入码**不**建立推荐关系（它与推荐码正交）；只有调用方同时传了推荐码时才按既有逻辑走。
+    let inviter: string | null = null
+    if (inviteOn && input.inviteCode?.trim()) {
+      const found = store.getUserByInviteCode(input.inviteCode.trim())
+      if (found) inviter = found.id
+    }
+    // 核销与建号在**同一事务**内（见 store.createUserWithRegistrationCode）
+    const created = store.createUserWithRegistrationCode(
+      {
+        email: input.email,
+        passwordHash: hashPassword(input.password),
+        name: input.name.trim(),
+        invitedBy: inviter,
+        credits: 0,
+      },
+      accessCode,
+    )
+    if (!created) throw new ServiceError(400, '注册准入码无效或已被使用。')
+    store.addCredits(created.id, bonus, { source: 'signup_bonus', note: '注册赠送' })
+    if (inviter) {
+      const owner = store.getUserById(inviter)!
+      const reward = inviteRewardFor(owner.invitedCount, {
+        credits: resolvePositiveInt(store, process.env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
+        maxInvitees: resolvePositiveInt(
+          store,
+          process.env,
+          'INVITE_REWARD_MAX_INVITEES',
+          DEFAULT_INVITE_REWARD_MAX_INVITEES,
+        ),
+      })
+      store.recordInvite(inviter, reward, created.id)
+    }
+    return store.getUserById(created.id)!
+  }
+
   // 先消费验证码再做邮箱查重：避免「邮箱已注册」成为匿名可探测的枚举信号
   // ⚠️ 关闭「注册需邮箱验证码」时跳过消费。**已知取舍**：上面那层防枚举保护随之消失 ——
   //    原设计用它避免「邮箱已注册」成为匿名可探测的枚举信号。这是开关带来的、需求已接受的代价。

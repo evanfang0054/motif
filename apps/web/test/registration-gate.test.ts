@@ -42,6 +42,11 @@ const base = {
   passwordConfirm: 'Abcd1234!',
 }
 
+/** 领域 `User` 类型刻意不暴露 `invitedBy`，直接读列（与既有 auth 测试同一做法） */
+const invitedByOf = (userId: string) =>
+  (store.db.prepare('SELECT invited_by FROM users WHERE id = ?').get(userId) as { invited_by: string | null })
+    .invited_by
+
 describe('开放注册总开关', () => {
   it('关闭时注册被拒（403），且不创建任何用户行', () => {
     store.setSettings([{ key: 'REGISTRATION_ENABLED', value: 'false' }])
@@ -101,5 +106,57 @@ describe('注册需邮箱验证码开关', () => {
       { key: 'REGISTRATION_REQUIRE_EMAIL_CODE', value: 'false' },
     ])
     expect(() => register(store, { ...base, code: '' })).toThrowError(/暂未开放注册/)
+  })
+})
+
+describe('注册准入码', () => {
+  it('带有效码时不填验证码即可注册，且码被消费', () => {
+    store.createRegistrationInvite({ code: 'CODE123456' })
+    const user = register(store, { ...base, code: '', registrationCode: 'code123456' })
+    expect(user.email).toBe('a@example.com')
+    expect(store.listRegistrationInvites({})[0].usedBy).toBe(user.id)
+  })
+
+  it('码无效时被拒，且不建号', () => {
+    expect(() => register(store, { ...base, code: '', registrationCode: 'NOPE000000' })).toThrowError(/准入码/)
+    expect(store.getUserByEmail('a@example.com')).toBeNull()
+  })
+
+  it('邮箱已注册时抛 409，且准入码未被消耗', () => {
+    store.createUser({ email: 'a@example.com', passwordHash: 'h', name: '老用户' })
+    store.createRegistrationInvite({ code: 'CODE999999' })
+    expect(() => register(store, { ...base, code: '', registrationCode: 'CODE999999' })).toThrowError(/已注册/)
+    expect(store.listRegistrationInvites({})[0].usedBy).toBeNull()
+  })
+
+  it('不带码、不带验证码（需验证码时）仍被拒', () => {
+    expect(() => register(store, { ...base, code: '' })).toThrowError()
+  })
+
+  it('只带准入码时不建立推荐关系、不发邀请奖励', () => {
+    store.createRegistrationInvite({ code: 'SOLO000001' })
+    const user = register(store, { ...base, code: '', registrationCode: 'SOLO000001' })
+    expect(invitedByOf(user.id)).toBeNull()
+  })
+
+  it('带准入码且带推荐码时，推荐关系仍按既有逻辑建立', () => {
+    store.setSettings([{ key: 'INVITE_REWARD_ENABLED', value: 'true' }])
+    const inviter = store.createUser({ email: 'boss@example.com', passwordHash: 'h', name: '邀请人' })
+    store.createRegistrationInvite({ code: 'BOTH000001' })
+    const user = register(store, {
+      ...base,
+      code: '',
+      registrationCode: 'BOTH000001',
+      inviteCode: inviter.inviteCode,
+    })
+    expect(invitedByOf(user.id)).toBe(inviter.id)
+    expect(store.getUserById(inviter.id)!.invitedCount).toBe(1)
+  })
+
+  it('注册赠送仍走 addCredits 并写 signup_bonus 流水（额度守恒口径不变）', () => {
+    store.createRegistrationInvite({ code: 'BONUS00001' })
+    const user = register(store, { ...base, code: '', registrationCode: 'BONUS00001' })
+    expect(user.credits).toBeGreaterThan(0)
+    expect(store.listLedger({ userId: user.id }).some((l) => l.source === 'signup_bonus')).toBe(true)
   })
 })
