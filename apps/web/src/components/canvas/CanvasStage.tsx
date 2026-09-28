@@ -155,7 +155,15 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const syncRef = useRef<CanvasSync | null>(null)
 
   const placements = useCanvasStore((s) => s.placements)
-  const meta = useCanvasStore((s) => s.meta)
+  // ⚠️ 只订阅**具体字段**，不要订阅整份 `meta`：平移每帧都改 meta，订阅整份会让外层
+  // （缩放条、顶部 pill、选中工具栏、背景选择器）每帧重渲染。三个窄订阅的取舍：
+  //  - `background` 是字符串，极少变；
+  //  - `viewportK` 只在**缩放**时变，**平移时不变** ⇒ 平移不触发外层重渲染；
+  //  - 选中工具栏的锚点才需要整个 viewport，且**只在有选中时**才需要 —— 无选中时恒返回
+  //    `null`，`Object.is(null, null)` 为真 ⇒ 不重渲染。
+  const background = useCanvasStore((s) => s.meta.background)
+  const viewportK = useCanvasStore((s) => s.meta.viewport.k)
+  const toolbarViewport = useCanvasStore((s) => (s.selected.length > 0 ? s.meta.viewport : null))
   const selected = useCanvasStore((s) => s.selected)
   const source = useCanvasStore((s) => s.source)
 
@@ -303,13 +311,17 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // ⚠️ 必须整份 meta 传进去：写成 `commitMeta(topicId, { meta })` 会多包一层 key，
   // 服务端 normalizeCanvasMeta 会把它当未知字段忽略 → 视口永远存不进去。
   // 失败由 persistence 内部兜住（离线时降级本地草稿），故这里无需 catch。
+  // ⚠️ 用**非响应式订阅**而不是 `[meta]` 依赖：外层已不再订阅 meta（只订阅 background /
+  // viewport.k / 有选中时的 viewport），若这里还依赖 meta，等于把整份 meta 的订阅又拉回来，
+  // ③ 就白做了。回调里的判据与原来的 effect 完全一致。
   useEffect(() => {
-    const sync = syncRef.current
-    if (!sync) return
-    if (!metaReadyRef.current) return // 快照未就位：默认 meta 不能回写（见 metaReadyRef 注释）
-    if (loadedMetaRef.current === meta) return // 服务端值的回显，无需回写
-    sync.commitMeta(topicId, meta)
-  }, [meta, topicId])
+    return useCanvasStore.subscribe((s, prev) => {
+      if (s.meta === prev.meta) return // 值级短路已生效（①），不必回写
+      if (!metaReadyRef.current) return // 快照未就位：默认 meta 不能回写（见 metaReadyRef 注释）
+      if (loadedMetaRef.current === s.meta) return // 服务端值的回显，无需回写
+      syncRef.current?.commitMeta(topicId, s.meta)
+    })
+  }, [topicId])
 
   // 灯箱关闭后还原焦点（沿用既有 CanvasBoard 的 setTimeout 手法，冒烟时发现）
   const lightboxRestoreRef = useRef<HTMLElement | null>(null)
@@ -582,8 +594,6 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
   // ---------- 派生 ----------
 
-  const viewport = meta.viewport
-
   // 容器尺寸：小地图的视口矩形与跳转都要按容器算
   useEffect(() => {
     const el = containerRef.current
@@ -612,9 +622,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const arrangeAll = useCallback(() => {
     const all = images.map((i) => i.id)
     useCanvasStore.getState().beginGesture('arrange')
-    const origin = viewportOrigin(viewport)
-    // k 归一交给 baseScale：内联写 `viewport.k > 0 ? viewport.k : 1` 会漏掉 Infinity
-    const k = baseScale(viewport.k)
+    // 现读而非订阅：本函数是用户动作（按钮 / 溢出菜单），不需要跟着视口每帧重渲染
+    const v = useCanvasStore.getState().meta.viewport
+    const origin = viewportOrigin(v)
+    // k 归一交给 baseScale：内联写 `v.k > 0 ? v.k : 1` 会漏掉 Infinity
+    const k = baseScale(v.k)
     const slots = centerRectsInViewport(
       allocateSlots(
         [],
@@ -627,7 +639,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     )
     useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
     useCanvasStore.getState().endGesture()
-  }, [images, viewport, stageSize])
+  }, [images, stageSize])
 
   /**
    * 工具栏溢出收敛：可用宽度 = 画布宽 − 24（工具栏的 max-width 就是这么算的）。
@@ -720,13 +732,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    * 尺寸/占位还没量到时先按原锚点渲染，量到后就会修正。
    */
   const toolbarStyle = useMemo(() => {
-    if (selectedImages.length === 0) return undefined
-    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), viewport)
+    if (selectedImages.length === 0 || !toolbarViewport) return undefined
+    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), toolbarViewport)
     if (!anchor) return undefined
     if (toolbarBox.w === 0 || bandInput.width === 0) return anchor
     const band = toolbarBand(bandInput.width, bandInput.panels, { top: anchor.top, height: toolbarBox.h })
     return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarBox.w, band, bandInput.width) }
-  }, [selectedImages, placements, viewport, toolbarBox, bandInput])
+  }, [selectedImages, placements, toolbarViewport, toolbarBox, bandInput])
 
   /**
    * 摆放矩形列表：`Object.values(placements)` 每次渲染都返回**新数组**，直接当 prop 传会击穿
@@ -762,8 +774,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    */
   const treeOrigin = useMemo(() => {
     const b = boundsOf(rects)
-    return b ? { x: b.x, y: b.y + b.h / 2 } : viewportOrigin(viewport)
-  }, [rects, viewport])
+    // 兜底只在「画布无图」时生效（此时整理引导本就不出现）⇒ 用现读，不必随视口重算
+    return b ? { x: b.x, y: b.y + b.h / 2 } : viewportOrigin(useCanvasStore.getState().meta.viewport)
+  }, [rects])
 
   /** 树形布局的目标位置（只在溯源打开时算；点「按来源整理」时才落库） */
   const treePlan = useMemo(
@@ -1185,8 +1198,6 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap
-          rects={rects}
-          viewport={viewport}
           size={stageSize}
           onJump={(v) => useCanvasStore.getState().setViewport(v)}
         />
@@ -1247,8 +1258,16 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
             <Minus />
           </IconButton>
           {/* 百分比保留文字：它是**状态读数**，图标化等于把缩放比例删掉 */}
-          <Button size="sm" variant="secondary" aria-label="重置为 100%" onPress={() => useCanvasStore.getState().setViewport({ ...viewport, k: 1 })}>
-            {Math.round(viewport.k * 100)}%
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label="重置为 100%"
+            onPress={() => {
+              const v = useCanvasStore.getState().meta.viewport
+              useCanvasStore.getState().setViewport({ ...v, k: 1 })
+            }}
+          >
+            {Math.round(viewportK * 100)}%
           </Button>
           <IconButton size="sm" variant="secondary" label="放大" onPress={() => zoomAtCenter(ZOOM_STEP)}>
             <Plus />
@@ -1375,7 +1394,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
             <ToggleButtonGroup
               aria-label="网格样式"
               selectionMode="single"
-              selectedKeys={new Set([meta.background])}
+              selectedKeys={new Set([background])}
               onSelectionChange={(keys) => {
                 const next = BACKGROUND_OPTIONS.find((o) => o.key === [...keys][0])
                 if (next) useCanvasStore.getState().setBackground(next.key)
@@ -1446,7 +1465,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                   {!showBackgroundUnit &&
                     BACKGROUND_OPTIONS.map((o) => (
                       <Dropdown.Item key={o.key} id={`bg:${o.key}`} textValue={`背景 ${o.label}`}>
-                        <Label>{meta.background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
+                        <Label>{background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
                       </Dropdown.Item>
                     ))}
                 </Dropdown.Menu>
