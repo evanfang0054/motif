@@ -15,7 +15,7 @@ import { DEFAULT_CANVAS_META } from '@motif/core'
 import type { Rect } from '@/lib/canvas/geometry'
 import { createCanvasHistory, type CanvasHistory } from '@/lib/canvas/history'
 import { allocateSlots, displaySize, placementRect, rectToPlacement } from '@/lib/canvas/placement'
-import { clampScale, panBy, zoomAt as zoomAtViewport, type Viewport } from '@/lib/canvas/viewport'
+import { clampScale, panBy as panByViewport, sameViewport, zoomAt as zoomAtViewport, type Viewport } from '@/lib/canvas/viewport'
 
 type Placements = Record<string, Rect>
 
@@ -214,13 +214,23 @@ export function createCanvasStore() {
     },
 
     setViewport(v) {
-      set((s) => ({ meta: { ...s.meta, viewport: { ...v, k: clampScale(v.k) } } }))
+      set((s) => {
+        const next = { ...v, k: clampScale(v.k) }
+        // 值未变 ⇒ 返回同一 state 引用 ⇒ zustand 的 Object.is 判据成立 ⇒ 不通知订阅者
+        return sameViewport(next, s.meta.viewport) ? s : { meta: { ...s.meta, viewport: next } }
+      })
     },
     zoomAt(factor, anchorX, anchorY) {
-      set((s) => ({ meta: { ...s.meta, viewport: zoomAtViewport(s.meta.viewport, factor, anchorX, anchorY) } }))
+      set((s) => {
+        const next = zoomAtViewport(s.meta.viewport, factor, anchorX, anchorY)
+        return sameViewport(next, s.meta.viewport) ? s : { meta: { ...s.meta, viewport: next } }
+      })
     },
     panBy(dx, dy) {
-      set((s) => ({ meta: { ...s.meta, viewport: panBy(s.meta.viewport, dx, dy) } }))
+      set((s) => {
+        const next = panByViewport(s.meta.viewport, dx, dy)
+        return sameViewport(next, s.meta.viewport) ? s : { meta: { ...s.meta, viewport: next } }
+      })
     },
     setBackground(background) {
       // 落库零新增管线：meta 变化由 CanvasStage 的 [meta] effect → commitMeta → 400ms 防抖队列 → PATCH 完成

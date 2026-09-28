@@ -57,6 +57,32 @@ export function panBy(v: Viewport, dx: number, dy: number): Viewport {
   return { x: v.x + dx, y: v.y + dy, k: v.k }
 }
 
+/**
+ * 视口逐字段相等。**只用于 store 的「值未变则短路」**：`zoomAt` 在撞到
+ * `MIN_SCALE` / `MAX_SCALE` 后返回的 `k` 是同一个常量，`x`/`y` 也逐值相同，
+ * 但对象引用每次都是新的 —— 不比较就必然触发订阅者重渲染（实测 40 次滚轮里
+ * 有 28 次属于这种空转）。
+ *
+ * 用严格相等而非 epsilon：pan/zoom 是确定性算术，同一输入得同一结果；
+ * 边界钳制后落在同一常量上。引入 epsilon 反而会把「真实的小位移」吞掉。
+ */
+export function sameViewport(a: Viewport, b: Viewport): boolean {
+  return a.x === b.x && a.y === b.y && a.k === b.k
+}
+
+/**
+ * 把「同一帧内累积的滚轮步数」换算成一次缩放倍率（负数 = 缩小）。
+ *
+ * 为什么要累乘而不是逐次调用：`onWheel` 每个事件都直接 `zoomAt` 会让连续滚轮
+ * 每事件重渲染一次（实测 19ms/次）。改成同帧只 flush 一次后，**缩放总量**必须
+ * 与逐次缩放等价 —— 用 `ZOOM_STEP ** steps` 累乘即可保证。
+ * ⚠️ 只保证「缩放总量」等价：同一帧内多个事件的锚点被覆盖为**最后一个事件**的坐标，
+ * 因此若各事件锚点不同，落点与逐次缩放不逐像素相同（这是刻意的取舍：以最后指针位置为中心）。
+ */
+export function zoomStepsToFactor(steps: number): number {
+  return ZOOM_STEP ** steps
+}
+
 /** 适应视图：把世界包围盒放进 viewportW×viewportH（留 padding）并居中，k 被钳制 */
 export function fitView(bounds: Rect, viewportW: number, viewportH: number, padding = 40): Viewport {
   const availW = Math.max(1, viewportW - padding * 2)

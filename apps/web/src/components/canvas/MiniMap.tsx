@@ -11,8 +11,8 @@
 'use client'
 
 import { useMemo, useRef } from 'react'
-import type { Rect } from '@/lib/canvas/geometry'
 import type { Viewport } from '@/lib/canvas/viewport'
+import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
 import {
   MINIMAP_H,
   MINIMAP_MIN_NODE,
@@ -26,15 +26,18 @@ import {
 } from '@/lib/canvas/minimap'
 
 interface Props {
-  /** 画布图片的世界矩形 */
-  rects: Rect[]
-  viewport: Viewport
   /** 画布容器尺寸（跳转要按容器中心算） */
   size: { w: number; h: number }
   onJump: (v: Viewport) => void
 }
 
-function MiniMap({ rects, viewport, size, onJump }: Props) {
+function MiniMap({ size, onJump }: Props) {
+  // ⚠️ 视口与摆放**自己订阅**：小地图的视口矩形要跟着视口走，若由外层以 props 传入，
+  // 外层就必须订阅 viewport（那样平移时外层整棵树都会重渲染，③ 就白做了）。
+  const viewport = useCanvasStore((s) => s.meta.viewport)
+  const placements = useCanvasStore((s) => s.placements)
+  const rects = useMemo(() => Object.values(placements), [placements])
+
   // 包围盒与比例只依赖图片矩形；视口变化不重算它们
   const bounds = useMemo(() => worldBoundsOf(rects), [rects])
   const fit = useMemo(() => fitMinimap(bounds), [bounds])

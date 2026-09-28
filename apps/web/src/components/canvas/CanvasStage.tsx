@@ -21,7 +21,7 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, Skeleton, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
+import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import {
   Archive,
@@ -49,18 +49,18 @@ import type { CanvasBackgroundMode, CanvasImage, CanvasImagePlacement, CanvasMet
 import { anchorRender } from '@/components/ui/anchor-button'
 import { boundsOf, hitTest, toWorld } from '@/lib/canvas/geometry'
 import { backgroundGesture } from '@/lib/canvas/gesture'
-import { gridStyle } from '@/lib/canvas/grid'
 import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
 import { errorMessage } from '@/lib/error-message'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
 import { allocateSlots, centerRectsInViewport, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
-import { deriveLineage, isSameLayout, layoutLineageTree, lineageLayerModel } from '@/lib/canvas/lineage'
+import { deriveLineage, isSameLayout, layoutLineageTree } from '@/lib/canvas/lineage'
 import { createCloudDriver, createLocalDriver, createCanvasPersistence, type CanvasSync } from '@/stores/canvas/persistence'
 import { MiniMap } from './MiniMap'
+import { CanvasWorld } from './CanvasWorld'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, type ToolbarPanelRect } from '@/lib/canvas/viewport'
+import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, zoomStepsToFactor, type ToolbarPanelRect } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
@@ -155,7 +155,15 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const syncRef = useRef<CanvasSync | null>(null)
 
   const placements = useCanvasStore((s) => s.placements)
-  const meta = useCanvasStore((s) => s.meta)
+  // ⚠️ 只订阅**具体字段**，不要订阅整份 `meta`：平移每帧都改 meta，订阅整份会让外层
+  // （缩放条、顶部 pill、选中工具栏、背景选择器）每帧重渲染。三个窄订阅的取舍：
+  //  - `background` 是字符串，极少变；
+  //  - `viewportK` 只在**缩放**时变，**平移时不变** ⇒ 平移不触发外层重渲染；
+  //  - 选中工具栏的锚点才需要整个 viewport，且**只在有选中时**才需要 —— 无选中时恒返回
+  //    `null`，`Object.is(null, null)` 为真 ⇒ 不重渲染。
+  const background = useCanvasStore((s) => s.meta.background)
+  const viewportK = useCanvasStore((s) => s.meta.viewport.k)
+  const toolbarViewport = useCanvasStore((s) => (s.selected.length > 0 ? s.meta.viewport : null))
   const selected = useCanvasStore((s) => s.selected)
   const source = useCanvasStore((s) => s.source)
 
@@ -164,6 +172,21 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const panRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean; lastDx?: number; lastDy?: number } | null>(null)
   const frameRef = useRef<number | null>(null)
   const pendingPanRef = useRef<{ dx: number; dy: number } | null>(null)
+  // 滚轮缩放与卡片拖拽各自的 rAF 槽：与平移的 frameRef 分开，避免一次手势把另一边的待处理值吃掉
+  const zoomFrameRef = useRef<number | null>(null)
+  const pendingZoomRef = useRef<{ steps: number; anchorX: number; anchorY: number } | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingDragRef = useRef<{ dx: number; dy: number } | null>(null)
+
+  // 卸载时取消在途的 rAF：否则回调会在组件卸载后仍去写 store
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
+      if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+    },
+    []
+  )
   // 最新图片集合：首屏 init 是异步的，init 之后要用「当前」的图片对账，不能靠闭包里的旧值
   const imagesRef = useRef(images)
   imagesRef.current = images
@@ -288,13 +311,17 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // ⚠️ 必须整份 meta 传进去：写成 `commitMeta(topicId, { meta })` 会多包一层 key，
   // 服务端 normalizeCanvasMeta 会把它当未知字段忽略 → 视口永远存不进去。
   // 失败由 persistence 内部兜住（离线时降级本地草稿），故这里无需 catch。
+  // ⚠️ 用**非响应式订阅**而不是 `[meta]` 依赖：外层已不再订阅 meta（只订阅 background /
+  // viewport.k / 有选中时的 viewport），若这里还依赖 meta，等于把整份 meta 的订阅又拉回来，
+  // ③ 就白做了。回调里的判据与原来的 effect 完全一致。
   useEffect(() => {
-    const sync = syncRef.current
-    if (!sync) return
-    if (!metaReadyRef.current) return // 快照未就位：默认 meta 不能回写（见 metaReadyRef 注释）
-    if (loadedMetaRef.current === meta) return // 服务端值的回显，无需回写
-    sync.commitMeta(topicId, meta)
-  }, [meta, topicId])
+    return useCanvasStore.subscribe((s, prev) => {
+      if (s.meta === prev.meta) return // 值级短路已生效（①），不必回写
+      if (!metaReadyRef.current) return // 快照未就位：默认 meta 不能回写（见 metaReadyRef 注释）
+      if (loadedMetaRef.current === s.meta) return // 服务端值的回显，无需回写
+      syncRef.current?.commitMeta(topicId, s.meta)
+    })
+  }, [topicId])
 
   // 灯箱关闭后还原焦点（沿用既有 CanvasBoard 的 setTimeout 手法，冒烟时发现）
   const lightboxRestoreRef = useRef<HTMLElement | null>(null)
@@ -451,20 +478,48 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     const stepX = drag.moved ? (e.clientX - (drag.lastX ?? drag.startX)) / k : dx
     const stepY = drag.moved ? (e.clientY - (drag.lastY ?? drag.startY)) / k : dy
     drag.moved = true
+    // ⚠️ lastX/lastY 仍在**每个事件**里推进：增量之和与逐次调用数值等价（浮点 ≤1 ULP），
+    // 只是把「一帧一次 moveBy」交给 rAF。moved 也必须在这里置位，否则 endCardDrag 会走
+    // cancelGesture（点选语义）而不是 commit。
     drag.lastX = e.clientX
     drag.lastY = e.clientY
-    useCanvasStore.getState().moveBy(drag.ids, stepX, stepY)
+
+    const prev = pendingDragRef.current
+    pendingDragRef.current = { dx: (prev?.dx ?? 0) + stepX, dy: (prev?.dy ?? 0) + stepY }
+    if (dragFrameRef.current !== null) return
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const p = pendingDragRef.current
+      pendingDragRef.current = null
+      if (!p) return
+      const d = dragRef.current
+      if (!d) return // 手势已结束：位移由 endCardDrag 的同步 flush 负责，这里跳过
+      useCanvasStore.getState().moveBy(d.ids, p.dx, p.dy)
+    })
   }, [])
 
   const endCardDrag = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
     dragRef.current = null
-    // 只是点选（没拖动）：作废手势而不是入栈 —— 否则第一次 Ctrl+Z 会先消费这个「空步」
-    // （看起来像撤销失灵），50 步上限也会被点选挤光
     const store = useCanvasStore.getState()
-    if (drag.moved) store.endGesture()
-    else store.cancelGesture()
+    if (drag.moved) {
+      // ⚠️ 必须**先**把待处理的位移同步补上，再 endGesture：否则最后一次 pointermove 排的 rAF
+      // 会在 endGesture 之后执行 moveBy，变成「手势已提交、位移又写回」（平移路径是丢弃未 flush
+      // 的增量，这里选择**不丢位移**，故用同步 flush 而不是 cancel）。
+      const p = pendingDragRef.current
+      pendingDragRef.current = null
+      if (dragFrameRef.current !== null) {
+        cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      if (p) store.moveBy(drag.ids, p.dx, p.dy)
+      store.endGesture()
+    } else {
+      // 只是点选（没拖动）：作废手势而不是入栈 —— 否则第一次 Ctrl+Z 会先消费这个「空步」
+      // （看起来像撤销失灵），50 步上限也会被点选挤光
+      store.cancelGesture()
+    }
   }, [])
 
   /**
@@ -539,9 +594,6 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
   // ---------- 派生 ----------
 
-  const viewport = meta.viewport
-  const grid = useMemo(() => gridStyle(meta.background, viewport), [meta.background, viewport])
-
   // 容器尺寸：小地图的视口矩形与跳转都要按容器算
   useEffect(() => {
     const el = containerRef.current
@@ -570,9 +622,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const arrangeAll = useCallback(() => {
     const all = images.map((i) => i.id)
     useCanvasStore.getState().beginGesture('arrange')
-    const origin = viewportOrigin(viewport)
-    // k 归一交给 baseScale：内联写 `viewport.k > 0 ? viewport.k : 1` 会漏掉 Infinity
-    const k = baseScale(viewport.k)
+    // 现读而非订阅：本函数是用户动作（按钮 / 溢出菜单），不需要跟着视口每帧重渲染
+    const v = useCanvasStore.getState().meta.viewport
+    const origin = viewportOrigin(v)
+    // k 归一交给 baseScale：内联写 `v.k > 0 ? v.k : 1` 会漏掉 Infinity
+    const k = baseScale(v.k)
     const slots = centerRectsInViewport(
       allocateSlots(
         [],
@@ -585,7 +639,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     )
     useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
     useCanvasStore.getState().endGesture()
-  }, [images, viewport, stageSize])
+  }, [images, stageSize])
 
   /**
    * 工具栏溢出收敛：可用宽度 = 画布宽 − 24（工具栏的 max-width 就是这么算的）。
@@ -678,13 +732,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    * 尺寸/占位还没量到时先按原锚点渲染，量到后就会修正。
    */
   const toolbarStyle = useMemo(() => {
-    if (selectedImages.length === 0) return undefined
-    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), viewport)
+    if (selectedImages.length === 0 || !toolbarViewport) return undefined
+    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), toolbarViewport)
     if (!anchor) return undefined
     if (toolbarBox.w === 0 || bandInput.width === 0) return anchor
     const band = toolbarBand(bandInput.width, bandInput.panels, { top: anchor.top, height: toolbarBox.h })
     return { ...anchor, left: clampToolbarCenter(anchor.left, toolbarBox.w, band, bandInput.width) }
-  }, [selectedImages, placements, viewport, toolbarBox, bandInput])
+  }, [selectedImages, placements, toolbarViewport, toolbarBox, bandInput])
 
   /**
    * 摆放矩形列表：`Object.values(placements)` 每次渲染都返回**新数组**，直接当 prop 传会击穿
@@ -712,10 +766,6 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     () => (lineageOpen ? deriveLineage({ images: lineageImages, messages }) : null),
     [lineageOpen, lineageImages, messages]
   )
-  const lineageLayer = useMemo(
-    () => (lineage ? lineageLayerModel({ lineage, placements, k: viewport.k }) : null),
-    [lineage, placements, viewport.k]
-  )
   /**
    * 树形布局的锚点：**当前内容的包围盒左上角 + 竖直中心**，而不是视口原点。
    *
@@ -724,8 +774,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    */
   const treeOrigin = useMemo(() => {
     const b = boundsOf(rects)
-    return b ? { x: b.x, y: b.y + b.h / 2 } : viewportOrigin(viewport)
-  }, [rects, viewport])
+    // 兜底只在「画布无图」时生效（此时整理引导本就不出现）⇒ 用现读，不必随视口重算
+    return b ? { x: b.x, y: b.y + b.h / 2 } : viewportOrigin(useCanvasStore.getState().meta.viewport)
+  }, [rects])
 
   /** 树形布局的目标位置（只在溯源打开时算；点「按来源整理」时才落库） */
   const treePlan = useMemo(
@@ -987,123 +1038,43 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           // 于是「在小地图上滚轮」仍会缩放。再按指针位置判一次，与 target 无关。
           const under = typeof document !== 'undefined' ? document.elementFromPoint(e.clientX, e.clientY) : null
           if (under?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
+          // ⚠️ preventDefault 必须留在**同步**阶段：一旦挪进 rAF，浏览器已经开始滚动，
+          // 缩放会与页面滚动同时发生。
           e.preventDefault()
+
           const el = containerRef.current
           if (!el) return
+          if (e.deltaY === 0) return
           const rect = el.getBoundingClientRect()
-          useCanvasStore.getState().zoomAt(e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, e.clientX - rect.left, e.clientY - rect.top)
+          // 同帧累积：步数累加，锚点取**本帧最后一个事件**的坐标（语义 = 以最后指针位置为中心）。
+          // 一帧只 flush 一次 ⇒ 连续滚轮不再每事件重渲染一次（实测 19ms/次）。
+          const prev = pendingZoomRef.current
+          pendingZoomRef.current = {
+            steps: (prev?.steps ?? 0) + (e.deltaY < 0 ? 1 : -1),
+            anchorX: e.clientX - rect.left,
+            anchorY: e.clientY - rect.top,
+          }
+          if (zoomFrameRef.current !== null) return
+          zoomFrameRef.current = requestAnimationFrame(() => {
+            zoomFrameRef.current = null
+            const p = pendingZoomRef.current
+            pendingZoomRef.current = null
+            if (!p || p.steps === 0) return
+            // 一次算总倍率 ⇒ 缩放总量与逐次缩放等价（`zoomStepsToFactor` 有单测钉住可加性）
+            useCanvasStore.getState().zoomAt(zoomStepsToFactor(p.steps), p.anchorX, p.anchorY)
+          })
         }}
       >
-        {/* 背景图案：照抄上游 CanvasGrid（图案联动视口），底色取中性 --canvas-background */}
-        {grid && <div className="pointer-events-none absolute inset-0" style={grid} data-testid="canvas-grid" />}
-
-        {/* 世界层 */}
-        <div
-          className="absolute left-0 top-0"
-          style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`, transformOrigin: '0 0' }}
-        >
-          {/* 溯源层（UI 文案；代码里叫 lineage）：与世界层同一 transform ⇒ 线与框粘在卡片上，缩放平移都不用重算。
-              只读（pointer-events: none），在卡片**之前**渲染 ⇒ 永远在卡片之下。
-              ⚠️ 尺寸必须显式非零：世界层没有宽高、子元素全是绝对定位 ⇒ 父盒实际 0×0，
-              而 SVG 宽或高为 0 时按规范**禁用渲染**（整层会不可见）。1×1 + overflow: visible
-              足以画出任意坐标（含负坐标）的图元，不需要量世界的包围盒。
-              ⚠️ 线宽用 1.5 / k 而不是 vector-effect="non-scaling-stroke"：缩放来自祖先的
-              CSS transform，non-scaling-stroke 只抵消「元素 → SVG 视口」那段 CTM，抵不掉它。
-              分组框标签的字号与世界偏移**不除以 k**，跟卡片 caption 一样随缩放变化（既有口径）。 */}
-          {lineageLayer && (
-            <svg
-              aria-hidden
-              data-testid="canvas-lineage"
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                width: 1,
-                height: 1,
-                overflow: 'visible',
-                pointerEvents: 'none',
-              }}
-            >
-              {lineageLayer.groups.map((g) => (
-                <g key={g.key}>
-                  <rect
-                    x={g.rect.x}
-                    y={g.rect.y}
-                    width={g.rect.w}
-                    height={g.rect.h}
-                    rx={12}
-                    style={{ fill: 'none', stroke: 'var(--border)', strokeDasharray: '6 6', strokeWidth: 1 / viewport.k }}
-                  />
-                  <text x={g.rect.x + 8} y={g.rect.y - 6} style={{ fill: 'var(--muted)', fontSize: 12 }}>
-                    {g.label}
-                  </text>
-                </g>
-              ))}
-              {lineageLayer.edges.map((e) => (
-                <path key={e.key} d={e.d} style={{ fill: 'none', stroke: 'var(--border)', strokeWidth: 1.5 / viewport.k }} />
-              ))}
-            </svg>
-          )}
-          {/* 待生成骨架槽（#88）：服务端下发的计划槽，与出图落位**同坐标** → 出图就地填入不跳动。
-              骨架**不是画布图片**：不进 `placements` / `images`，故不参与选中、框选、删除、灯箱、
-              归档导出、「N 张图片」统计与整理布局；`pointer-events: none` 让它不响应手势。
-              几何口径（D13）**如实说明**：`displaySize ≤ 240×240` + 槽步长 280 只保证**网格相邻槽
-              之间**不重叠，不是「绝不会压到相邻图」。两处残余风险：① 出图比例 ≠ 请求比例时
-              （请求 800×600 → 计划 240×180，网关返回 800×800 → 实际 240×240，高度多 60px）可能压到
-              **用户手拖的图**；② 生成期间用户拖动/导入会让入队时算的计划槽相对现状失效。①由 worker
-              落位前的相交校验兜住（撞上就退回 `allocateSlots`，见 services.ts）—— 此时该骨架会
-              「跳位」到新槽后消失，代价远小于压图；②的骨架占位在落位前仍可能与手拖图短暂重叠，
-              落位后同样跳位。这里**刻意不给骨架加 width/height transition**：骨架挂载期间尺寸恒定，
-              那个 transition 是死代码（会误导后来人以为尺寸在动）。 */}
-          {skeletons.map((s) => (
-            <figure
-              key={`sk-${s.messageId}-${s.index}`}
-              // 与图片卡片共用 `.canvas-img-card` 只为复用其绝对定位；额外挂 `.canvas-skeleton-card`
-              // 作为**纯标记类**（无任何 CSS）把「骨架」与「图片卡片」区分开 —— 取「第一张图片卡片 /
-              // 数图片张数」的选择器都必须排除它，否则会取到 `pointer-events:none` 的骨架
-              //（拖拽无位移、计数虚高）。见 e2e/acceptance.sh 的 `.canvas-img-card:not(...)`。
-              className="canvas-img-card canvas-skeleton-card"
-              style={{
-                left: s.rect.x,
-                top: s.rect.y,
-                width: s.rect.w,
-                height: s.rect.h,
-                margin: 0,
-                pointerEvents: 'none',
-              }}
-              aria-busy="true"
-              aria-label={`正在生成第 ${s.ordinal} 张`}
-            >
-              {/* 骨架本体用 HeroUI 的 Skeleton（shimmer），不自研控件 */}
-              <Skeleton className="h-full w-full rounded-[10px]" />
-            </figure>
-          ))}
-          {images.map((img) => {
-            const p = placements[img.id]
-            if (!p) return null
-            const isSel = selected.includes(img.id)
-            return (
-              <figure
-                key={img.id}
-                className={`canvas-img-card canvas-img-in${isSel ? ' canvas-img-card-selected' : ''}`}
-                style={{ left: p.x, top: p.y, width: p.w, margin: 0, cursor: 'grab' }}
-                onPointerDown={(e) => startCardDrag(e, img)}
-                onPointerMove={onCardPointerMove}
-                onPointerUp={endCardDrag}
-                onDoubleClick={() => setPreview(img)}
-                onContextMenu={(e) => onCardContextMenu(e, img)}
-                aria-label={`#${String(img.serial).padStart(3, '0')} ${img.name}`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.src} alt={img.name} draggable={false} loading="lazy" style={{ width: '100%', display: 'block' }} />
-                <figcaption className="canvas-img-label">
-                  #{String(img.serial).padStart(3, '0')} {img.name}
-                  {img.origin === 'uploaded' ? ' · 参考图' : ''}
-                </figcaption>
-              </figure>
-            )
-          })}
-        </div>
+        <CanvasWorld
+          images={images}
+          skeletons={skeletons}
+          lineage={lineage}
+          onCardPointerDown={startCardDrag}
+          onCardPointerMove={onCardPointerMove}
+          onCardPointerUp={endCardDrag}
+          onCardDoubleClick={setPreview}
+          onCardContextMenu={onCardContextMenu}
+        />
 
         {/* 框选选框（屏幕坐标覆盖层） */}
         {marquee && marqueeRef.current?.moved && (
@@ -1227,8 +1198,6 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap
-          rects={rects}
-          viewport={viewport}
           size={stageSize}
           onJump={(v) => useCanvasStore.getState().setViewport(v)}
         />
@@ -1289,8 +1258,16 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
             <Minus />
           </IconButton>
           {/* 百分比保留文字：它是**状态读数**，图标化等于把缩放比例删掉 */}
-          <Button size="sm" variant="secondary" aria-label="重置为 100%" onPress={() => useCanvasStore.getState().setViewport({ ...viewport, k: 1 })}>
-            {Math.round(viewport.k * 100)}%
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label="重置为 100%"
+            onPress={() => {
+              const v = useCanvasStore.getState().meta.viewport
+              useCanvasStore.getState().setViewport({ ...v, k: 1 })
+            }}
+          >
+            {Math.round(viewportK * 100)}%
           </Button>
           <IconButton size="sm" variant="secondary" label="放大" onPress={() => zoomAtCenter(ZOOM_STEP)}>
             <Plus />
@@ -1417,7 +1394,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
             <ToggleButtonGroup
               aria-label="网格样式"
               selectionMode="single"
-              selectedKeys={new Set([meta.background])}
+              selectedKeys={new Set([background])}
               onSelectionChange={(keys) => {
                 const next = BACKGROUND_OPTIONS.find((o) => o.key === [...keys][0])
                 if (next) useCanvasStore.getState().setBackground(next.key)
@@ -1488,7 +1465,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                   {!showBackgroundUnit &&
                     BACKGROUND_OPTIONS.map((o) => (
                       <Dropdown.Item key={o.key} id={`bg:${o.key}`} textValue={`背景 ${o.label}`}>
-                        <Label>{meta.background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
+                        <Label>{background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
                       </Dropdown.Item>
                     ))}
                 </Dropdown.Menu>
