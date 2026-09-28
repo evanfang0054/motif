@@ -6,7 +6,7 @@ import { Button, Typography } from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import { CircleCheck, Sparkles } from '@gravity-ui/icons'
 import { BrandMark } from '@/components/BrandMark'
-import { usePublicConfig } from '@/lib/use-public-config'
+import { usePublicConfig, usePublicConfigSettled } from '@/lib/use-public-config'
 import { parseResetParams, type ResetPrefill } from '@/lib/reset-link'
 import { AuthModal, type Mode } from './AuthModal'
 
@@ -32,7 +32,8 @@ function Landing() {
   // 注册已关停时带进弹窗的一句提示
   const [authNotice, setAuthNotice] = useState<string | null>(null)
 
-  const cfg = usePublicConfig()
+  // ⚠️ 这里用 settled 版：深链 effect 既要等配置到位（防闪跳），又不能因为请求**失败**而永久卡住
+  const { cfg, settled: cfgSettled } = usePublicConfigSettled()
   // 未知态（`cfg` 首帧为 null）取**服务端默认值** —— 本仓既有口径，见 `workspace/dialogs.tsx:87`
   //（`?? true`）与 `Workspace.tsx:923-924`（`?? false` / `?? true`）。
   // 这样默认值下首帧渲染与改动前逐字一致（不闪掉注册入口）；非默认站点的过渡窗口也不会出坏结果：
@@ -45,9 +46,11 @@ function Landing() {
   // 原「设模式 + 滚动到卡片」升级为「直接弹对应模式的弹窗」
   // 另：/?reset=1&email=..&code=.. 是找回密码邮件里的**直达链接**（#21）—— 自动进重置模式并预填
   useEffect(() => {
-    // ⚠️ 必须等公开配置到位：`usePublicConfig` 首帧返回 null，若此时就按「注册开放」落视图，
+    // ⚠️ 必须等公开配置**定局**：`usePublicConfig` 首帧返回 null，若此时就按「注册开放」落视图，
     //    关停了注册的站点会先落进注册视图、配置到达后才被改回登录 —— 用户看得见这次闪跳。
-    if (!cfg || urlEntryDone.current) return
+    //    但「定局」也包含**取不到**：请求失败时 cfg 永远是 null，若只等 cfg 到位，深链（含找回密码
+    //    邮件里的直达链接）会静默失效 —— 那是被锁在门外的用户唯一的恢复路径。失败时按服务端默认值走。
+    if (!cfgSettled || urlEntryDone.current) return
     urlEntryDone.current = true
     const params = new URLSearchParams(window.location.search)
     // 深链优先于 mode：邮件链接是明确的单一意图，不该被同时带的 mode 参数抢走
@@ -92,7 +95,7 @@ function Landing() {
       }
       setAuthOpen(true)
     }
-  }, [cfg, registrationEnabled])
+  }, [cfgSettled, cfg, registrationEnabled])
 
   /** 弹窗入口：设置模式并打开。注册关停时「注册」意图降级为登录（入口本身已隐藏，这是兜底） */
   const openAuth = (m: Mode) => {
