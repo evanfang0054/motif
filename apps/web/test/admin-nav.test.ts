@@ -12,14 +12,14 @@ function labelsFor(role: UserRole): string[] {
 
 describe('管理后台菜单的角色可见性', () => {
   it('admin 可见前后台业务页，但看不到 root 独占的审计与系统设置', () => {
-    expect(labelsFor('admin')).toEqual(['概览', 'CDK', '订单', '反馈', '生成日志', '用户'])
+    expect(labelsFor('admin')).toEqual(['概览', 'CDK', '订单', '反馈', '生成日志', '用户', '注册准入码'])
     expect(labelsFor('admin')).not.toContain('系统设置')
     expect(labelsFor('admin')).not.toContain('审计日志')
   })
 
   it('root 可额外看到审计日志与系统设置', () => {
     const labels = labelsFor('root')
-    expect(labels).toEqual(['概览', 'CDK', '订单', '反馈', '生成日志', '用户', '审计日志', '系统设置'])
+    expect(labels).toEqual(['概览', 'CDK', '订单', '反馈', '生成日志', '用户', '注册准入码', '审计日志', '系统设置'])
   })
 
   it('普通用户看不到任何管理页（纵深防御：布局守卫之外菜单层也不给入口）', () => {
@@ -35,6 +35,7 @@ describe('管理后台菜单的角色可见性', () => {
       '/admin/feedback',
       '/admin/logs',
       '/admin/users',
+      '/admin/invites',
       '/admin/audit',
       '/admin/settings',
     ])
