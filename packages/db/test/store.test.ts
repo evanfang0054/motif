@@ -202,7 +202,15 @@ describe('topics & messages & canvas images', () => {
     const u = seedUser()
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, 8, { source: 'generation_charge' })
-    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: '1024x1024', requestedCount: 8, enhancePrompt: false })
+    const m = store.createMessage({
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: '1024x1024',
+      requestedCount: 8,
+      enhancePrompt: false,
+    })
     store.setTopicActive(t.id, m.id, 'p', 'pending')
     expect(store.getTopic(t.id)?.status).toBe('pending')
 
@@ -214,7 +222,18 @@ describe('topics & messages & canvas images', () => {
 
     // 写入 3 张后取消：退回 5 张
     for (let i = 0; i < 3; i++) {
-      store.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: m.id, origin: 'generated', name: `图片 ${i + 1}`, imageKey: `k${i}`, mimeType: 'image/webp', bytes: 10, width: 64, height: 64 })
+      store.insertCanvasImage({
+        topicId: t.id,
+        userId: u.id,
+        messageId: m.id,
+        origin: 'generated',
+        name: `图片 ${i + 1}`,
+        imageKey: `k${i}`,
+        mimeType: 'image/webp',
+        bytes: 10,
+        width: 64,
+        height: 64,
+      })
     }
     expect(store.countGeneratedInMessage(m.id)).toBe(3)
     store.setMessageStatus(m.id, 'canceled')
@@ -229,16 +248,57 @@ describe('topics & messages & canvas images', () => {
   it('serial 按 topic 递增', () => {
     const u = seedUser()
     const t = store.createTopic(u.id, 'T')
-    const a = store.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: null, origin: 'uploaded', name: '参考图', imageKey: 'k', mimeType: 'image/png', bytes: 1, width: 0, height: 0 })
-    const b = store.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: null, origin: 'generated', name: '图片 1', imageKey: 'k2', mimeType: 'image/webp', bytes: 1, width: 8, height: 8 })
+    const a = store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图',
+      imageKey: 'k',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 0,
+      height: 0,
+    })
+    const b = store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: null,
+      origin: 'generated',
+      name: '图片 1',
+      imageKey: 'k2',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 8,
+      height: 8,
+    })
     expect([a.serial, b.serial]).toEqual([1, 2])
   })
 
   it('getTopicDetail 返回完整聚合', () => {
     const u = seedUser()
     const t = store.createTopic(u.id, 'T')
-    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
-    store.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: m.id, origin: 'generated', name: '图片 1', imageKey: 'k', mimeType: 'image/webp', bytes: 1, width: 8, height: 8 })
+    const m = store.createMessage({
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: 1,
+      enhancePrompt: false,
+    })
+    store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: m.id,
+      origin: 'generated',
+      name: '图片 1',
+      imageKey: 'k',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 8,
+      height: 8,
+    })
     const d = store.getTopicDetail(t.id)!
     expect(d.topic.id).toBe(t.id)
     expect(d.messages).toHaveLength(1)
@@ -258,7 +318,13 @@ describe('cdk / orders / feedback', () => {
 
   it('订单支付幂等', () => {
     const u = seedUser()
-    const id = store.createOrder(u.id, { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 868, currency: 'hkd' })
+    const id = store.createOrder(u.id, {
+      id: 'credits_50',
+      label: '50 张额度',
+      credits: 50,
+      amountTotal: 868,
+      currency: 'hkd',
+    })
     expect(store.payOrder(id, u.id)).toBe(50)
     expect(store.payOrder(id, u.id)).toBeNull()
   })
@@ -303,14 +369,30 @@ describe('findReusableTopic（新任务复用）', () => {
     const u = store.createUser({ email: 'ru2@b.co', passwordHash: 'h', name: 'ru2' })
     const withImg = store.createTopic(u.id, '有图会话')
     store.insertCanvasImage({
-      topicId: withImg.id, userId: u.id, messageId: null, origin: 'uploaded',
-      name: '参考图', imageKey: 'k', mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+      topicId: withImg.id,
+      userId: u.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图',
+      imageKey: 'k',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 0,
+      height: 0,
     })
     const busy = store.createTopic(u.id, '生成中会话')
     // ⚠️ 夹具必须是**可达**的进行态：`pending` 在生产里总与一条 queued 消息同时写入。
     // 早先这里写的是 `setTopicActive(busy.id, null, null, 'pending')`（无活跃消息却自称在跑），
     // 而那恰好是本批新增的「读取自愈」要落定的脏状态 —— 用它当夹具，测的是一个不存在的情形。
-    const busyMsg = store.createMessage({ topicId: busy.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    const busyMsg = store.createMessage({
+      topicId: busy.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: 1,
+      enhancePrompt: false,
+    })
     store.syncTopicStatus(busy.id, busyMsg.id, 'p', 'queued')
     expect(store.getTopic(busy.id)?.status).toBe('pending')
     expect(store.findReusableTopic(u.id)).toBeNull()
@@ -330,10 +412,20 @@ describe('deleteCanvasImages（批量删除）', () => {
     const t = store.createTopic(u.id, '批量删除')
     const mk = (key: string) =>
       store.insertCanvasImage({
-        topicId: t.id, userId: u.id, messageId: null, origin: 'generated',
-        name: key, imageKey: key, mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+        topicId: t.id,
+        userId: u.id,
+        messageId: null,
+        origin: 'generated',
+        name: key,
+        imageKey: key,
+        mimeType: 'image/png',
+        bytes: 1,
+        width: 0,
+        height: 0,
       })
-    const a = mk('a'), b = mk('b'), c = mk('c')
+    const a = mk('a'),
+      b = mk('b'),
+      c = mk('c')
     store.deleteCanvasImages([a.id, c.id, 'cimg_missing'])
     expect(store.getCanvasImage(a.id)).toBeNull()
     expect(store.getCanvasImage(c.id)).toBeNull()
@@ -356,7 +448,13 @@ describe('三级角色与用户状态', () => {
   it('可创建 root 账号并统计各角色数量', () => {
     const s = new MotifStore(join(dir, 't2.db'))
     s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
-    const root = s.createUser({ email: 'r@b.co', passwordHash: 'h', name: '超管', role: 'root', mustChangePassword: true })
+    const root = s.createUser({
+      email: 'r@b.co',
+      passwordHash: 'h',
+      name: '超管',
+      role: 'root',
+      mustChangePassword: true,
+    })
     expect(root.role).toBe('root')
     expect(root.mustChangePassword).toBe(true)
     expect(s.countUsersByRole('root')).toBe(1)
@@ -374,12 +472,16 @@ describe('三级角色与用户状态', () => {
     s.setUserStatus(u.id, 'disabled')
     expect(s.getUserById(u.id)!.status).toBe('disabled')
     // disabled_at 列本身必须被写入（User 类型不暴露该字段，直查数据库）
-    const disabledAt = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as { disabled_at: string | null }
+    const disabledAt = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as {
+      disabled_at: string | null
+    }
     expect(disabledAt.disabled_at).not.toBeNull()
 
     s.setUserStatus(u.id, 'active')
     expect(s.getUserById(u.id)!.status).toBe('active')
-    const cleared = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as { disabled_at: string | null }
+    const cleared = s.db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(u.id) as {
+      disabled_at: string | null
+    }
     expect(cleared.disabled_at).toBeNull()
     s.close()
   })
@@ -387,7 +489,13 @@ describe('三级角色与用户状态', () => {
   it('审计表可写入并按操作者查回', () => {
     const s = new MotifStore(join(dir, 't4.db'))
     const u = s.createUser({ email: 'a@b.co', passwordHash: 'h', name: '甲' })
-    s.insertAudit({ actorId: u.id, action: 'credit.adjust', targetType: 'user', targetId: u.id, detail: '{"delta":10,"reason":"补偿"}' })
+    s.insertAudit({
+      actorId: u.id,
+      action: 'credit.adjust',
+      targetType: 'user',
+      targetId: u.id,
+      detail: '{"delta":10,"reason":"补偿"}',
+    })
     const rows = s.listAudit({ actorId: u.id })
     expect(rows).toHaveLength(1)
     expect(rows[0].action).toBe('credit.adjust')
@@ -427,15 +535,23 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
       );
     `)
     const t = '2026-01-01T00:00:00.000Z'
-    db.prepare('INSERT INTO users (id, email, password_hash, name, role, credits, invite_code, invited_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-      .run('usr_legacy', 'legacy@b.co', 'scrypt$s$h', '老用户', 'user', 7, 'LEGACYCODE', 0, t, t)
+    db.prepare(
+      'INSERT INTO users (id, email, password_hash, name, role, credits, invite_code, invited_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).run('usr_legacy', 'legacy@b.co', 'scrypt$s$h', '老用户', 'user', 7, 'LEGACYCODE', 0, t, t)
     db.prepare('INSERT INTO cdks (code, credits, created_at) VALUES (?,?,?)').run('OLD-CODE', 5, t)
     db.prepare('INSERT INTO feedback (user_id, content, created_at) VALUES (?,?,?)').run('usr_legacy', '老反馈', t)
-    db.prepare('INSERT INTO topics (id, user_id, title, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-      .run('tp_legacy', 'usr_legacy', '老任务', 'idle', t, t)
+    db.prepare('INSERT INTO topics (id, user_id, title, status, created_at, updated_at) VALUES (?,?,?,?,?,?)').run(
+      'tp_legacy',
+      'usr_legacy',
+      '老任务',
+      'idle',
+      t,
+      t,
+    )
     // 不带 reference_ids / slot_plan 的老消息（两列都由 ALTER 补默认值）
-    db.prepare('INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, status, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
-      .run('msg_legacy', 'tp_legacy', 'usr_legacy', '老提示词', '老提示词', '1024x1024', 2, 'completed', t)
+    db.prepare(
+      'INSERT INTO messages (id, topic_id, user_id, prompt, final_prompt, size, requested_count, status, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+    ).run('msg_legacy', 'tp_legacy', 'usr_legacy', '老提示词', '老提示词', '1024x1024', 2, 'completed', t)
     db.close()
   }
 
@@ -456,11 +572,16 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
     expect(legacy.status).toBe('active')
     expect(legacy.mustChangePassword).toBe(false)
 
-    const cdk = s.db.prepare('SELECT credits, revoked_at FROM cdks WHERE code = ?').get('OLD-CODE') as { credits: number; revoked_at: string | null }
+    const cdk = s.db.prepare('SELECT credits, revoked_at FROM cdks WHERE code = ?').get('OLD-CODE') as {
+      credits: number
+      revoked_at: string | null
+    }
     expect(cdk.credits).toBe(5)
     expect(cdk.revoked_at).toBeNull()
 
-    const fb = s.db.prepare('SELECT content, status, resolved_at, resolved_by FROM feedback WHERE user_id = ?').get('usr_legacy') as {
+    const fb = s.db
+      .prepare('SELECT content, status, resolved_at, resolved_by FROM feedback WHERE user_id = ?')
+      .get('usr_legacy') as {
       content: string
       status: string
       resolved_at: string | null
@@ -492,7 +613,12 @@ describe('旧库迁移（真旧 schema → 新 schema）', () => {
       enhancePrompt: false,
       referenceIds: [],
       // 故意混入 null / NaN / 零尺寸：只有第 2 项合法
-      slotPlan: [null, { x: 10, y: 20, w: 240, h: 240 }, { x: NaN, y: 0, w: 240, h: 240 }, { x: 0, y: 0, w: 0, h: 240 }] as never,
+      slotPlan: [
+        null,
+        { x: 10, y: 20, w: 240, h: 240 },
+        { x: NaN, y: 0, w: 240, h: 240 },
+        { x: 0, y: 0, w: 0, h: 240 },
+      ] as never,
     })
     expect(s.getMessage(badPlanMsg.id)!.slotPlan).toEqual([{ x: 10, y: 20, w: 240, h: 240 }])
 
@@ -644,7 +770,13 @@ describe('额度流水（credit_ledger）', () => {
 
     const rows = s.listLedger({ userId: u.id })
     expect(rows.map((r) => r.source)).toEqual([
-      'cdk_redeem', 'order_paid', 'admin_adjust', 'generation_refund', 'generation_charge', 'signup_bonus', 'opening_balance',
+      'cdk_redeem',
+      'order_paid',
+      'admin_adjust',
+      'generation_refund',
+      'generation_charge',
+      'signup_bonus',
+      'opening_balance',
     ])
     // 倒序由 id 保证（created_at 可能同毫秒并列，不能拿它断言顺序）
     expect(rows.map((r) => r.id)).toEqual([...rows.map((r) => r.id)].sort((a, b) => b - a))
@@ -652,7 +784,9 @@ describe('额度流水（credit_ledger）', () => {
     expect(rows[rows.length - 1].refId).toBeNull() // 最早一条是建档的 opening_balance，没有 refId
 
     // 【关键不变式】逐用户与全库都要成立
-    const perUser = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger WHERE user_id = ?').get(u.id) as { s: number }).s
+    const perUser = (
+      s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger WHERE user_id = ?').get(u.id) as { s: number }
+    ).s
     expect(perUser).toBe(s.getUserById(u.id)!.credits)
     const allLedger = (s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
     const allUsers = (s.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
@@ -686,9 +820,13 @@ describe('额度流水（credit_ledger）', () => {
       invite_code TEXT NOT NULL UNIQUE, invited_by TEXT, invited_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`)
     raw
-      .prepare("INSERT INTO users (id,email,password_hash,name,credits,invite_code,created_at,updated_at) VALUES ('usr_legacy','legacy@b.co','scrypt$a$b','老用户',42,'LEGACY0001','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')")
+      .prepare(
+        "INSERT INTO users (id,email,password_hash,name,credits,invite_code,created_at,updated_at) VALUES ('usr_legacy','legacy@b.co','scrypt$a$b','老用户',42,'LEGACY0001','2026-01-01T00:00:00.000Z','2026-01-01T00:00:00.000Z')",
+      )
       .run()
-    expect(raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'credit_ledger'").get()).toBeUndefined()
+    expect(
+      raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'credit_ledger'").get(),
+    ).toBeUndefined()
     raw.close()
 
     const s2 = new MotifStore(file) // 触发 applySchema
@@ -729,7 +867,16 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
 
     const t = s.createTopic(fresh.id, '概览 fixture')
     const mk = (n: number) =>
-      s.createMessage({ topicId: t.id, userId: fresh.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: n, enhancePrompt: false, referenceIds: [] })
+      s.createMessage({
+        topicId: t.id,
+        userId: fresh.id,
+        prompt: 'p',
+        finalPrompt: 'f',
+        size: '1:1',
+        requestedCount: n,
+        enhancePrompt: false,
+        referenceIds: [],
+      })
     const m1 = mk(3)
     const m2 = mk(2)
     mk(4) // 保持排队中，用来验证成功率的分母不含非终态
@@ -744,7 +891,13 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     s.addCredits(fresh.id, 1, { source: 'generation_refund', refId: m2.id })
 
     // 订单：造一张已支付（金额单位是分）
-    const oid = s.createOrder(fresh.id, { id: 'credits_50', label: '50 张', credits: 50, amountTotal: 868, currency: 'hkd' })
+    const oid = s.createOrder(fresh.id, {
+      id: 'credits_50',
+      label: '50 张',
+      credits: 50,
+      amountTotal: 868,
+      currency: 'hkd',
+    })
     s.db.prepare("UPDATE orders SET status='paid', paid_at=? WHERE id=?").run('2026-09-01T00:00:00.000Z', oid)
     // CDK：一张已兑换、一张已作废、一张未兑换
     s.createCdk('ov-cdk-1', 20)
@@ -775,7 +928,12 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
 
     // 【闭合恒等式】这些数字必须能自己加回来 —— 它就是概览卡片脚注要展示的式子
     expect(o.credits.balance).toBe(
-      o.credits.granted + o.credits.openingBalance + o.credits.adjustedIn + o.credits.refunded - o.credits.adjustedOut - o.credits.generatedCharged
+      o.credits.granted +
+        o.credits.openingBalance +
+        o.credits.adjustedIn +
+        o.credits.refunded -
+        o.credits.adjustedOut -
+        o.credits.generatedCharged,
     )
 
     // bySource 走**另一条代码路径**交叉验证（公开 API + JS 归约），不要再抄一遍 SQL
@@ -832,7 +990,17 @@ describe('概览指标（六组，与等价查询逐项对账）', () => {
     const s = new MotifStore(join(dir, 'ov2.db'))
     const u = s.createUser({ email: 'ov2@b.co', passwordHash: 'h', name: 'x' })
     const t = s.createTopic(u.id, 't')
-    const mk = () => s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: 1, enhancePrompt: false, referenceIds: [] })
+    const mk = () =>
+      s.createMessage({
+        topicId: t.id,
+        userId: u.id,
+        prompt: 'p',
+        finalPrompt: 'f',
+        size: '1:1',
+        requestedCount: 1,
+        enhancePrompt: false,
+        referenceIds: [],
+      })
     const a = mk()
     const b = mk()
     mk()
@@ -922,7 +1090,10 @@ describe('反馈处理', () => {
 
     // 重复标记返回 false（条件 UPDATE 未命中），且不覆盖首个处理人
     expect(s.resolveFeedback(first.id, admin.id)).toBe(false)
-    expect((s.db.prepare('SELECT resolved_by FROM feedback WHERE id = ?').get(first.id) as { resolved_by: string }).resolved_by).toBe(admin.id)
+    expect(
+      (s.db.prepare('SELECT resolved_by FROM feedback WHERE id = ?').get(first.id) as { resolved_by: string })
+        .resolved_by,
+    ).toBe(admin.id)
     expect(s.resolveFeedback(99999, admin.id)).toBe(false)
     s.close()
   })
@@ -935,9 +1106,36 @@ describe('生成日志（跨用户）与清理', () => {
     const u2 = s.createUser({ email: 'l2@b.co', passwordHash: 'h', name: '乙' })
     const t1 = s.createTopic(u1.id, 't1')
     const t2 = s.createTopic(u2.id, 't2')
-    s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '甲的提示词', finalPrompt: '甲增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
-    s.createMessage({ topicId: t2.id, userId: u2.id, prompt: '乙的提示词', finalPrompt: '乙增强后', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
-    const third = s.createMessage({ topicId: t1.id, userId: u1.id, prompt: '第三轮', finalPrompt: '第三增强', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    s.createMessage({
+      topicId: t1.id,
+      userId: u1.id,
+      prompt: '甲的提示词',
+      finalPrompt: '甲增强后',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: true,
+      referenceIds: [],
+    })
+    s.createMessage({
+      topicId: t2.id,
+      userId: u2.id,
+      prompt: '乙的提示词',
+      finalPrompt: '乙增强后',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: true,
+      referenceIds: [],
+    })
+    const third = s.createMessage({
+      topicId: t1.id,
+      userId: u1.id,
+      prompt: '第三轮',
+      finalPrompt: '第三增强',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: true,
+      referenceIds: [],
+    })
     s.setMessageStatus(third.id, 'failed', '网关 502')
 
     const all = s.listAllMessages({})
@@ -962,7 +1160,16 @@ describe('生成日志（跨用户）与清理', () => {
     const u = s.createUser({ email: 'l3@b.co', passwordHash: 'h', name: '丙', credits: 40 })
     const t = s.createTopic(u.id, 't')
     const mk = (rc: number) =>
-      s.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'f', size: '1:1', requestedCount: rc, enhancePrompt: false, referenceIds: [] })
+      s.createMessage({
+        topicId: t.id,
+        userId: u.id,
+        prompt: 'p',
+        finalPrompt: 'f',
+        size: '1:1',
+        requestedCount: rc,
+        enhancePrompt: false,
+        referenceIds: [],
+      })
     const oldDone = mk(2)
     const oldFailed = mk(3)
     const oldQueued = mk(2) // 非终态 + 超期 → 不能删（未结清账目）
@@ -970,9 +1177,33 @@ describe('生成日志（跨用户）与清理', () => {
     s.setMessageStatus(oldDone.id, 'completed')
     s.setMessageStatus(oldFailed.id, 'failed', 'e')
     s.setMessageStatus(freshDone.id, 'completed')
-    s.db.prepare("UPDATE messages SET created_at = '2026-01-01T00:00:00.000Z' WHERE id IN (?, ?, ?)").run(oldDone.id, oldFailed.id, oldQueued.id)
-    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldDone.id, origin: 'generated', name: 'a.png', imageKey: 'k/a.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
-    s.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: oldFailed.id, origin: 'generated', name: 'b.png', imageKey: 'k/b.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
+    s.db
+      .prepare("UPDATE messages SET created_at = '2026-01-01T00:00:00.000Z' WHERE id IN (?, ?, ?)")
+      .run(oldDone.id, oldFailed.id, oldQueued.id)
+    s.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: oldDone.id,
+      origin: 'generated',
+      name: 'a.png',
+      imageKey: 'k/a.png',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    })
+    s.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: oldFailed.id,
+      origin: 'generated',
+      name: 'b.png',
+      imageKey: 'k/b.png',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    })
 
     const before = {
       credits: s.getUserById(u.id)!.credits,
@@ -989,7 +1220,9 @@ describe('生成日志（跨用户）与清理', () => {
     expect(s.getUserById(u.id)!.credits).toBe(before.credits)
     expect((s.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c).toBe(before.images)
     expect((s.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(before.ledgerRows)
-    expect((s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(before.ledgerSum)
+    expect((s.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s).toBe(
+      before.ledgerSum,
+    )
     // 存活的两轮各自精确对得上
     const queued = left.find((r) => r.id === oldQueued.id)!
     expect(queued.status).toBe('queued')
@@ -1011,8 +1244,13 @@ describe('话题状态派生与读取自愈', () => {
   function enqueue(u: { id: string }, t: { id: string }, count = 2) {
     store.deductCredits(u.id, count, { source: 'generation_charge' })
     const m = store.createMessage({
-      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p',
-      size: 'auto', requestedCount: count, enhancePrompt: false,
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: count,
+      enhancePrompt: false,
     })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
     return m
@@ -1085,12 +1323,16 @@ describe('话题状态派生与读取自愈', () => {
 
     // 第一次读触发自愈并 bump
     store.getTopic(t.id)
-    const afterFirst = store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as { updated_at: string }
+    const afterFirst = store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as {
+      updated_at: string
+    }
     expect(afterFirst.updated_at >= before).toBe(true)
     // 已落定后再读不再改（不会把长轮询变成无限变更流）
     const beforeSecond = afterFirst.updated_at
     store.getTopic(t.id)
-    expect((store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as { updated_at: string }).updated_at).toBe(beforeSecond)
+    expect(
+      (store.db.prepare('SELECT updated_at FROM topics WHERE id = ?').get(t.id) as { updated_at: string }).updated_at,
+    ).toBe(beforeSecond)
   })
 
   it('读取自愈**不得**误伤真正在跑的任务', () => {
@@ -1229,7 +1471,8 @@ describe('话题状态派生与读取自愈', () => {
     const offenders: string[] = []
     for (const rel of srcFiles) {
       const text = readFileSync(join(root, rel), 'utf8')
-      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*['?]/i.test(text)) offenders.push(`${rel}: 裸写 messages.status`)
+      if (rel !== STORE && /UPDATE\s+messages\s+SET[^`]*status\s*=\s*['?]/i.test(text))
+        offenders.push(`${rel}: 裸写 messages.status`)
       if (rel !== STORE && text.includes('setMessageStatus(')) offenders.push(`${rel}: 调用 setMessageStatus`)
     }
     expect(offenders).toEqual([])
@@ -1241,7 +1484,15 @@ describe('租约回收后的状态一致性（P1）', () => {
     const u = store.createUser({ email: 'rq@b.co', passwordHash: 'h', name: 'rq', credits: 10 })
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, 1, { source: 'generation_charge' })
-    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    const m = store.createMessage({
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: 1,
+      enhancePrompt: false,
+    })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
 
     // 认领 → 两侧都应为「在跑」
@@ -1263,7 +1514,15 @@ describe('租约回收后的状态一致性（P1）', () => {
     const u = store.createUser({ email: 'rq2@b.co', passwordHash: 'h', name: 'rq2', credits: 10 })
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, 1, { source: 'generation_charge' })
-    const m = store.createMessage({ topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false })
+    const m = store.createMessage({
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: 1,
+      enhancePrompt: false,
+    })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
     store.leaseNextMessage('w1', 60_000)
     store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', m.id)
@@ -1290,7 +1549,13 @@ describe('过期 canceling 的租约回收（#93）', () => {
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, count, { source: 'generation_charge' })
     const m = store.createMessage({
-      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: count,
+      enhancePrompt: false,
     })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
     store.leaseNextMessage('w1', 60_000) // 认领：running + 租约 60s（尚不过期）
@@ -1304,15 +1569,25 @@ describe('过期 canceling 的租约回收（#93）', () => {
   function seedGenerated(userId: string, topicId: string, messageId: string, n: number) {
     for (let k = 0; k < n; k++) {
       store.insertCanvasImage({
-        topicId, userId, messageId, origin: 'generated', name: `图 ${k}`, imageKey: `k-${k}`,
-        mimeType: 'image/png', bytes: 1, width: 1, height: 1,
+        topicId,
+        userId,
+        messageId,
+        origin: 'generated',
+        name: `图 ${k}`,
+        imageKey: `k-${k}`,
+        mimeType: 'image/png',
+        bytes: 1,
+        width: 1,
+        height: 1,
       })
     }
   }
   function refundLedgerCount(userId: string): number {
-    return (store.db
-      .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
-      .get(userId) as { c: number }).c
+    return (
+      store.db
+        .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
+        .get(userId) as { c: number }
+    ).c
   }
 
   it('① 过期 canceling 被回收：消息落 canceled、任务回 idle、按已出图数退额', () => {
@@ -1415,7 +1690,13 @@ describe('失败收尾的原子 CAS（finalizeFailure）', () => {
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, count, { source: 'generation_charge' })
     const m = store.createMessage({
-      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: count,
+      enhancePrompt: false,
     })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
     store.leaseNextMessage('w1', 60_000)
@@ -1424,8 +1705,16 @@ describe('失败收尾的原子 CAS（finalizeFailure）', () => {
   function seedGenerated(userId: string, topicId: string, messageId: string, n: number) {
     for (let k = 0; k < n; k++) {
       store.insertCanvasImage({
-        topicId, userId, messageId, origin: 'generated', name: `图 ${k}`, imageKey: `ff-${k}`,
-        mimeType: 'image/png', bytes: 1, width: 1, height: 1,
+        topicId,
+        userId,
+        messageId,
+        origin: 'generated',
+        name: `图 ${k}`,
+        imageKey: `ff-${k}`,
+        mimeType: 'image/png',
+        bytes: 1,
+        width: 1,
+        height: 1,
       })
     }
   }
@@ -1433,9 +1722,11 @@ describe('失败收尾的原子 CAS（finalizeFailure）', () => {
     store.db.prepare('UPDATE messages SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', id)
   }
   function refundRows(userId: string): number {
-    return (store.db
-      .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
-      .get(userId) as { c: number }).c
+    return (
+      store.db
+        .prepare(`SELECT COUNT(*) AS c FROM credit_ledger WHERE user_id = ? AND source = 'generation_refund'`)
+        .get(userId) as { c: number }
+    ).c
   }
   const buildError = (refund: number) => `生成失败${refund > 0 ? `，已退还 ${refund} 张额度` : ''}`
 
@@ -1554,7 +1845,13 @@ describe('成功收尾的原子 CAS（finalizeSuccess）', () => {
     const t = store.createTopic(u.id, 'T')
     store.deductCredits(u.id, count, { source: 'generation_charge' })
     const m = store.createMessage({
-      topicId: t.id, userId: u.id, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: count, enhancePrompt: false,
+      topicId: t.id,
+      userId: u.id,
+      prompt: 'p',
+      finalPrompt: 'p',
+      size: 'auto',
+      requestedCount: count,
+      enhancePrompt: false,
     })
     store.syncTopicStatus(t.id, m.id, 'p', 'queued')
     store.leaseNextMessage('w1', 60_000)

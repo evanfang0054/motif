@@ -92,7 +92,9 @@ function Landing() {
           Motif
         </Link>
         {/* 文案映射：开始体验 → 立即生成；导航锚点链接已按用户裁决移除（2026-09-20） */}
-        <Button variant="primary" onPress={() => openAuth('login')}>立即生成</Button>
+        <Button variant="primary" onPress={() => openAuth('login')}>
+          立即生成
+        </Button>
       </header>
 
       <main>
@@ -122,7 +124,9 @@ function Landing() {
               </Typography>
               <div className="lp-actions">
                 {/* 文案映射：立即开始 → 开始生成 */}
-                <Button variant="primary" onPress={() => openAuth('login')}>开始生成</Button>
+                <Button variant="primary" onPress={() => openAuth('login')}>
+                  开始生成
+                </Button>
                 <Button
                   variant="outline"
                   className="text-[color:var(--lp-hero-fg)] border-[color:color-mix(in_srgb,var(--lp-hero-fg)_45%,transparent)]"
@@ -133,9 +137,18 @@ function Landing() {
               </div>
               {/* 原先的 ✓ / ✦ 是文字字形冒充图标，2026-09-21 换成图标库 */}
               <div className="lp-hero-points">
-                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden /><SignupBonusPhrase tail="额度" /></InlineText>
-                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />单任务多张成套</InlineText>
-                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm"><CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />云端队列不占本地算力</InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
+                  <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                  <SignupBonusPhrase tail="额度" />
+                </InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
+                  <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                  单任务多张成套
+                </InlineText>
+                <InlineText style={{ color: 'var(--lp-hero-muted)' }} type="body-sm">
+                  <CircleCheck className="me-1 inline align-[-0.125em]" aria-hidden />
+                  云端队列不占本地算力
+                </InlineText>
               </div>
             </div>
           </div>
@@ -143,19 +156,40 @@ function Landing() {
 
         <section id="showcase" className="lp-band lp-band-showcase">
           <div className="lp-container">
-            <Typography type="h2" className="lp-section-title">一次任务，一套可用素材</Typography>
-            <Typography type="body" className="lp-section-sub">从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。</Typography>
+            <Typography type="h2" className="lp-section-title">
+              一次任务，一套可用素材
+            </Typography>
+            <Typography type="body" className="lp-section-sub">
+              从参考图分析到批量出图的完整过程，都在任务面板里清晰可见。
+            </Typography>
             <div className="lp-showcase-grid" style={{ marginTop: 26 }}>
               <div className="lp-demo-card">
-                <Typography type="h3" style={{ fontSize: 16, fontWeight: 700 }}>示例 · 香薰蜡烛上新</Typography>
+                <Typography type="h3" style={{ fontSize: 16, fontWeight: 700 }}>
+                  示例 · 香薰蜡烛上新
+                </Typography>
                 <Typography type="body-sm" className="mt-2" style={{ color: 'var(--muted)', lineHeight: 1.8 }}>
                   以蜡烛实拍图为主体，产出电商详情页素材：白底主图、餐桌场景与材质特写，
                   保持同一支蜡烛的形态与香色氛围。
                 </Typography>
                 <div className="mt-3">
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已解析参考图主体与光线特征</InlineText></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已套用「电商商品全套图」模板</InlineText></div>
-                  <div className="lp-step"><span className="lp-step-dot" /><InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">4 张图片进入云端队列生成</InlineText></div>
+                  <div className="lp-step">
+                    <span className="lp-step-dot" />
+                    <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
+                      已解析参考图主体与光线特征
+                    </InlineText>
+                  </div>
+                  <div className="lp-step">
+                    <span className="lp-step-dot" />
+                    <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
+                      已套用「电商商品全套图」模板
+                    </InlineText>
+                  </div>
+                  <div className="lp-step">
+                    <span className="lp-step-dot" />
+                    <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
+                      4 张图片进入云端队列生成
+                    </InlineText>
+                  </div>
                 </div>
               </div>
               <div className="lp-shot">
@@ -186,12 +220,18 @@ function Landing() {
 
         <section id="features" className="lp-band lp-band-features">
           <div className="lp-container">
-            <Typography type="h2" className="lp-section-title">为什么选 Motif</Typography>
-            <Typography type="body" className="lp-section-sub">从参考图到成套素材的完整工作流。</Typography>
+            <Typography type="h2" className="lp-section-title">
+              为什么选 Motif
+            </Typography>
+            <Typography type="body" className="lp-section-sub">
+              从参考图到成套素材的完整工作流。
+            </Typography>
             <div className="lp-feature-grid">
               <div className="lp-feature">
                 <Typography type="h3">参考图驱动</Typography>
-                <Typography type="body">上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。</Typography>
+                <Typography type="body">
+                  上传一张商品或人像参考，模板自动对齐主体特征与光影语言，整组出图不跑偏。
+                </Typography>
               </div>
               <div className="lp-feature">
                 <Typography type="h3">成套批量出图</Typography>
@@ -214,18 +254,19 @@ function Landing() {
             {/* 完整纹样版印章（含墨色小 m 变奏）：只在 ≥64px 的大画幅出场，
                 顶栏/favicon 用减法版 BrandMark，分层约定见 docs/brand/README.md */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/brand/motif-logo-editorial.svg"
-              alt="Motif 印章"
-              width={96}
-              height={96}
-            />
+            <img src="/brand/motif-logo-editorial.svg" alt="Motif 印章" width={96} height={96} />
             {/* ⚠️ 这两处必须显式 `align="center"`：`Typography` 在**元素自身**上带 `text-align: start`
                 （HeroUI 的默认），而 `text-align` 是可继承属性 —— 元素自己的声明会盖掉祖先的 `.lp-cta-inner
                 { text-align: center }`。裸 `<h2>`/`<p>` 时代靠继承居中，换成 Typography 后就变左对齐了。 */}
-            <Typography type="h2" align="center" className="lp-section-title">准备好开始了吗？</Typography>
-            <Typography type="body" align="center" className="lp-section-sub"><SignupBonusPhrase tail="生成额度，不需要绑卡。" /></Typography>
-            <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>免费注册</Button>
+            <Typography type="h2" align="center" className="lp-section-title">
+              准备好开始了吗？
+            </Typography>
+            <Typography type="body" align="center" className="lp-section-sub">
+              <SignupBonusPhrase tail="生成额度，不需要绑卡。" />
+            </Typography>
+            <Button variant="primary" className="mt-5" onPress={() => openAuth('register')}>
+              免费注册
+            </Button>
           </div>
         </section>
       </main>
@@ -235,16 +276,13 @@ function Landing() {
           <BrandMark size={22} />
           Motif
         </InlineText>
-        <InlineText color="muted" type="body-sm">© 2026 Motif · AI 商业图片批量生成工作台</InlineText>
+        <InlineText color="muted" type="body-sm">
+          © 2026 Motif · AI 商业图片批量生成工作台
+        </InlineText>
       </footer>
 
       {authOpen && (
-        <AuthModal
-          mode={authMode}
-          onModeChange={setAuthMode}
-          onClose={closeAuth}
-          prefill={resetPrefill ?? undefined}
-        />
+        <AuthModal mode={authMode} onModeChange={setAuthMode} onClose={closeAuth} prefill={resetPrefill ?? undefined} />
       )}
     </div>
   )

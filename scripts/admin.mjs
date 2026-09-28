@@ -77,7 +77,10 @@ for (const [name, ddl] of Object.entries({
   must_change_password: 'must_change_password INTEGER NOT NULL DEFAULT 0',
   disabled_at: 'disabled_at TEXT',
 })) {
-  const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name)
+  const cols = db
+    .prepare('PRAGMA table_info(users)')
+    .all()
+    .map((c) => c.name)
   if (cols.includes(name)) continue
   try {
     db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`)
@@ -90,7 +93,9 @@ const mode = process.argv[2]
 
 if (mode === '--list') {
   const rows = db
-    .prepare("SELECT email, name, role, status, created_at FROM users WHERE role IN ('admin','root') ORDER BY role DESC, created_at")
+    .prepare(
+      "SELECT email, name, role, status, created_at FROM users WHERE role IN ('admin','root') ORDER BY role DESC, created_at",
+    )
     .all()
   if (rows.length === 0) {
     console.log('（暂无管理员账号）')
@@ -111,7 +116,7 @@ if (mode === '--list') {
     db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?').run(
       hashPassword(password),
       new Date().toISOString(),
-      rootUser.id
+      rootUser.id,
     )
     // 吊销该账号全部会话：改密后旧会话不得继续有效
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(rootUser.id)
@@ -123,7 +128,7 @@ if (mode === '--list') {
       writeFileSync(
         tmp,
         `Motif 超级管理员凭据（由 admin:reset 重置）\n邮箱: ${rootUser.email}\n密码: ${password}\n重置时间: ${new Date().toISOString()}\n\n请登录后立即修改密码。\n`,
-        { mode: 0o600 }
+        { mode: 0o600 },
       )
       renameSync(tmp, file) // 同目录内 rename：原子替换，权限随 inode 保留
       written = true

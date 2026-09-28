@@ -119,11 +119,11 @@ function Workspace({ initialUser }: { initialUser: User }) {
    * 置位后终止 watch 并给出「登录已过期」的明确出口（重新登录）。
    */
   const [sessionExpired, setSessionExpired] = useState(false)
-  const [dialog, setDialog] = useState<'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | 'promptLibrary' | null>(null)
+  const [dialog, setDialog] = useState<
+    'billing' | 'redeem' | 'invite' | 'feedback' | 'profile' | 'promptLibrary' | null
+  >(null)
   const [confirmDelete, setConfirmDelete] = useState<
-    | { kind: 'image'; ids: CanvasImage[] }
-    | { kind: 'topic'; id: string; title: string }
-    | null
+    { kind: 'image'; ids: CanvasImage[] } | { kind: 'topic'; id: string; title: string } | null
   >(null)
   const lastMsgStatusRef = useRef<string | null>(null)
   const detailRef = useRef<TopicDetail | null>(null)
@@ -156,22 +156,19 @@ function Workspace({ initialUser }: { initialUser: User }) {
   }, [activeId])
 
   /** 统一入口：写 detail 前检测消息状态迁移（取消/失败/完成），弹出对应提示 */
-  const applyDetail = useCallback(
-    (d: TopicDetail) => {
-      const active = activeMessage(d)
-      // 切换任务时不提示历史状态，只同步基线
-      const topicChanged = detailRef.current !== null && detailRef.current.topic.id !== d.topic.id
-      if (!topicChanged && lastMsgStatusRef.current && lastMsgStatusRef.current !== active?.status) {
-        // 文案与后台任务路径（任务列表级监看）共用同一个纯函数：两处各写一份，改一处必漏另一处
-        const notice = terminalNotice(d)
-        if (notice) showToast(notice)
-      }
-      if (active) lastMsgStatusRef.current = active.status
-      detailRef.current = d
-      setDetail(d)
-    },
-    []
-  )
+  const applyDetail = useCallback((d: TopicDetail) => {
+    const active = activeMessage(d)
+    // 切换任务时不提示历史状态，只同步基线
+    const topicChanged = detailRef.current !== null && detailRef.current.topic.id !== d.topic.id
+    if (!topicChanged && lastMsgStatusRef.current && lastMsgStatusRef.current !== active?.status) {
+      // 文案与后台任务路径（任务列表级监看）共用同一个纯函数：两处各写一份，改一处必漏另一处
+      const notice = terminalNotice(d)
+      if (notice) showToast(notice)
+    }
+    if (active) lastMsgStatusRef.current = active.status
+    detailRef.current = d
+    setDetail(d)
+  }, [])
 
   const refreshTopics = useCallback(async (): Promise<Topic[]> => {
     const seq = ++listSeqRef.current
@@ -222,7 +219,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       setDetailFailed(false)
       return d
     },
-    [applyDetail]
+    [applyDetail],
   )
 
   /**
@@ -422,35 +419,32 @@ function Workspace({ initialUser }: { initialUser: User }) {
   }, [activeId, refreshTopics])
 
   /** 顶部浮动条 / 面板内的「＋ 新任务」：真正新建（或复用空闲空任务）并切换过去 */
-  const createTopic = useCallback(
-    async () => {
-      setPanel(IDLE_PANEL)
-      try {
-        const res = await fetch('/api/topics', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: '新任务' }),
-        })
-        const data = (await res.json()) as { topic?: Topic; reused?: boolean; error?: string }
-        if (!res.ok || !data.topic) throw new ApiError(res.status, data.error || '新任务创建失败，请重试')
-        setActiveId(data.topic.id)
-        await refreshTopics()
-        showToast({ tone: 'success', message: data.reused ? '已回到未使用的空任务' : '已创建新任务' })
-      } catch (e) {
-        // 会话失效时给「登录已过期」而不是通用的「创建失败」——用户才知道该重新登录（#83-1.6）
-        if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
-          setSessionExpired(true)
-          showToast({ tone: 'danger', message: '登录已过期，请重新登录' })
-          return
-        }
-        // ⚠️ 只有 ApiError（本仓自己的错误类型，message 是服务端给的中文）才透传原文；
-        // 离线时 fetch 直接 reject 出 `TypeError: Failed to fetch`（Safari 是 `Load failed`），
-        // `instanceof Error` 会把英文原文弹成 toast，违反「UI 文案一律中文」。
-        showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '新任务创建失败，请重试' })
+  const createTopic = useCallback(async () => {
+    setPanel(IDLE_PANEL)
+    try {
+      const res = await fetch('/api/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '新任务' }),
+      })
+      const data = (await res.json()) as { topic?: Topic; reused?: boolean; error?: string }
+      if (!res.ok || !data.topic) throw new ApiError(res.status, data.error || '新任务创建失败，请重试')
+      setActiveId(data.topic.id)
+      await refreshTopics()
+      showToast({ tone: 'success', message: data.reused ? '已回到未使用的空任务' : '已创建新任务' })
+    } catch (e) {
+      // 会话失效时给「登录已过期」而不是通用的「创建失败」——用户才知道该重新登录（#83-1.6）
+      if (e instanceof ApiError && isSessionExpiredStatus(e.status)) {
+        setSessionExpired(true)
+        showToast({ tone: 'danger', message: '登录已过期，请重新登录' })
+        return
       }
-    },
-    [refreshTopics]
-  )
+      // ⚠️ 只有 ApiError（本仓自己的错误类型，message 是服务端给的中文）才透传原文；
+      // 离线时 fetch 直接 reject 出 `TypeError: Failed to fetch`（Safari 是 `Load failed`），
+      // `instanceof Error` 会把英文原文弹成 toast，违反「UI 文案一律中文」。
+      showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '新任务创建失败，请重试' })
+    }
+  }, [refreshTopics])
 
   const busy = isBusyStatus(detail?.topic.status)
 
@@ -528,7 +522,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
     },
     // 依赖整份 publicCfg 而非三个具体开关：react-hooks/preserve-manual-memoization 要求手写依赖
     // 不能比自己推断的（publicCfg）更细，否则 React Compiler 会直接跳过本组件的优化。
-    [ensureTopic, refreshTopics, refreshDetail, publicCfg, applyUser]
+    [ensureTopic, refreshTopics, refreshDetail, publicCfg, applyUser],
   )
 
   const submitGenerate = useCallback(
@@ -541,7 +535,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         customH: panel.customH,
         referenceIds: panel.referenceIds,
       }),
-    [submitWith, panel]
+    [submitWith, panel],
   )
 
   /**
@@ -580,7 +574,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
    */
   const lastError = useMemo(
     () => (failedRound ? `上次生成失败：${failedRound.error ?? '未知原因'}` : null),
-    [failedRound]
+    [failedRound],
   )
 
   /**
@@ -634,7 +628,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       if (activeId === id) await refreshDetail(id)
       showToast({ tone: 'success', message: '任务已重命名' })
     },
-    [activeId, refreshDetail, refreshTopics]
+    [activeId, refreshDetail, refreshTopics],
   )
 
   const deleteTopic = useCallback(
@@ -644,17 +638,20 @@ function Workspace({ initialUser }: { initialUser: User }) {
       if (activeId === id) setActiveId(list[0]?.id ?? null)
       showToast({ tone: 'success', message: '任务已删除' })
     },
-    [activeId, refreshTopics]
+    [activeId, refreshTopics],
   )
 
-  const removeImages = useCallback(async (imgs: CanvasImage[]) => {
-    await api.deleteCanvasImages(imgs.map((i) => i.id))
-    // 图片一删，引用关系就必须同步摘掉：服务端校验「参考图必须存在且属于本任务」，
-    // 残留的 cimg_ 会让之后每一次生成都返回 400。
-    const gone = new Set(imgs.map((i) => i.id))
-    setPanel((p) => ({ ...p, referenceIds: p.referenceIds.filter((id) => !gone.has(id)) }))
-    if (activeId) await refreshDetail(activeId)
-  }, [activeId, refreshDetail])
+  const removeImages = useCallback(
+    async (imgs: CanvasImage[]) => {
+      await api.deleteCanvasImages(imgs.map((i) => i.id))
+      // 图片一删，引用关系就必须同步摘掉：服务端校验「参考图必须存在且属于本任务」，
+      // 残留的 cimg_ 会让之后每一次生成都返回 400。
+      const gone = new Set(imgs.map((i) => i.id))
+      setPanel((p) => ({ ...p, referenceIds: p.referenceIds.filter((id) => !gone.has(id)) }))
+      if (activeId) await refreshDetail(activeId)
+    },
+    [activeId, refreshDetail],
+  )
 
   /** 画布「@ 引用」：把图片加入参考图，并把 #编号 写进提示词（单张/批量同一条路径，按张准入） */
   const addReferencesFromCanvas = useCallback(
@@ -662,7 +659,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
       if (imgs.length === 0) return
       const markerOf = (i: CanvasImage) => `#${String(i.serial).padStart(3, '0')}`
       // 在 setPanel 之外先算出准入结果：toast 文案要立刻用到它（不能依赖 updater 被同步调用）
-      const plan = planReferenceAdd(panel.referenceIds, imgs.map((i) => i.id))
+      const plan = planReferenceAdd(
+        panel.referenceIds,
+        imgs.map((i) => i.id),
+      )
       if (plan.accepted.length > 0) {
         const admitted = new Set(plan.accepted)
         const freshMarkers = imgs.filter((i) => admitted.has(i.id)).map(markerOf)
@@ -678,7 +678,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         parts.push(
           plan.accepted.length === 1 && imgs.length === 1
             ? `已引用 ${markerOf(imgs[0])} 为参考图`
-            : `已引用 ${plan.accepted.length} 张为参考图`
+            : `已引用 ${plan.accepted.length} 张为参考图`,
         )
       }
       if (plan.alreadyReferenced.length > 0 && plan.accepted.length === 0) parts.push('所选图片都已在参考图里了')
@@ -688,7 +688,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       if (parts.length === 0) return
       showToast({ tone: 'info', message: parts.join('；') })
     },
-    [panel.referenceIds, panel.prompt]
+    [panel.referenceIds, panel.prompt],
   )
 
   const uploadReference = useCallback(
@@ -723,7 +723,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         showToast({ tone: 'danger', message: e instanceof ApiError ? e.message : '上传失败' })
       }
     },
-    [ensureTopic, panel.referenceIds.length]
+    [ensureTopic, panel.referenceIds.length],
   )
 
   /**
@@ -737,7 +737,12 @@ function Workspace({ initialUser }: { initialUser: User }) {
       }
       const tid = await ensureTopic()
       if (!tid) throw new Error('请先新建一个任务')
-      const { reference } = await api.attachPromptImage({ topicId: tid, sourceId: entry.sourceId, entryId: entry.id, index })
+      const { reference } = await api.attachPromptImage({
+        topicId: tid,
+        sourceId: entry.sourceId,
+        entryId: entry.id,
+        index,
+      })
       setPanel((p) => ({
         ...p,
         referenceIds: [...p.referenceIds, reference.id],
@@ -751,21 +756,18 @@ function Workspace({ initialUser }: { initialUser: User }) {
         message: `已加入参考图（${panel.referenceIds.length + 1}/${MAX_REFERENCE_IMAGES}）；提示词未改动`,
       })
     },
-    [ensureTopic, panel.referenceIds.length]
+    [ensureTopic, panel.referenceIds.length],
   )
 
   /** 移除暂存参考（服务端删除 + 面板同步） */
-  const removeStaged = useCallback(
-    (id: string) => {
-      setPanel((p) => ({
-        ...p,
-        referenceIds: p.referenceIds.filter((x) => x !== id),
-        staged: p.staged.filter((s) => s.id !== id),
-      }))
-      void api.removeStagedReference(id).catch(() => showToast({ tone: 'danger', message: '暂存参考删除失败' }))
-    },
-    []
-  )
+  const removeStaged = useCallback((id: string) => {
+    setPanel((p) => ({
+      ...p,
+      referenceIds: p.referenceIds.filter((x) => x !== id),
+      staged: p.staged.filter((s) => s.id !== id),
+    }))
+    void api.removeStagedReference(id).catch(() => showToast({ tone: 'danger', message: '暂存参考删除失败' }))
+  }, [])
 
   /** 取消画布引用：只摘参考关系，画布里的图仍在（与删图是两件事） */
   const removeCanvasReference = useCallback((id: string) => {
@@ -807,7 +809,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
         timeoutMs: 6000,
       })
     },
-    [detail, panel.staged, panel.prompt]
+    [detail, panel.staged, panel.prompt],
   )
 
   /** 面板里要展示的画布引用：已在参考图里、且不在暂存区的画布图 */
@@ -860,7 +862,8 @@ function Workspace({ initialUser }: { initialUser: User }) {
   const onCanvasDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const t = e.target as HTMLElement
-      if (t.closest('figure, [data-canvas-no-zoom], [role="dialog"], .ws-float-panel, .ws-collapsed-bar, .ws-nav')) return
+      if (t.closest('figure, [data-canvas-no-zoom], [role="dialog"], .ws-float-panel, .ws-collapsed-bar, .ws-nav'))
+        return
       if (wide === false) {
         setLeftOpen(false)
         setRightOpen(false)
@@ -868,7 +871,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       }
       if (rightOpen) setRightOpen(false)
     },
-    [wide, rightOpen]
+    [wide, rightOpen],
   )
 
   /**
@@ -905,7 +908,7 @@ function Workspace({ initialUser }: { initialUser: User }) {
       setDialog(null)
       showToast({ tone: 'success', message: `支付成功，已到账 ${paidCredits} 张额度` })
     },
-    [applyUser]
+    [applyUser],
   )
 
   return (
@@ -948,11 +951,10 @@ function Workspace({ initialUser }: { initialUser: User }) {
           </div>
         ) : detail === null && detailFailed ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
-            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>画布加载失败，请检查网络后重试。</Typography>
-            <Button
-              variant="secondary"
-              onPress={retryDetail}
-            >
+            <Typography type="body-sm" style={{ color: 'var(--muted)' }}>
+              画布加载失败，请检查网络后重试。
+            </Typography>
+            <Button variant="secondary" onPress={retryDetail}>
               重试
             </Button>
           </div>
@@ -1104,7 +1106,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
               <LayoutSideContentLeft />
             </IconButton>
             {/* 任务名只在 ≥lg 显示：窄屏两条浮动条会挤在一起（见 globals.css 的说明） */}
-            <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm"
+            <InlineText
+              style={{ color: 'var(--muted-strong)' }}
+              type="body-sm"
               className="hidden min-w-0 truncate lg:inline"
               title={detail?.topic.title ?? '新任务'}
             >
@@ -1152,7 +1156,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
               <LayoutSideContentRight />
             </IconButton>
             {busy ? (
-              <Button variant="secondary" onPress={() => void cancelRunning()}>取消生成</Button>
+              <Button variant="secondary" onPress={() => void cancelRunning()}>
+                取消生成
+              </Button>
             ) : (
               <Button variant="primary" onPress={() => void submitGenerate()} isDisabled={!panel.prompt.trim()}>
                 {panel.prompt.trim() ? `生成（${panel.count} 张）` : '生成'}
@@ -1256,7 +1262,9 @@ function Workspace({ initialUser }: { initialUser: User }) {
                 )}
               </AlertDialog.Body>
               <AlertDialog.Footer>
-                <Button slot="close" variant="secondary">取消</Button>
+                <Button slot="close" variant="secondary">
+                  取消
+                </Button>
                 <Button
                   variant="danger"
                   onPress={() => {

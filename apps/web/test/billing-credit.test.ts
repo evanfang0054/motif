@@ -14,7 +14,11 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-credit-'))
   store = new MotifStore(join(dir, 't.db'))
   userId = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'x', role: 'user' }).id
-  orderId = store.createOrder(userId, { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 6800, currency: 'hkd' }, 'mock')
+  orderId = store.createOrder(
+    userId,
+    { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 6800, currency: 'hkd' },
+    'mock',
+  )
 })
 afterEach(() => {
   store.close()
@@ -38,7 +42,11 @@ describe('creditPaidOrder（幂等入账）', () => {
     expect(creditPaidOrder(store, 'ord_none', 1)).toBe('not_found')
   })
   it('orders.channel 落库并随 getOrder 回传', () => {
-    const epayOrder = store.createOrder(userId, { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 6800, currency: 'hkd' }, 'epay')
+    const epayOrder = store.createOrder(
+      userId,
+      { id: 'credits_50', label: '50 张额度', credits: 50, amountTotal: 6800, currency: 'hkd' },
+      'epay',
+    )
     expect(store.getOrder(epayOrder)!.channel).toBe('epay')
     expect(store.getOrder(orderId)!.channel).toBe('mock')
   })

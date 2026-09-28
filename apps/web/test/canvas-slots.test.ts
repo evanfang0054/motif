@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { allocateSlots, displaySize, placementRect, rectToPlacement, viewportOrigin, SLOT_COLS, SLOT_STEP, SLOT_W } from '@/lib/canvas/placement'
+import {
+  allocateSlots,
+  displaySize,
+  placementRect,
+  rectToPlacement,
+  viewportOrigin,
+  SLOT_COLS,
+  SLOT_STEP,
+  SLOT_W,
+} from '@/lib/canvas/placement'
 import { rectsIntersect, visibleRects } from '@/lib/canvas/geometry'
 
 describe('空位槽分配', () => {
@@ -35,7 +44,11 @@ describe('空位槽分配', () => {
   })
 
   it('按 4 列换行', () => {
-    const slots = allocateSlots([], Array.from({ length: SLOT_COLS + 1 }, () => displaySize(1024, 1024)), { x: 0, y: 0 })
+    const slots = allocateSlots(
+      [],
+      Array.from({ length: SLOT_COLS + 1 }, () => displaySize(1024, 1024)),
+      { x: 0, y: 0 },
+    )
     expect(slots[SLOT_COLS].y).toBe(SLOT_STEP)
     expect(slots[SLOT_COLS].x).toBe(0)
   })
@@ -67,7 +80,13 @@ describe('空位槽分配', () => {
 
 describe('显示尺寸', () => {
   it('宽高比与原图宽高比之差 ≤ 1%（不拉伸）', () => {
-    for (const [w, h] of [[1024, 768], [768, 1024], [1024, 1024], [1920, 1080], [300, 1200]] as const) {
+    for (const [w, h] of [
+      [1024, 768],
+      [768, 1024],
+      [1024, 1024],
+      [1920, 1080],
+      [300, 1200],
+    ] as const) {
       const size = displaySize(w, h)
       const natural = w / h
       const shown = size.width / size.height

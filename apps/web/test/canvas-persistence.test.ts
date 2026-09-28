@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createCanvasPersistence, createCloudDriver, createLocalDriver, type CanvasPersistence } from '@/stores/canvas/persistence'
+import {
+  createCanvasPersistence,
+  createCloudDriver,
+  createLocalDriver,
+  type CanvasPersistence,
+} from '@/stores/canvas/persistence'
 import type { CanvasPatch, CanvasSnapshot } from '@motif/core'
 import { DEFAULT_CANVAS_META } from '@motif/core'
 
@@ -16,7 +21,12 @@ function fakeDriver(): CanvasPersistence & { saves: CanvasPatch[] } {
 }
 
 const p = (id: string, updatedAt = '2026-09-20T10:00:00.000Z') => ({
-  id, canvasX: 1, canvasY: 2, canvasWidth: 240, canvasHeight: 240, updatedAt,
+  id,
+  canvasX: 1,
+  canvasY: 2,
+  canvasWidth: 240,
+  canvasHeight: 240,
+  updatedAt,
 })
 
 describe('防抖合并', () => {
@@ -51,9 +61,9 @@ describe('防抖合并', () => {
 
   it('driver 层合并后真实 PATCH 只有 1 次（断言 fetch 次数）', async () => {
     vi.useRealTimers()
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ applied: ['cimg_a'], rejected: [] }), { status: 200 })
-    )
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ applied: ['cimg_a'], rejected: [] }), { status: 200 }))
     try {
       const cp = createCanvasPersistence(createCloudDriver(), 10)
       let last: Promise<unknown> = Promise.resolve()
@@ -179,7 +189,12 @@ describe('本地草稿真的会被写入（断网刷新后仍看得到自己摆�
 
   it('提交失败时同时写本地草稿，且草稿里能看到那张图的新位置', async () => {
     vi.useFakeTimers()
-    const driver: CanvasPersistence = { load: async () => null, save: async () => { throw new Error('offline') } }
+    const driver: CanvasPersistence = {
+      load: async () => null,
+      save: async () => {
+        throw new Error('offline')
+      },
+    }
     const { draft, saves, peek } = fakeDraft()
     const cp = createCanvasPersistence(driver, 400, draft)
     const pending = cp.commitPlacement('top_1', [p('cimg_a')])
@@ -286,7 +301,9 @@ describe('本地 driver 降级（主介质不可用时退内存）', () => {
       configurable: true,
       value: {
         getItem: () => null,
-        setItem: () => { throw new Error('QuotaExceededError') },
+        setItem: () => {
+          throw new Error('QuotaExceededError')
+        },
         removeItem: () => {},
       },
     })

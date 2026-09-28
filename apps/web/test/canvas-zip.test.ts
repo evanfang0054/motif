@@ -46,7 +46,7 @@ describe('buildZip（仅 store，不压缩）', () => {
         { name: '001-a.txt', data: bytes('hello') },
         { name: '002-b.txt', data: bytes('world!') },
       ],
-      fixed
+      fixed,
     )
     const entries = readZip(zip)
     expect(entries.map((e) => e.name)).toEqual(['001-a.txt', '002-b.txt'])
@@ -123,7 +123,13 @@ describe('zipEntryName', () => {
 })
 
 describe('zipEntriesFor（文件名唯一性）', () => {
-  const mk = (serial: number, name: string) => ({ id: `c${serial}`, serial, name, mimeType: 'image/png', src: `/s/${serial}` })
+  const mk = (serial: number, name: string) => ({
+    id: `c${serial}`,
+    serial,
+    name,
+    mimeType: 'image/png',
+    src: `/s/${serial}`,
+  })
 
   it('serial 不同 ⇒ 文件名必不同（唯一性靠 serial 前缀，无需去重分支）', () => {
     const out = zipEntriesFor([mk(1, '图片 1'), mk(2, '图片 1'), mk(3, '图片 1')])
@@ -145,7 +151,7 @@ describe('zipEntriesFor（文件名唯一性）', () => {
 describe('zipFileName', () => {
   it('含任务短 id、张数与日期', () => {
     expect(zipFileName('top_3a727e09c4f911f175b0d4d2d05afd28', 4, new Date('2026-09-20T10:00:00Z'))).toBe(
-      'motif-canvas-3a727e09-4张-2026-09-20.zip'
+      'motif-canvas-3a727e09-4张-2026-09-20.zip',
     )
   })
 })

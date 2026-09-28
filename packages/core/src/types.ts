@@ -21,14 +21,7 @@ export interface User {
   invitedCount: number
 }
 
-export type TopicStatus =
-  | 'idle'
-  | 'pending'
-  | 'running'
-  | 'canceling'
-  | 'completed'
-  | 'failed'
-  | 'canceled'
+export type TopicStatus = 'idle' | 'pending' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled'
 
 export interface Topic {
   id: string
@@ -41,13 +34,7 @@ export interface Topic {
   updatedAt: string
 }
 
-export type MessageStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'canceling'
-  | 'canceled'
-  | 'failed'
+export type MessageStatus = 'queued' | 'running' | 'completed' | 'canceling' | 'canceled' | 'failed'
 
 export interface Message {
   id: string

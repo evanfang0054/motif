@@ -49,7 +49,10 @@ describe('GET /api/topics/[id]/canvas', () => {
   it('返回 { images, meta } 且 meta 为默认值', async () => {
     const res = await GET(req(token), params(topicId))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ images: [], meta: { viewport: { x: 0, y: 0, k: 1 }, background: 'lines', version: 1 } })
+    expect(await res.json()).toEqual({
+      images: [],
+      meta: { viewport: { x: 0, y: 0, k: 1 }, background: 'lines', version: 1 },
+    })
   })
 })
 
@@ -62,11 +65,36 @@ describe('PATCH /api/topics/[id]/canvas', () => {
   })
 
   it('响应含 applied / rejected / meta 三键，且 meta 真的落库了', async () => {
-    const img = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'k', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
-    const res = await PATCH(req(token, {
-      images: { upsert: [{ id: img.id, canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 240, updatedAt: '2026-09-20T10:00:00.000Z' }] },
-      meta: { viewport: { x: 5, y: 6, k: 2 } },
-    }), params(topicId))
+    const img = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'k',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
+    const res = await PATCH(
+      req(token, {
+        images: {
+          upsert: [
+            {
+              id: img.id,
+              canvasX: 10,
+              canvasY: 20,
+              canvasWidth: 240,
+              canvasHeight: 240,
+              updatedAt: '2026-09-20T10:00:00.000Z',
+            },
+          ],
+        },
+        meta: { viewport: { x: 5, y: 6, k: 2 } },
+      }),
+      params(topicId),
+    )
     expect(res.status).toBe(200)
     const body = (await res.json()) as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['applied', 'meta', 'rejected'])
@@ -80,15 +108,43 @@ describe('PATCH /api/topics/[id]/canvas', () => {
   })
 
   it('任一 upsert 非法时整批不落库（400 + 零写入）', async () => {
-    const ok = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'k', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
-    const res = await PATCH(req(token, {
-      images: {
-        upsert: [
-          { id: ok.id, canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 240, updatedAt: '2026-09-20T10:00:00.000Z' },
-          { id: 'cimg_bad', canvasX: Number.NaN, canvasY: 0, canvasWidth: 1, canvasHeight: 1, updatedAt: '2026-09-20T10:00:00.000Z' },
-        ],
-      },
-    }), params(topicId))
+    const ok = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'k',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
+    const res = await PATCH(
+      req(token, {
+        images: {
+          upsert: [
+            {
+              id: ok.id,
+              canvasX: 10,
+              canvasY: 20,
+              canvasWidth: 240,
+              canvasHeight: 240,
+              updatedAt: '2026-09-20T10:00:00.000Z',
+            },
+            {
+              id: 'cimg_bad',
+              canvasX: Number.NaN,
+              canvasY: 0,
+              canvasWidth: 1,
+              canvasHeight: 1,
+              updatedAt: '2026-09-20T10:00:00.000Z',
+            },
+          ],
+        },
+      }),
+      params(topicId),
+    )
     expect(res.status).toBe(400)
     // 合法那条也没写进去
     expect(store.listCanvasPlacements(topicId)[0].canvasX).toBe(0)
@@ -109,26 +165,78 @@ describe('PATCH /api/topics/[id]/canvas', () => {
   })
 
   it('updatedAt 为空白串时 400（空串是「待补位」哨兵，客户端不得用它落位）', async () => {
-    const img = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'k', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
-    const res = await PATCH(req(token, {
-      images: { upsert: [{ id: img.id, canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 240, updatedAt: '' }] },
-    }), params(topicId))
+    const img = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'k',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
+    const res = await PATCH(
+      req(token, {
+        images: {
+          upsert: [{ id: img.id, canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 240, updatedAt: '' }],
+        },
+      }),
+      params(topicId),
+    )
     expect(res.status).toBe(400)
     expect(store.listCanvasPlacements(topicId)[0].canvasX).toBe(0)
   })
 
   it('尺寸非正数时 400（0×0 的图既看不见、又占不住槽位）', async () => {
-    const img = store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'k', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
+    const img = store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'k',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
     for (const bad of [0, -1]) {
-      const res = await PATCH(req(token, {
-        images: { upsert: [{ id: img.id, canvasX: 10, canvasY: 20, canvasWidth: bad, canvasHeight: 240, updatedAt: '2026-09-20T10:00:00.000Z' }] },
-      }), params(topicId))
+      const res = await PATCH(
+        req(token, {
+          images: {
+            upsert: [
+              {
+                id: img.id,
+                canvasX: 10,
+                canvasY: 20,
+                canvasWidth: bad,
+                canvasHeight: 240,
+                updatedAt: '2026-09-20T10:00:00.000Z',
+              },
+            ],
+          },
+        }),
+        params(topicId),
+      )
       expect(res.status).toBe(400)
     }
   })
 
   it('meta 里 k<=0 被归一为正的默认缩放，且之后的 GET 不会崩（画布仍可打开）', async () => {
-    store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
+    store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
     const res = await PATCH(req(token, { meta: { viewport: { k: 0 } } }), params(topicId))
     expect(res.status).toBe(200)
     expect(((await res.json()) as { meta: { viewport: { k: number } } }).meta.viewport.k).toBe(1)
@@ -147,8 +255,30 @@ describe('PATCH /api/topics/[id]/canvas', () => {
 
 describe('旧库补位挂在 GET 上', () => {
   it('首次 GET 补位；连续两次 GET 位置不变', async () => {
-    store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'a', imageKey: 'ka', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
-    store.insertCanvasImage({ topicId, userId, messageId: null, origin: 'generated', name: 'b', imageKey: 'kb', mimeType: 'image/webp', bytes: 1, width: 1024, height: 1024 })
+    store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'a',
+      imageKey: 'ka',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
+    store.insertCanvasImage({
+      topicId,
+      userId,
+      messageId: null,
+      origin: 'generated',
+      name: 'b',
+      imageKey: 'kb',
+      mimeType: 'image/webp',
+      bytes: 1,
+      width: 1024,
+      height: 1024,
+    })
     const first = (await (await GET(req(token), params(topicId))).json()) as { images: Array<{ canvasWidth: number }> }
     expect(first.images.every((p) => p.canvasWidth > 0)).toBe(true)
     const second = (await (await GET(req(token), params(topicId))).json()) as { images: unknown[] }

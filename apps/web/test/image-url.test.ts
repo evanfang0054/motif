@@ -22,13 +22,13 @@ describe('#57 withPublicImageBase：未配时零行为差异，配了才换直�
 
   it('配了 → src 换成 `${base}/${imageKey}`', () => {
     expect(withPublicImageBase(images(), 'https://cdn.example.com')[0].src).toBe(
-      'https://cdn.example.com/users/u1/topics/t1/a.png'
+      'https://cdn.example.com/users/u1/topics/t1/a.png',
     )
   })
 
   it('尾部斜杠 / 两侧空白都不会拼出双斜杠', () => {
     expect(withPublicImageBase(images(), '  https://cdn.example.com///  ')[0].src).toBe(
-      'https://cdn.example.com/users/u1/topics/t1/a.png'
+      'https://cdn.example.com/users/u1/topics/t1/a.png',
     )
   })
 

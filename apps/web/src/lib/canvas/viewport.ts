@@ -189,7 +189,7 @@ function isFullWidthDrawer(p: ToolbarPanelRect, hostWidth: number): boolean {
 export function toolbarBand(
   hostWidth: number,
   panels: readonly ToolbarPanelRect[],
-  toolbar: { top: number; height: number }
+  toolbar: { top: number; height: number },
 ): { left: number; right: number } {
   let left = 0
   let right = hostWidth
@@ -221,7 +221,7 @@ export function clampToolbarCenter(
   toolbarWidth: number,
   band: { left: number; right: number },
   hostWidth: number,
-  gap = TOOLBAR_EDGE_GAP
+  gap = TOOLBAR_EDGE_GAP,
 ): number {
   const half = toolbarWidth / 2 + gap
   const min = band.left + half

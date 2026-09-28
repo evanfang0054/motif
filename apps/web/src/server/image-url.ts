@@ -40,7 +40,7 @@ export function publicImageBaseFor(driver: string | null | undefined, base: stri
  */
 export function withPublicImageBase<T extends { src: string; imageKey: string }>(
   images: T[],
-  base: string | null | undefined
+  base: string | null | undefined,
 ): T[] {
   const prefix = normalizePublicBase(base)
   if (!prefix) return images

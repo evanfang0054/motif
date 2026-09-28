@@ -42,8 +42,7 @@ export interface TerminalNotice {
  */
 export function activeMessage(detail: TopicDetail) {
   return (
-    detail.messages.find((m) => m.id === detail.topic.activeMessageId) ??
-    detail.messages[detail.messages.length - 1]
+    detail.messages.find((m) => m.id === detail.topic.activeMessageId) ?? detail.messages[detail.messages.length - 1]
   )
 }
 

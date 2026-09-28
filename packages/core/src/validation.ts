@@ -65,7 +65,8 @@ export const COUNT_MIN = 1
 export const COUNT_MAX = 12
 
 export function validateCount(count: number): string | null {
-  if (!Number.isInteger(count) || count < COUNT_MIN || count > COUNT_MAX) return `张数需在 ${COUNT_MIN}–${COUNT_MAX} 之间。`
+  if (!Number.isInteger(count) || count < COUNT_MIN || count > COUNT_MAX)
+    return `张数需在 ${COUNT_MIN}–${COUNT_MAX} 之间。`
   return null
 }
 

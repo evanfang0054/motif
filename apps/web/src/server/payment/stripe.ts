@@ -16,7 +16,11 @@ export function createStripeGateway(values: Record<string, string | undefined>):
         line_items: [
           {
             quantity: 1,
-            price_data: { currency: order.currency, unit_amount: order.amountTotal, product_data: { name: order.label } },
+            price_data: {
+              currency: order.currency,
+              unit_amount: order.amountTotal,
+              product_data: { name: order.label },
+            },
           },
         ],
         metadata: { orderId: order.orderId },

@@ -57,7 +57,7 @@ export function listLocalKeys(dataDir: string): string[] {
 export async function planMigration(
   dataDir: string,
   remote: Storage,
-  liveKeys?: ReadonlySet<string>
+  liveKeys?: ReadonlySet<string>,
 ): Promise<MigratePlan> {
   const all = listLocalKeys(dataDir)
   const orphaned = liveKeys ? all.filter((key) => !liveKeys.has(key)) : []
@@ -79,7 +79,7 @@ export async function runMigration(
   dataDir: string,
   remote: Storage,
   onProgress?: (done: number, total: number, key: string) => void,
-  liveKeys?: ReadonlySet<string>
+  liveKeys?: ReadonlySet<string>,
 ): Promise<{ uploaded: number; skipped: number; orphaned: number }> {
   const plan = await planMigration(dataDir, remote, liveKeys)
   let done = 0
@@ -159,7 +159,7 @@ export async function pruneOrphans(
     onProgress?: (done: number, total: number, key: string) => void
     /** 越过「孤儿占比过高」闸（CLI 的 `--force-prune`）。空库闸不可越过。 */
     force?: boolean
-  } = {}
+  } = {},
 ): Promise<PruneResult> {
   assertPruneSafe(dataDir, liveKeys, opts.force ?? false)
 
@@ -236,7 +236,7 @@ export function assertPruneSafe(dataDir: string, liveKeys: ReadonlySet<string>, 
     throw new PruneRefusedError(
       `拒绝清理孤儿：数据库里没有任何在册对象，本地却扫到 ${all.length} 个。` +
         '这通常意味着 dataDir / 数据库文件指错了地方，而不是「所有对象都成了孤儿」。' +
-        '按孤儿删会把整个存储目录清空且不可恢复，故中止。请先确认配置指向正确的库。'
+        '按孤儿删会把整个存储目录清空且不可恢复，故中止。请先确认配置指向正确的库。',
     )
   }
   const orphans = all.filter((key) => !liveKeys.has(key))
@@ -246,7 +246,7 @@ export function assertPruneSafe(dataDir: string, liveKeys: ReadonlySet<string>, 
       `拒绝清理孤儿：本次会删掉 ${orphans.length}/${all.length} 个本地对象（${Math.round(ratio * 100)}%），比例过高。` +
         '数据库里在册的对象与这份存储目录对不上时（例如恢复了一份旧备份库、' +
         '或 MOTIF_DB_FILE 与 MOTIF_DATA_DIR 指向不一致），孤儿占比就会异常高。' +
-        '若你已确认数据库指向正确、且这些对象确实都该删，请加 --force-prune 再跑一次。'
+        '若你已确认数据库指向正确、且这些对象确实都该删，请加 --force-prune 再跑一次。',
     )
   }
   return all.length

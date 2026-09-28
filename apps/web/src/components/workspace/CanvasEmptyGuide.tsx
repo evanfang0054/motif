@@ -42,8 +42,12 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
   return (
     <div className="flex h-full items-center justify-center p-6" data-testid="canvas-empty-guide">
       <Surface className="w-full max-w-[520px] rounded-2xl p-6">
-        <Typography type="h2" style={{ color: 'var(--foreground)' }}>从零开始做一套图</Typography>
-        <Typography type="body-sm" className="mt-1" style={{ color: 'var(--muted)' }}>画布现在是空的，三步就能出第一套图：</Typography>
+        <Typography type="h2" style={{ color: 'var(--foreground)' }}>
+          从零开始做一套图
+        </Typography>
+        <Typography type="body-sm" className="mt-1" style={{ color: 'var(--muted)' }}>
+          画布现在是空的，三步就能出第一套图：
+        </Typography>
 
         <ol className="mt-4 flex flex-col gap-3">
           {STEPS.map((step, i) => (
@@ -66,8 +70,12 @@ function CanvasEmptyGuide({ onOpenPromptLibrary }: Props) {
                 {i + 1}
               </span>
               <div style={{ minWidth: 0 }}>
-                <div className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>{step.title}</div>
-                <div className="text-xs" style={{ color: 'var(--muted)', lineHeight: 1.7 }}>{step.desc}</div>
+                <div className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  {step.title}
+                </div>
+                <div className="text-xs" style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
+                  {step.desc}
+                </div>
               </div>
             </li>
           ))}

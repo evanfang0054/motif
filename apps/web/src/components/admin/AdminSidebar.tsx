@@ -56,12 +56,7 @@ export function AdminSidebar({ items }: { items: AdminNavItem[] }) {
     <>
       {/* 图标按钮：只在 <1024 显示（桌面档由 CSS 隐藏）。打开 HeroUI 左侧抽屉 */}
       {/* ☰ 原为文字字形，2026-09-21 换成图标库的 Bars */}
-      <button
-        type="button"
-        className="admin-nav-toggle"
-        aria-label="打开管理菜单"
-        onClick={() => setOpen(true)}
-      >
+      <button type="button" className="admin-nav-toggle" aria-label="打开管理菜单" onClick={() => setOpen(true)}>
         <Bars aria-hidden="true" />
       </button>
 

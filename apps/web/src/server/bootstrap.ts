@@ -74,7 +74,7 @@ function writeCredentialsFile(dataDir: string, email: string, password: string):
   writeFileSync(
     file,
     `Motif 超级管理员凭据\n邮箱: ${email}\n密码: ${password}\n生成时间: ${new Date().toISOString()}\n\n请登录后立即修改密码；本文件仅包含密码明文，勿提交到版本库。\n`,
-    { mode: 0o600 }
+    { mode: 0o600 },
   )
   // writeFileSync 的 mode 只在新建文件时生效，显式再收一次权限
   chmodSync(file, 0o600)
@@ -85,6 +85,6 @@ function logCredentials(email: string, password: string, fileOk: boolean): void 
   console.log(
     `\n${line}\n[motif] 已自动创建超级管理员账号\n  邮箱: ${email}\n  密码: ${password}\n  请登录后立即修改密码${
       fileOk ? '' : '（凭据文件写入失败，请立即记录本密码）'
-    }\n${line}\n`
+    }\n${line}\n`,
   )
 }

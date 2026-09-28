@@ -36,7 +36,9 @@ export function ListEmptyContent({ text }: { text: string }) {
     <EmptyState className="flex h-full w-full flex-col items-center justify-center gap-3 py-8 text-center">
       {/* ⚠️ `align="center"` 不能省：外层靠 `text-center` 居中，而 `Typography` 自己在元素上带
           `text-align: start`。空态文案在窄屏会折行，缺了它第二行起就是左对齐。 */}
-      <InlineText type="body-sm" align="center" className="admin-muted">{text}</InlineText>
+      <InlineText type="body-sm" align="center" className="admin-muted">
+        {text}
+      </InlineText>
     </EmptyState>
   )
 }
@@ -51,7 +53,17 @@ export function ListEmptyContent({ text }: { text: string }) {
  * 但直接把计数整块拿掉会让工具栏跳一下、且读屏用户不知道发生了什么。显示「计数暂不可用」
  * 既诚实又保留了 live region。
  */
-export function ListCount({ loading, total, unit, errored }: { loading: boolean; total: number; unit: string; errored?: boolean }) {
+export function ListCount({
+  loading,
+  total,
+  unit,
+  errored,
+}: {
+  loading: boolean
+  total: number
+  unit: string
+  errored?: boolean
+}) {
   // ⚠️ 外层必须**常驻**并保留 role="status"：live region 要先在 DOM 里、再发生内容变化才会被播报；
   // 若加载时整个换掉、完成后再挂一个新元素，「共 N 个」这一步对读屏用户是静默的（比改动前更差）。
   // ⚠️ 外层用 `<div>` 而不是 `<span>`：加载态塞的是骨架 `<div>`，`<span>` 里放 `<div>` 是非法嵌套
@@ -60,18 +72,32 @@ export function ListCount({ loading, total, unit, errored }: { loading: boolean;
   return (
     <div role="status">
       {errored ? (
-        <InlineText type="body-sm" className="admin-muted">计数暂不可用</InlineText>
+        <InlineText type="body-sm" className="admin-muted">
+          计数暂不可用
+        </InlineText>
       ) : loading ? (
         <Skeleton className="inline-block h-4 w-16 rounded-medium" />
       ) : (
-        <InlineText type="body-sm" className="admin-muted">共 {total} {unit}</InlineText>
+        <InlineText type="body-sm" className="admin-muted">
+          共 {total} {unit}
+        </InlineText>
       )}
     </div>
   )
 }
 
 /** 分页控件。只有一页时不渲染 —— 避免给运营一个永远点不动的控件 */
-export function Pager({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (p: number) => void }) {
+export function Pager({
+  page,
+  pageSize,
+  total,
+  onChange,
+}: {
+  page: number
+  pageSize: number
+  total: number
+  onChange: (p: number) => void
+}) {
   const pages = Math.max(1, Math.ceil(total / pageSize))
   if (total <= pageSize) return null
   return (

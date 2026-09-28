@@ -12,7 +12,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!to) throw new ServiceError(400, '请填写测试收件邮箱。')
     try {
       const r = await sendTestMail(getRuntime().mailer, to)
-      writeAudit({ actorId: actor.id, action: 'mailer.test', targetType: 'settings', detail: { via: r.via, to, ok: true } })
+      writeAudit({
+        actorId: actor.id,
+        action: 'mailer.test',
+        targetType: 'settings',
+        detail: { via: r.via, to, ok: true },
+      })
       return NextResponse.json(r)
     } catch (e) {
       // 失败（频控/凭据错误）恰是最需留痕的场景：记审计后再把错误交回 jsonError 透传页面

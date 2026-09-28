@@ -12,7 +12,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     requireAdmin(req)
     const sp = req.nextUrl.searchParams
     const statusRaw = sp.get('status')
-    const status = statusRaw && (STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as MessageStatus) : undefined
+    const status =
+      statusRaw && (STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as MessageStatus) : undefined
     const page = Math.max(1, Number(sp.get('page') ?? 1) || 1)
     const pageSize = Math.min(200, Math.max(1, Number(sp.get('pageSize') ?? 50) || 50))
     const userTerm = sp.get('userId') ?? undefined

@@ -104,7 +104,7 @@ describe('播种（只播非空值、已存在的键永不覆盖）', () => {
     expect(seeded.sort()).toEqual(
       SETTING_DEFS.filter((d) => !d.readOnly)
         .map((d) => d.key)
-        .sort()
+        .sort(),
     )
   })
 })
@@ -135,17 +135,19 @@ describe('读取视图（密钥只回掩码）', () => {
   })
 
   it('只读项被标记为 readOnly', () => {
-    expect(readSettingsView(store, {}).filter((v) => v.readOnly).map((v) => v.key)).toEqual([
-      'MOTIF_DATA_DIR',
-      'MOTIF_DB_FILE',
-    ])
+    expect(
+      readSettingsView(store, {})
+        .filter((v) => v.readOnly)
+        .map((v) => v.key),
+    ).toEqual(['MOTIF_DATA_DIR', 'MOTIF_DB_FILE'])
   })
 
   it('危险区项被标记为 danger', () => {
-    expect(readSettingsView(store, {}).filter((v) => v.danger).map((v) => v.key)).toEqual([
-      'MOTIF_EXPOSE_DEV_CODE',
-      'PAYMENT_CHANNEL',
-    ])
+    expect(
+      readSettingsView(store, {})
+        .filter((v) => v.danger)
+        .map((v) => v.key),
+    ).toEqual(['MOTIF_EXPOSE_DEV_CODE', 'PAYMENT_CHANNEL'])
   })
 })
 
@@ -206,8 +208,13 @@ describe('额度与奖励分组（credits）', () => {
   it('四个键走普通入口即可保存（不需要危险区二次确认）', () => {
     const r = writeSettings(
       store,
-      { INVITE_REWARD_ENABLED: 'true', INVITE_REWARD_CREDITS: '7', INVITE_REWARD_MAX_INVITEES: '9', SIGNUP_BONUS_CREDITS: '5' },
-      { danger: false }
+      {
+        INVITE_REWARD_ENABLED: 'true',
+        INVITE_REWARD_CREDITS: '7',
+        INVITE_REWARD_MAX_INVITEES: '9',
+        SIGNUP_BONUS_CREDITS: '5',
+      },
+      { danger: false },
     )
     expect(r.ok).toBe(true)
     expect(store.getSetting('INVITE_REWARD_CREDITS')).toBe('7')

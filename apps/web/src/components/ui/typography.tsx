@@ -18,10 +18,7 @@ type TypographyProps = Omit<ComponentProps<typeof Typography>, 'render'>
  */
 function InlineText({ children, ...props }: TypographyProps): ReactElement {
   return (
-    <Typography
-      {...props}
-      render={({ children: kids, ...domProps }) => <span {...domProps}>{kids}</span>}
-    >
+    <Typography {...props} render={({ children: kids, ...domProps }) => <span {...domProps}>{kids}</span>}>
       {children}
     </Typography>
   )

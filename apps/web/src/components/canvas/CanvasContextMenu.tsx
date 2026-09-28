@@ -61,7 +61,12 @@ function CanvasContextMenu({ anchor, onClose, onAction }: Props) {
       <Dropdown.Popover placement="bottom start" offset={4}>
         <Dropdown.Menu onAction={(key) => onAction(key as ContextMenuAction)}>
           {ITEMS.map((item) => (
-            <Dropdown.Item key={item.id} id={item.id} textValue={item.label} variant={item.danger ? 'danger' : 'default'}>
+            <Dropdown.Item
+              key={item.id}
+              id={item.id}
+              textValue={item.label}
+              variant={item.danger ? 'danger' : 'default'}
+            >
               {item.icon}
               <Label>{item.label}</Label>
             </Dropdown.Item>

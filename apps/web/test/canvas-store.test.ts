@@ -10,13 +10,17 @@ const ORIGIN = { x: 0, y: 0 }
 
 function seed() {
   const store = createCanvasStore()
-  store.getState().init('top_1', {
-    images: [
-      { id: 'cimg_a', canvasX: 0, canvasY: 0, canvasWidth: 240, canvasHeight: 240, updatedAt: 't' },
-      { id: 'cimg_b', canvasX: 280, canvasY: 0, canvasWidth: 240, canvasHeight: 240, updatedAt: 't' },
-    ],
-    meta: { viewport: { x: 0, y: 0, k: 1 }, background: 'lines', version: 1 },
-  }, 'cloud')
+  store.getState().init(
+    'top_1',
+    {
+      images: [
+        { id: 'cimg_a', canvasX: 0, canvasY: 0, canvasWidth: 240, canvasHeight: 240, updatedAt: 't' },
+        { id: 'cimg_b', canvasX: 280, canvasY: 0, canvasWidth: 240, canvasHeight: 240, updatedAt: 't' },
+      ],
+      meta: { viewport: { x: 0, y: 0, k: 1 }, background: 'lines', version: 1 },
+    },
+    'cloud',
+  )
   return store
 }
 
@@ -28,19 +32,23 @@ describe('画布 store：视口值未变时不通知订阅者（消掉滚轮撞�
 
     const before = s.getState().meta.viewport
     let calls = 0
-    const unsub = s.subscribe(() => { calls++ })
+    const unsub = s.subscribe(() => {
+      calls++
+    })
     s.getState().zoomAt(1.1, 100, 100) // 已在上限，值不会变
     unsub()
 
     expect(s.getState().meta.viewport).toBe(before) // 同一引用
-    expect(calls).toBe(0)                            // 订阅者一次都没被调用
+    expect(calls).toBe(0) // 订阅者一次都没被调用
   })
 
   it('panBy(0, 0) 同理：引用不变、订阅者不被调用', () => {
     const s = seed()
     const before = s.getState().meta.viewport
     let calls = 0
-    const unsub = s.subscribe(() => { calls++ })
+    const unsub = s.subscribe(() => {
+      calls++
+    })
     s.getState().panBy(0, 0)
     unsub()
     expect(s.getState().meta.viewport).toBe(before)

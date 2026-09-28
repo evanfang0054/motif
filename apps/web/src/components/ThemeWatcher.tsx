@@ -1,13 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import {
-  DARK_MEDIA_QUERY,
-  THEME_STORAGE_KEY,
-  isDarkTheme,
-  parseThemeMode,
-  type ThemeMode,
-} from '@/lib/theme'
+import { DARK_MEDIA_QUERY, THEME_STORAGE_KEY, isDarkTheme, parseThemeMode, type ThemeMode } from '@/lib/theme'
 
 /**
  * 把三态落到 `<html data-theme>`。

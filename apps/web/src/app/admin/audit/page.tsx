@@ -38,7 +38,12 @@ export default function AdminAuditPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await api.adminListAudit({ actorId: actorId || undefined, action: action || undefined, page, pageSize: PAGE_SIZE })
+      const r = await api.adminListAudit({
+        actorId: actorId || undefined,
+        action: action || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      })
       setItems(r.items)
       setUsers(r.users)
       setTotal(r.total)
@@ -56,13 +61,24 @@ export default function AdminAuditPage() {
 
   return (
     <section className="admin-panel">
-      <Typography type="h1" className="admin-title">审计日志</Typography>
-      <Typography type="body" className="admin-muted">所有会改变他人或系统状态的管理动作都在这里留痕，用于回答「谁对谁做了什么」。</Typography>
+      <Typography type="h1" className="admin-title">
+        审计日志
+      </Typography>
+      <Typography type="body" className="admin-muted">
+        所有会改变他人或系统状态的管理动作都在这里留痕，用于回答「谁对谁做了什么」。
+      </Typography>
 
       <div className="admin-toolbar">
         {/* 筛选词支持邮箱 / 昵称 / 裸 ID 三路解析（服务端 findUserIdsByTerm），
             所以 placeholder 不能再写「按操作者 ID 筛选」—— 那会让运营以为只能贴 ID */}
-        <SearchField aria-label="按操作者筛选" value={actorId} onChange={(v) => { setActorId(v); setPage(1) }}>
+        <SearchField
+          aria-label="按操作者筛选"
+          value={actorId}
+          onChange={(v) => {
+            setActorId(v)
+            setPage(1)
+          }}
+        >
           <SearchField.Group>
             <SearchField.SearchIcon />
             <SearchField.Input placeholder="按操作者邮箱 / 昵称 / ID" />
@@ -71,7 +87,14 @@ export default function AdminAuditPage() {
         </SearchField>
         {/* ⚠️ 显式给宽：动作示例 `credit.adjust` 较长，沿用工具栏默认的 180px 会被截成
             「按动作精确筛选，如 cred…」（issue #79-1.4）。className 是官方定制面。 */}
-        <SearchField aria-label="按动作精确筛选" value={action} onChange={(v) => { setAction(v); setPage(1) }}>
+        <SearchField
+          aria-label="按动作精确筛选"
+          value={action}
+          onChange={(v) => {
+            setAction(v)
+            setPage(1)
+          }}
+        >
           <SearchField.Group>
             <SearchField.SearchIcon />
             <SearchField.Input className="w-[300px]" placeholder="按动作精确筛选，如 credit.adjust" />
@@ -81,7 +104,11 @@ export default function AdminAuditPage() {
         <ListCount loading={loading} total={total} unit="条" />
       </div>
 
-      {err && <div className="admin-alert-err" role="alert">{err}</div>}
+      {err && (
+        <div className="admin-alert-err" role="alert">
+          {err}
+        </div>
+      )}
 
       <Table>
         <Table.ScrollContainer className="admin-table-scroll">
@@ -95,17 +122,15 @@ export default function AdminAuditPage() {
                   丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
                   合计最小宽 720px（各列之和），容器约 1018px；更窄的视口会横向滚动
                   （`table__scroll-container` 自带 `overflow-x-auto`）。 */}
-              <Table.Column isRowHeader className="min-w-[168px]">时间</Table.Column>
+              <Table.Column isRowHeader className="min-w-[168px]">
+                时间
+              </Table.Column>
               <Table.Column className="min-w-[180px]">操作者</Table.Column>
               <Table.Column className="min-w-[150px]">动作</Table.Column>
               <Table.Column className="min-w-[150px]">目标</Table.Column>
               <Table.Column className="min-w-[72px]">详情</Table.Column>
             </Table.Header>
-            <Table.Body
-              renderEmptyState={() =>
-                loading ? null : <ListEmptyContent text="（无匹配的审计记录）" />
-              }
-            >
+            <Table.Body renderEmptyState={() => (loading ? null : <ListEmptyContent text="（无匹配的审计记录）" />)}>
               {loading ? (
                 <ListLoadingRows cols={5} />
               ) : (
@@ -117,8 +142,12 @@ export default function AdminAuditPage() {
                     <Table.Cell data-label="操作者">
                       <span title={r.actorId}>{userDisplayLabel(userMap.get(r.actorId), r.actorId)}</span>
                     </Table.Cell>
-                    <Table.Cell className="admin-mono" data-label="动作">{r.action}</Table.Cell>
-                    <Table.Cell className="admin-mono" data-label="目标">{r.targetType ? `${r.targetType}:${r.targetId ?? '—'}` : '—'}</Table.Cell>
+                    <Table.Cell className="admin-mono" data-label="动作">
+                      {r.action}
+                    </Table.Cell>
+                    <Table.Cell className="admin-mono" data-label="目标">
+                      {r.targetType ? `${r.targetType}:${r.targetId ?? '—'}` : '—'}
+                    </Table.Cell>
                     {/* 详情抽屉（推荐的下钻模式：抽屉保持列表上下文） */}
                     <Table.Cell data-label="详情">
                       {r.detail ? (
@@ -139,7 +168,13 @@ export default function AdminAuditPage() {
 
       <Pager page={page} pageSize={PAGE_SIZE} total={total} onChange={setPage} />
 
-      <Drawer.Backdrop isOpen={detail !== null} isDismissable onOpenChange={(o) => { if (!o) setDetail(null) }}>
+      <Drawer.Backdrop
+        isOpen={detail !== null}
+        isDismissable
+        onOpenChange={(o) => {
+          if (!o) setDetail(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -150,14 +185,25 @@ export default function AdminAuditPage() {
               {detail && (
                 <>
                   <dl className="audit-detail-meta">
-                    <div><dt>时间</dt><dd>{formatDateTime(detail.createdAt)}</dd></div>
+                    <div>
+                      <dt>时间</dt>
+                      <dd>{formatDateTime(detail.createdAt)}</dd>
+                    </div>
                     {/* 详情同样显示成人；ID 收进 title，仍可复制追溯 */}
                     <div>
                       <dt>操作者</dt>
                       <dd title={detail.actorId}>{userDisplayLabel(userMap.get(detail.actorId), detail.actorId)}</dd>
                     </div>
-                    <div><dt>动作</dt><dd className="admin-mono">{detail.action}</dd></div>
-                    <div><dt>目标</dt><dd className="admin-mono">{detail.targetType ? `${detail.targetType}:${detail.targetId ?? '—'}` : '—'}</dd></div>
+                    <div>
+                      <dt>动作</dt>
+                      <dd className="admin-mono">{detail.action}</dd>
+                    </div>
+                    <div>
+                      <dt>目标</dt>
+                      <dd className="admin-mono">
+                        {detail.targetType ? `${detail.targetType}:${detail.targetId ?? '—'}` : '—'}
+                      </dd>
+                    </div>
                   </dl>
                   {detail.detail && (
                     <>

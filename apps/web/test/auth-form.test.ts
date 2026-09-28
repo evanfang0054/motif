@@ -23,10 +23,20 @@ describe('clientAuthError：客户端先行校验（#74-2.2 必填 / #74-2.1 密
   it('注册：空表单按填写顺序一次只报一条（昵称 → 邮箱 → 验证码 → 密码 → 确认密码）', () => {
     expect(clientAuthError('register', empty)).toBe('请输入昵称。')
     expect(clientAuthError('register', { ...empty, name: '小美' })).toBe('请输入邮箱。')
-    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' })).toBe('请输入 6 位邮箱验证码。')
-    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com', code: '123456' })).toBe('请输入密码。')
+    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com', code: '123456' })).toBe(
+      '请输入密码。',
+    )
     expect(
-      clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com', code: '123456', password: 'Passw0rd!' })
+      clientAuthError('register', {
+        ...empty,
+        name: '小美',
+        email: 'me@example.com',
+        code: '123456',
+        password: 'Passw0rd!',
+      }),
     ).toBe('请再次输入密码。')
   })
 
@@ -43,7 +53,9 @@ describe('clientAuthError：客户端先行校验（#74-2.2 必填 / #74-2.1 密
   })
 
   it('注册：密码不合规（长度够但缺大写/符号）→ PASSWORD_RULE_TEXT', () => {
-    expect(clientAuthError('register', { ...filled, password: '12345678', passwordConfirm: '12345678' })).toBe(PASSWORD_RULE_TEXT)
+    expect(clientAuthError('register', { ...filled, password: '12345678', passwordConfirm: '12345678' })).toBe(
+      PASSWORD_RULE_TEXT,
+    )
   })
 
   it('注册：两次密码不一致 → 与 core 同一句文案', () => {

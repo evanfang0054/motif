@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     // 否则原样返回。这里是**唯一**把带 src 的图片交给客户端的地方（其余接口都不含 src），故只需改这一处。
     const base = publicImageBaseFor(
       resolveSetting(store, process.env, 'STORAGE_DRIVER'),
-      resolveSetting(store, process.env, 'S3_PUBLIC_BASE_URL')
+      resolveSetting(store, process.env, 'S3_PUBLIC_BASE_URL'),
     )
     const canvasImages = withPublicImageBase(detail.canvasImages, base)
     return NextResponse.json({ ...detail, canvasImages, staged })

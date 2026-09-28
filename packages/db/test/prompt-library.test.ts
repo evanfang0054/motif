@@ -8,8 +8,18 @@ import { MotifStore, type PromptEntryInput, type PromptSourceDefInput } from '..
 let dir: string
 let store: MotifStore
 
-const DEF_A: PromptSourceDefInput = { id: 'src-a', name: '源 A', url: 'https://example.com/a.json', homepage: 'https://example.com/a' }
-const DEF_B: PromptSourceDefInput = { id: 'src-b', name: '源 B', url: 'https://example.com/b.json', homepage: 'https://example.com/b' }
+const DEF_A: PromptSourceDefInput = {
+  id: 'src-a',
+  name: '源 A',
+  url: 'https://example.com/a.json',
+  homepage: 'https://example.com/a',
+}
+const DEF_B: PromptSourceDefInput = {
+  id: 'src-b',
+  name: '源 B',
+  url: 'https://example.com/b.json',
+  homepage: 'https://example.com/b',
+}
 
 /** 两次替换用的时间戳（写成真时间，避免被误读成任务编号） */
 const NOW_A = '2026-01-01T00:00:00.000Z'
@@ -87,8 +97,14 @@ describe('提示词库表结构', () => {
   it('旧库（无这两张表）启动即补建，既有数据不受影响', () => {
     const dbPath = join(dir, 'old.db')
     const raw = new Database(dbPath)
-    raw.exec("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, credits INTEGER NOT NULL DEFAULT 0, invite_code TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
-    raw.prepare('INSERT INTO users (id, email, password_hash, name, invite_code, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run('u1', 'u@e.com', 'x', '老用户', 'INV1', 't', 't')
+    raw.exec(
+      'CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, credits INTEGER NOT NULL DEFAULT 0, invite_code TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)',
+    )
+    raw
+      .prepare(
+        'INSERT INTO users (id, email, password_hash, name, invite_code, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+      )
+      .run('u1', 'u@e.com', 'x', '老用户', 'INV1', 't', 't')
     raw.close()
     const s = new MotifStore(dbPath)
     expect(s.getUserById('u1')?.name).toBe('老用户')
@@ -101,7 +117,10 @@ describe('提示词库表结构', () => {
 describe('seedPromptSources', () => {
   it('只覆盖清单列，抓取状态列一律保留', () => {
     store.seedPromptSources([DEF_A])
-    store.replacePromptEntries('src-a', [entry('1'), entry('2')], { signature: 'sig-1', now: '2026-09-21T00:00:00.000Z' })
+    store.replacePromptEntries('src-a', [entry('1'), entry('2')], {
+      signature: 'sig-1',
+      now: '2026-09-21T00:00:00.000Z',
+    })
     const before = store.listPromptSources()[0]
     expect(before.entryCount).toBe(2)
     expect(before.signature).toBe('sig-1')
@@ -183,10 +202,14 @@ describe('replacePromptEntries（整源原子替换）', () => {
 
   it('tags / referenceImageUrls 往返为数组；脏数据回退空数组', () => {
     store.seedPromptSources([DEF_A])
-    store.replacePromptEntries('src-a', [entry('1', { tags: ['写实', '海报'], referenceImageUrls: ['https://x/1.png'] })], {
-      signature: 's',
-      now: 'T',
-    })
+    store.replacePromptEntries(
+      'src-a',
+      [entry('1', { tags: ['写实', '海报'], referenceImageUrls: ['https://x/1.png'] })],
+      {
+        signature: 's',
+        now: 'T',
+      },
+    )
     const row = store.listPromptEntries()[0]
     expect(row.tags).toEqual(['写实', '海报'])
     expect(row.referenceImageUrls).toEqual(['https://x/1.png'])

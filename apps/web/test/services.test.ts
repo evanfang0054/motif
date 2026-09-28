@@ -61,7 +61,13 @@ describe('auth 流程', () => {
     expect(inviterAfter.credits).toBe(3)
     // 验证码已消费，重放失败
     expect(() =>
-      register(store, { name: 'x', email: 'new@b.co', code: devCode!, password: 'Secret66!', passwordConfirm: 'Secret66!' })
+      register(store, {
+        name: 'x',
+        email: 'new@b.co',
+        code: devCode!,
+        password: 'Secret66!',
+        passwordConfirm: 'Secret66!',
+      }),
     ).toThrow(ServiceError)
   })
 
@@ -78,11 +84,14 @@ describe('auth 流程', () => {
     })
   }
 
-  const ledgerSum = () => (store.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
-  const creditsSum = () => (store.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
+  const ledgerSum = () =>
+    (store.db.prepare('SELECT COALESCE(SUM(delta),0) AS s FROM credit_ledger').get() as { s: number }).s
+  const creditsSum = () =>
+    (store.db.prepare('SELECT COALESCE(SUM(credits),0) AS s FROM users').get() as { s: number }).s
   /** 领域 User 类型不暴露 invitedBy，直接读列 */
   const invitedByOf = (userId: string) =>
-    (store.db.prepare('SELECT invited_by FROM users WHERE id = ?').get(userId) as { invited_by: string | null }).invited_by
+    (store.db.prepare('SELECT invited_by FROM users WHERE id = ?').get(userId) as { invited_by: string | null })
+      .invited_by
 
   it('关闭邀请活动：不建立邀请关系、不发奖励，但注册赠送照发', async () => {
     store.setSetting('INVITE_REWARD_ENABLED', 'false')
@@ -96,7 +105,11 @@ describe('auth 流程', () => {
     expect(store.getUserById(inviter.id)!.credits).toBe(0)
     expect(invitedByOf(invitee.id)).toBeNull()
     expect(
-      (store.db.prepare("SELECT COUNT(*) AS c FROM credit_ledger WHERE source = 'invite_reward'").get() as { c: number }).c
+      (
+        store.db.prepare("SELECT COUNT(*) AS c FROM credit_ledger WHERE source = 'invite_reward'").get() as {
+          c: number
+        }
+      ).c,
     ).toBe(0)
   })
 
@@ -156,17 +169,35 @@ describe('auth 流程', () => {
     await sendCode(store, mailer, 'register', 'a@b.co')
     // 两个都合规但不相同 —— 否则会被更早的复杂度校验拦下，测不到「不一致」这条分支
     expect(() =>
-      register(store, { name: 'a', email: 'a@b.co', code: '000000', password: 'Secret66!', passwordConfirm: 'Other66!' })
+      register(store, {
+        name: 'a',
+        email: 'a@b.co',
+        code: '000000',
+        password: 'Secret66!',
+        passwordConfirm: 'Other66!',
+      }),
     ).toThrow(/不一致/)
     // 弱密码（仅长度够）必须在注册处被拒，且给出规则文案（#74-2.1 注册与改密两处一致）
     expect(() =>
-      register(store, { name: 'a', email: 'a@b.co', code: '000000', password: '12345678', passwordConfirm: '12345678' })
+      register(store, {
+        name: 'a',
+        email: 'a@b.co',
+        code: '000000',
+        password: '12345678',
+        passwordConfirm: '12345678',
+      }),
     ).toThrow(/至少 8 位.*大写字母.*小写字母.*数字.*符号/)
     const u = store.createUser({ email: 'dup@b.co', passwordHash: 'h', name: 'd' })
     expect(u).toBeTruthy()
     const { devCode } = await sendCode(store, mailer, 'register', 'dup@b.co')
     expect(() =>
-      register(store, { name: 'a', email: 'dup@b.co', code: devCode!, password: 'Secret66!', passwordConfirm: 'Secret66!' })
+      register(store, {
+        name: 'a',
+        email: 'dup@b.co',
+        code: devCode!,
+        password: 'Secret66!',
+        passwordConfirm: 'Secret66!',
+      }),
     ).toThrow(/已注册/)
   })
 
@@ -213,7 +244,7 @@ describe('生成流程', () => {
         enhance: false,
         topicId: null,
         referenceCanvasImageIds: [],
-      })
+      }),
     ).rejects.toMatchObject({ status: 402 })
   })
 
@@ -229,20 +260,41 @@ describe('生成流程', () => {
         enhance: false,
         topicId: topic.id,
         referenceCanvasImageIds: [],
-      })
+      }),
     ).rejects.toMatchObject({ status: 404 })
   })
 
   it('非法输入被拒绝', async () => {
     const u = store.createUser({ email: 'v@b.co', passwordHash: 'h', name: 'v', credits: 5 })
     await expect(
-      enqueueGeneration(store, provider, dir, u, { prompt: ' ', count: 1, size: '1024x1024', enhance: false, topicId: null, referenceCanvasImageIds: [] })
+      enqueueGeneration(store, provider, dir, u, {
+        prompt: ' ',
+        count: 1,
+        size: '1024x1024',
+        enhance: false,
+        topicId: null,
+        referenceCanvasImageIds: [],
+      }),
     ).rejects.toMatchObject({ status: 400 })
     await expect(
-      enqueueGeneration(store, provider, dir, u, { prompt: 'ok', count: 99, size: '1024x1024', enhance: false, topicId: null, referenceCanvasImageIds: [] })
+      enqueueGeneration(store, provider, dir, u, {
+        prompt: 'ok',
+        count: 99,
+        size: '1024x1024',
+        enhance: false,
+        topicId: null,
+        referenceCanvasImageIds: [],
+      }),
     ).rejects.toMatchObject({ status: 400 })
     await expect(
-      enqueueGeneration(store, provider, dir, u, { prompt: 'ok', count: 1, size: '99x99', enhance: false, topicId: null, referenceCanvasImageIds: [] })
+      enqueueGeneration(store, provider, dir, u, {
+        prompt: 'ok',
+        count: 1,
+        size: '99x99',
+        enhance: false,
+        topicId: null,
+        referenceCanvasImageIds: [],
+      }),
     ).rejects.toMatchObject({ status: 400 })
   })
 
@@ -254,34 +306,62 @@ describe('生成流程', () => {
 
     // 本任务合法参考图
     const ref = store.insertCanvasImage({
-      topicId: topic.id, userId: owner.id, messageId: null, origin: 'uploaded',
-      name: '参考图', imageKey: 'k1', mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+      topicId: topic.id,
+      userId: owner.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图',
+      imageKey: 'k1',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 0,
+      height: 0,
     })
     // 其他任务的参考图（同用户）
     const crossRef = store.insertCanvasImage({
-      topicId: otherTopic.id, userId: owner.id, messageId: null, origin: 'uploaded',
-      name: '参考图', imageKey: 'k2', mimeType: 'image/png', bytes: 1, width: 0, height: 0,
+      topicId: otherTopic.id,
+      userId: owner.id,
+      messageId: null,
+      origin: 'uploaded',
+      name: '参考图',
+      imageKey: 'k2',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 0,
+      height: 0,
     })
 
     // 跨任务参考图 → 400
     await expect(
       enqueueGeneration(store, provider, dir, owner, {
-        prompt: 'x', count: 1, size: '1024x1024', enhance: false, topicId: topic.id,
+        prompt: 'x',
+        count: 1,
+        size: '1024x1024',
+        enhance: false,
+        topicId: topic.id,
         referenceCanvasImageIds: [crossRef.id],
-      })
+      }),
     ).rejects.toMatchObject({ status: 400 })
 
     // 不存在的参考图 → 400
     await expect(
       enqueueGeneration(store, provider, dir, owner, {
-        prompt: 'x', count: 1, size: '1024x1024', enhance: false, topicId: topic.id,
+        prompt: 'x',
+        count: 1,
+        size: '1024x1024',
+        enhance: false,
+        topicId: topic.id,
         referenceCanvasImageIds: ['cimg_does_not_exist'],
-      })
+      }),
     ).rejects.toMatchObject({ status: 400 })
 
     // 合法参考图 → 计入消息 referenceIds
     const res = await enqueueGeneration(store, provider, dir, owner, {
-      prompt: '用参考图生成', count: 1, size: '1024x1024', enhance: false, topicId: topic.id,
+      prompt: '用参考图生成',
+      count: 1,
+      size: '1024x1024',
+      enhance: false,
+      topicId: topic.id,
       referenceCanvasImageIds: [ref.id],
     })
     expect(store.getMessage(res.messageId)!.referenceIds).toEqual([ref.id])
@@ -289,9 +369,13 @@ describe('生成流程', () => {
     // 他人冒用 owner 的参考图 → 404（任务都不属于他）
     await expect(
       enqueueGeneration(store, provider, dir, stranger, {
-        prompt: 'x', count: 1, size: '1024x1024', enhance: false, topicId: topic.id,
+        prompt: 'x',
+        count: 1,
+        size: '1024x1024',
+        enhance: false,
+        topicId: topic.id,
         referenceCanvasImageIds: [ref.id],
-      })
+      }),
     ).rejects.toMatchObject({ status: 404 })
   })
 })
@@ -385,7 +469,7 @@ describe('friendlyGenerateError（失败文案）', () => {
 describe('userFacingGenerateError（配置类失败不外泄）', () => {
   it('ConfigError 收敛成中性句，不含内部键名、不含「稍后重试」', () => {
     const e = new ConfigError(
-      '[motif] 缺少生图网关配置：请在管理后台「系统设置 → 生图网关」填写 IMAGE_API_BASE_URL 与 IMAGE_API_KEY'
+      '[motif] 缺少生图网关配置：请在管理后台「系统设置 → 生图网关」填写 IMAGE_API_BASE_URL 与 IMAGE_API_KEY',
     )
     const msg = userFacingGenerateError(e, 3)
     expect(msg).toBe('生成服务暂时不可用，已退还 3 张额度')

@@ -19,7 +19,8 @@ import { createPaymentGateway } from './payment'
  * 设置页的分组。`prompts` 是**动作面板**（提示词源状态 + 「立即刷新」），
  * `SETTING_DEFS` 里没有它的键 —— 它照样是一个分区，只是不承载配置。
  */
-export type SettingGroup = 'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
+export type SettingGroup =
+  'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
 export type SettingKind = 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
 
 export interface SettingDef {
@@ -45,12 +46,42 @@ export interface SettingDef {
 
 export const SETTING_DEFS: readonly SettingDef[] = [
   // ---- 生图网关 ----
-  { key: 'IMAGE_API_BASE_URL', group: 'generation', label: '网关地址', kind: 'url', required: true, affectsRuntime: true, hint: 'OpenAI 兼容网关的根地址，例如 https://api.example.com/v1' },
-  { key: 'IMAGE_API_KEY', group: 'generation', label: 'API 密钥', kind: 'secret', required: true, affectsRuntime: true, hint: '只写不读：保存后页面只显示掩码' },
-  { key: 'IMAGE_MODEL', group: 'generation', label: '模型', kind: 'string', defaultHint: 'gpt-image-2', affectsRuntime: true },
+  {
+    key: 'IMAGE_API_BASE_URL',
+    group: 'generation',
+    label: '网关地址',
+    kind: 'url',
+    required: true,
+    affectsRuntime: true,
+    hint: 'OpenAI 兼容网关的根地址，例如 https://api.example.com/v1',
+  },
+  {
+    key: 'IMAGE_API_KEY',
+    group: 'generation',
+    label: 'API 密钥',
+    kind: 'secret',
+    required: true,
+    affectsRuntime: true,
+    hint: '只写不读：保存后页面只显示掩码',
+  },
+  {
+    key: 'IMAGE_MODEL',
+    group: 'generation',
+    label: '模型',
+    kind: 'string',
+    defaultHint: 'gpt-image-2',
+    affectsRuntime: true,
+  },
   // 关闭后本进程不再跑队列，改由独立进程 `pnpm worker` 接管（两者可共存，租约保证不双跑）。
   // ⚠️ 刻意**不是** affectsRuntime：它不涉及 provider/mailer 重建，需重启进程才生效（hint 写明）。
-  { key: 'MOTIF_INPROC_WORKER', group: 'generation', label: '本进程内运行生成队列 worker', kind: 'boolean', defaultHint: 'true', hint: '关闭后需另跑 `pnpm worker` 独立进程接管出图，否则队列无人消费。改动后需重启服务生效。' },
+  {
+    key: 'MOTIF_INPROC_WORKER',
+    group: 'generation',
+    label: '本进程内运行生成队列 worker',
+    kind: 'boolean',
+    defaultHint: 'true',
+    hint: '关闭后需另跑 `pnpm worker` 独立进程接管出图，否则队列无人消费。改动后需重启服务生效。',
+  },
 
   // ---- 额度与奖励 ----
   // 分组名取 credits 而非 invite：注册赠送不属于邀请活动，放 invite 组语义不对。
@@ -59,43 +90,199 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   //    （入口隐藏、不再发奖）。这是需求明确接受的口径，升级须知写在对应 PR 描述里。
   // ⚠️ CDK 兑换**默认开启**（用户裁决）：它是「不接支付渠道也能发额度」的唯一手段，
   //    关掉它等于把自建部署的额度来源全部切断。
-  { key: 'CDK_REDEEM_ENABLED', group: 'credits', label: '开放 CDK 兑换', kind: 'boolean', defaultHint: 'true', hint: '关闭后工作台不再显示 CDK 兑换入口，兑换接口一并拒绝（已发出的码仍有效，重新开启即可兑换）。' },
-  { key: 'INVITE_REWARD_ENABLED', group: 'credits', label: '邀请好友送额度', kind: 'boolean', defaultHint: 'false', hint: '关闭后工作台不再显示邀请入口，且注册时不再建立邀请关系、不发奖励。' },
-  { key: 'INVITE_REWARD_CREDITS', group: 'credits', label: '每邀请 1 人赠送额度', kind: 'number', defaultHint: '3', hint: '单位：张。仅在活动开启时生效。' },
-  { key: 'INVITE_REWARD_MAX_INVITEES', group: 'credits', label: '最多奖励人数', kind: 'number', defaultHint: '3', hint: '超过此人数后继续邀请不再发放奖励，但邀请关系仍建立。' },
-  { key: 'SIGNUP_BONUS_CREDITS', group: 'credits', label: '注册赠送额度', kind: 'number', defaultHint: '3', hint: '单位：张。与邀请活动开关无关：关闭邀请活动不影响注册赠送。' },
+  {
+    key: 'CDK_REDEEM_ENABLED',
+    group: 'credits',
+    label: '开放 CDK 兑换',
+    kind: 'boolean',
+    defaultHint: 'true',
+    hint: '关闭后工作台不再显示 CDK 兑换入口，兑换接口一并拒绝（已发出的码仍有效，重新开启即可兑换）。',
+  },
+  {
+    key: 'INVITE_REWARD_ENABLED',
+    group: 'credits',
+    label: '邀请好友送额度',
+    kind: 'boolean',
+    defaultHint: 'false',
+    hint: '关闭后工作台不再显示邀请入口，且注册时不再建立邀请关系、不发奖励。',
+  },
+  {
+    key: 'INVITE_REWARD_CREDITS',
+    group: 'credits',
+    label: '每邀请 1 人赠送额度',
+    kind: 'number',
+    defaultHint: '3',
+    hint: '单位：张。仅在活动开启时生效。',
+  },
+  {
+    key: 'INVITE_REWARD_MAX_INVITEES',
+    group: 'credits',
+    label: '最多奖励人数',
+    kind: 'number',
+    defaultHint: '3',
+    hint: '超过此人数后继续邀请不再发放奖励，但邀请关系仍建立。',
+  },
+  {
+    key: 'SIGNUP_BONUS_CREDITS',
+    group: 'credits',
+    label: '注册赠送额度',
+    kind: 'number',
+    defaultHint: '3',
+    hint: '单位：张。与邀请活动开关无关：关闭邀请活动不影响注册赠送。',
+  },
 
   // ---- 邮件发信 ----
-  { key: 'MOTIF_MAILER', group: 'mailer', label: '发信渠道', kind: 'enum', options: ['console', 'smtp', 'resend', 'sendgrid'], defaultHint: 'console', affectsRuntime: true, hint: 'console 只把验证码打进服务端日志，用于本地联调' },
-  { key: 'MAIL_FROM', group: 'mailer', label: '发件人地址', kind: 'string', affectsRuntime: true, hint: '真实渠道必填' },
+  {
+    key: 'MOTIF_MAILER',
+    group: 'mailer',
+    label: '发信渠道',
+    kind: 'enum',
+    options: ['console', 'smtp', 'resend', 'sendgrid'],
+    defaultHint: 'console',
+    affectsRuntime: true,
+    hint: 'console 只把验证码打进服务端日志，用于本地联调',
+  },
+  {
+    key: 'MAIL_FROM',
+    group: 'mailer',
+    label: '发件人地址',
+    kind: 'string',
+    affectsRuntime: true,
+    hint: '真实渠道必填',
+  },
   { key: 'SMTP_HOST', group: 'mailer', label: 'SMTP 主机', kind: 'string', affectsRuntime: true },
-  { key: 'SMTP_PORT', group: 'mailer', label: 'SMTP 端口', kind: 'number', affectsRuntime: true, hint: 'QQ 邮箱为 465' },
-  { key: 'SMTP_SECURE', group: 'mailer', label: 'SMTP 加密', kind: 'boolean', affectsRuntime: true, hint: '留空则按端口是否为 465 自动判断' },
+  {
+    key: 'SMTP_PORT',
+    group: 'mailer',
+    label: 'SMTP 端口',
+    kind: 'number',
+    affectsRuntime: true,
+    hint: 'QQ 邮箱为 465',
+  },
+  {
+    key: 'SMTP_SECURE',
+    group: 'mailer',
+    label: 'SMTP 加密',
+    kind: 'boolean',
+    affectsRuntime: true,
+    hint: '留空则按端口是否为 465 自动判断',
+  },
   { key: 'SMTP_USER', group: 'mailer', label: 'SMTP 用户名', kind: 'string', affectsRuntime: true },
-  { key: 'SMTP_PASS', group: 'mailer', label: 'SMTP 密码 / 授权码', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
-  { key: 'RESEND_API_KEY', group: 'mailer', label: 'Resend 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
-  { key: 'SENDGRID_API_KEY', group: 'mailer', label: 'SendGrid 密钥', kind: 'secret', affectsRuntime: true, hint: '只写不读' },
+  {
+    key: 'SMTP_PASS',
+    group: 'mailer',
+    label: 'SMTP 密码 / 授权码',
+    kind: 'secret',
+    affectsRuntime: true,
+    hint: '只写不读',
+  },
+  {
+    key: 'RESEND_API_KEY',
+    group: 'mailer',
+    label: 'Resend 密钥',
+    kind: 'secret',
+    affectsRuntime: true,
+    hint: '只写不读',
+  },
+  {
+    key: 'SENDGRID_API_KEY',
+    group: 'mailer',
+    label: 'SendGrid 密钥',
+    kind: 'secret',
+    affectsRuntime: true,
+    hint: '只写不读',
+  },
 
   // ---- 提示词增强（独立 LLM） ----
   // 独立于生图网关：增强走 chat/completions、生图走 images，两者域名与密钥通常不同（D12）。
   // 端点与密钥**必填**：开关开着但没配齐时 configHealth 判未就绪，生成链路按「不增强」走。
-  { key: 'LLM_ENHANCE_ENABLED', group: 'llm', label: '启用提示词增强', kind: 'boolean', defaultHint: 'false', hint: '开启后生成前会先调 LLM 改写提示词；需同时配好端点与密钥才真正生效。' },
-  { key: 'LLM_API_BASE_URL', group: 'llm', label: 'LLM 接口地址', kind: 'url', required: true, hint: 'OpenAI 兼容的 chat/completions 根地址，例如 https://api.example.com/v1' },
-  { key: 'LLM_API_KEY', group: 'llm', label: 'LLM 密钥', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
+  {
+    key: 'LLM_ENHANCE_ENABLED',
+    group: 'llm',
+    label: '启用提示词增强',
+    kind: 'boolean',
+    defaultHint: 'false',
+    hint: '开启后生成前会先调 LLM 改写提示词；需同时配好端点与密钥才真正生效。',
+  },
+  {
+    key: 'LLM_API_BASE_URL',
+    group: 'llm',
+    label: 'LLM 接口地址',
+    kind: 'url',
+    required: true,
+    hint: 'OpenAI 兼容的 chat/completions 根地址，例如 https://api.example.com/v1',
+  },
+  {
+    key: 'LLM_API_KEY',
+    group: 'llm',
+    label: 'LLM 密钥',
+    kind: 'secret',
+    required: true,
+    hint: '只写不读：保存后页面只显示掩码',
+  },
   { key: 'LLM_MODEL', group: 'llm', label: '增强模型', kind: 'string', defaultHint: 'gpt-4o-mini' },
-  { key: 'LLM_TIMEOUT_MS', group: 'llm', label: '增强超时（毫秒）', kind: 'number', defaultHint: '20000', hint: '增强失败不阻断生成，超时只是让降级更快发生。' },
+  {
+    key: 'LLM_TIMEOUT_MS',
+    group: 'llm',
+    label: '增强超时（毫秒）',
+    kind: 'number',
+    defaultHint: '20000',
+    hint: '增强失败不阻断生成，超时只是让降级更快发生。',
+  },
 
   // ---- 图片存储 ----
   // 驱动为 local 时全部 S3_* 隐藏（见 lib/setting-visibility.ts）。
   // 切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。
-  { key: 'STORAGE_DRIVER', group: 'storage', label: '图片存储驱动', kind: 'enum', options: ['local', 's3'], defaultHint: 'local', hint: '切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。' },
-  { key: 'S3_ENDPOINT', group: 'storage', label: 'S3 端点', kind: 'url', required: true, hint: '含协议，例如 https://s3.example.com（自建 MinIO 也填这里）' },
-  { key: 'S3_REGION', group: 'storage', label: '区域', kind: 'string', defaultHint: 'us-east-1', hint: '多数自建服务不校验，可留空使用默认。' },
+  {
+    key: 'STORAGE_DRIVER',
+    group: 'storage',
+    label: '图片存储驱动',
+    kind: 'enum',
+    options: ['local', 's3'],
+    defaultHint: 'local',
+    hint: '切到 s3 后新图写远端；本地已有的老图仍可读（双读），可用 `pnpm storage:migrate` 搬迁。',
+  },
+  {
+    key: 'S3_ENDPOINT',
+    group: 'storage',
+    label: 'S3 端点',
+    kind: 'url',
+    required: true,
+    hint: '含协议，例如 https://s3.example.com（自建 MinIO 也填这里）',
+  },
+  {
+    key: 'S3_REGION',
+    group: 'storage',
+    label: '区域',
+    kind: 'string',
+    defaultHint: 'us-east-1',
+    hint: '多数自建服务不校验，可留空使用默认。',
+  },
   { key: 'S3_BUCKET', group: 'storage', label: '存储桶', kind: 'string', required: true },
   { key: 'S3_ACCESS_KEY_ID', group: 'storage', label: 'Access Key ID', kind: 'string', required: true },
-  { key: 'S3_SECRET_ACCESS_KEY', group: 'storage', label: 'Secret Access Key', kind: 'secret', required: true, hint: '只写不读：保存后页面只显示掩码' },
-  { key: 'S3_FORCE_PATH_STYLE', group: 'storage', label: '强制 path-style 寻址', kind: 'boolean', defaultHint: 'false', hint: '自建 MinIO / 无 DNS 泛解析的兼容服务需开启。' },
-  { key: 'S3_PUBLIC_BASE_URL', group: 'storage', label: '图片公开访问前缀', kind: 'url', hint: '如 https://cdn.example.com；配了之后画布图片与打包下载直接由它取，不再经应用转发字节。前提：驱动为 s3、老图已用 `pnpm storage:migrate` 搬完、桶允许公开读并允许跨域 GET（批量下载走 fetch）。留空则一切照旧走应用代理。' },
+  {
+    key: 'S3_SECRET_ACCESS_KEY',
+    group: 'storage',
+    label: 'Secret Access Key',
+    kind: 'secret',
+    required: true,
+    hint: '只写不读：保存后页面只显示掩码',
+  },
+  {
+    key: 'S3_FORCE_PATH_STYLE',
+    group: 'storage',
+    label: '强制 path-style 寻址',
+    kind: 'boolean',
+    defaultHint: 'false',
+    hint: '自建 MinIO / 无 DNS 泛解析的兼容服务需开启。',
+  },
+  {
+    key: 'S3_PUBLIC_BASE_URL',
+    group: 'storage',
+    label: '图片公开访问前缀',
+    kind: 'url',
+    hint: '如 https://cdn.example.com；配了之后画布图片与打包下载直接由它取，不再经应用转发字节。前提：驱动为 s3、老图已用 `pnpm storage:migrate` 搬完、桶允许公开读并允许跨域 GET（批量下载走 fetch）。留空则一切照旧走应用代理。',
+  },
 
   // ---- 支付与套餐 ----
   // 支付键一律不带 affectsRuntime：checkout / notify 每次请求都用 resolveConfigValues 现读现构造，
@@ -104,31 +291,117 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   //    额度只靠注册赠送 / 邀请 / CDK。要卖额度就显式打开它（管理后台「系统设置 → 支付与套餐」）。
   //    关闭只拦「新订单」与前端入口：已下单的回调（notify / webhook / return）照常入账，
   //    否则关开关会把用户已付的钱吞掉。
-  { key: 'BILLING_ENABLED', group: 'payment', label: '开放充值（购买额度）', kind: 'boolean', defaultHint: 'false', hint: '关闭后工作台不再显示充值入口、下单接口拒绝新订单；已支付订单的回调不受影响。' },
-  { key: 'SITE_URL', group: 'payment', label: '站点地址', kind: 'url', hint: '如 https://motif.example.com；支付回调与支付完成跳转，以及找回密码邮件里的一键直达链接都由它拼接；真实渠道必填，未配时该邮件只发验证码' },
-  { key: 'BILLING_CURRENCY', group: 'payment', label: '套餐币种', kind: 'enum', options: ['cny', 'usd', 'hkd', 'eur', 'gbp'], defaultHint: 'hkd', hint: '全局单币种，不含零小数货币（jpy 会与按分计价冲突放大 100 倍金额）；易支付网关基本仅支持 cny' },
-  { key: 'PRICE_CREDITS_50', group: 'payment', label: '50 张价格（所选币种）', kind: 'money', defaultHint: '68.00', hint: '单位跟随套餐币种主单位；两位小数、单档 ≤99999.99；需高于渠道最低收款额（Stripe 按币种 USD0.50/HKD4.00…，易支付站点常见 ≥1 元）；下单按分落库' },
+  {
+    key: 'BILLING_ENABLED',
+    group: 'payment',
+    label: '开放充值（购买额度）',
+    kind: 'boolean',
+    defaultHint: 'false',
+    hint: '关闭后工作台不再显示充值入口、下单接口拒绝新订单；已支付订单的回调不受影响。',
+  },
+  {
+    key: 'SITE_URL',
+    group: 'payment',
+    label: '站点地址',
+    kind: 'url',
+    hint: '如 https://motif.example.com；支付回调与支付完成跳转，以及找回密码邮件里的一键直达链接都由它拼接；真实渠道必填，未配时该邮件只发验证码',
+  },
+  {
+    key: 'BILLING_CURRENCY',
+    group: 'payment',
+    label: '套餐币种',
+    kind: 'enum',
+    options: ['cny', 'usd', 'hkd', 'eur', 'gbp'],
+    defaultHint: 'hkd',
+    hint: '全局单币种，不含零小数货币（jpy 会与按分计价冲突放大 100 倍金额）；易支付网关基本仅支持 cny',
+  },
+  {
+    key: 'PRICE_CREDITS_50',
+    group: 'payment',
+    label: '50 张价格（所选币种）',
+    kind: 'money',
+    defaultHint: '68.00',
+    hint: '单位跟随套餐币种主单位；两位小数、单档 ≤99999.99；需高于渠道最低收款额（Stripe 按币种 USD0.50/HKD4.00…，易支付站点常见 ≥1 元）；下单按分落库',
+  },
   { key: 'PRICE_CREDITS_100', group: 'payment', label: '100 张价格（所选币种）', kind: 'money', defaultHint: '136.00' },
   { key: 'PRICE_CREDITS_200', group: 'payment', label: '200 张价格（所选币种）', kind: 'money', defaultHint: '272.00' },
   { key: 'PRICE_CREDITS_500', group: 'payment', label: '500 张价格（所选币种）', kind: 'money', defaultHint: '680.00' },
-  { key: 'EPAY_API_URL', group: 'payment', label: '易支付网关地址', kind: 'url', hint: '易支付协议网关根地址，选 epay 渠道必填' },
+  {
+    key: 'EPAY_API_URL',
+    group: 'payment',
+    label: '易支付网关地址',
+    kind: 'url',
+    hint: '易支付协议网关根地址，选 epay 渠道必填',
+  },
   { key: 'EPAY_PID', group: 'payment', label: '易支付商户 ID', kind: 'string' },
   { key: 'EPAY_KEY', group: 'payment', label: '易支付商户密钥', kind: 'secret', hint: '只写不读' },
-  { key: 'STRIPE_SECRET_KEY', group: 'payment', label: 'Stripe 密钥', kind: 'secret', hint: 'sk_test_… / sk_live_…；只写不读' },
-  { key: 'STRIPE_WEBHOOK_SECRET', group: 'payment', label: 'Stripe Webhook 签名密钥', kind: 'secret', hint: 'whsec_…（test 模式在 Dashboard /test/webhooks 获取）；只写不读' },
+  {
+    key: 'STRIPE_SECRET_KEY',
+    group: 'payment',
+    label: 'Stripe 密钥',
+    kind: 'secret',
+    hint: 'sk_test_… / sk_live_…；只写不读',
+  },
+  {
+    key: 'STRIPE_WEBHOOK_SECRET',
+    group: 'payment',
+    label: 'Stripe Webhook 签名密钥',
+    kind: 'secret',
+    hint: 'whsec_…（test 模式在 Dashboard /test/webhooks 获取）；只写不读',
+  },
 
   // ---- 危险区：会削弱安全基线，必须走专用入口 + 二次确认 ----
-  { key: 'MOTIF_EXPOSE_DEV_CODE', group: 'danger', label: '验证码随接口直出', kind: 'boolean', defaultHint: 'false', danger: true, hint: '开启后任何人调注册接口都能直接拿到验证码，等于关闭邮箱验证。仅限本地联调。' },
-  { key: 'PAYMENT_CHANNEL', group: 'danger', label: '支付渠道', kind: 'enum', options: ['mock', 'epay', 'stripe'], defaultHint: 'mock', danger: true, hint: 'mock=模拟收银台（不产生真实扣款）；epay/stripe=真实渠道，需先在「支付与套餐」保存对应凭据，否则用户无法充值。切回 mock 时存量真实渠道订单仍按创建渠道回调入账。' },
+  {
+    key: 'MOTIF_EXPOSE_DEV_CODE',
+    group: 'danger',
+    label: '验证码随接口直出',
+    kind: 'boolean',
+    defaultHint: 'false',
+    danger: true,
+    hint: '开启后任何人调注册接口都能直接拿到验证码，等于关闭邮箱验证。仅限本地联调。',
+  },
+  {
+    key: 'PAYMENT_CHANNEL',
+    group: 'danger',
+    label: '支付渠道',
+    kind: 'enum',
+    options: ['mock', 'epay', 'stripe'],
+    defaultHint: 'mock',
+    danger: true,
+    hint: 'mock=模拟收银台（不产生真实扣款）；epay/stripe=真实渠道，需先在「支付与套餐」保存对应凭据，否则用户无法充值。切回 mock 时存量真实渠道订单仍按创建渠道回调入账。',
+  },
 
   // ---- 会话与安全 ----
-  { key: 'MOTIF_COOKIE_SECURE', group: 'security', label: '会话 Cookie 加 Secure 标记', kind: 'boolean', defaultHint: 'false', hint: 'HTTPS 部署时开启；本地 http 联调勿开，否则浏览器会拒收 cookie。' },
+  {
+    key: 'MOTIF_COOKIE_SECURE',
+    group: 'security',
+    label: '会话 Cookie 加 Secure 标记',
+    kind: 'boolean',
+    defaultHint: 'false',
+    hint: 'HTTPS 部署时开启；本地 http 联调勿开，否则浏览器会拒收 cookie。',
+  },
 
   // ---- 只读：决定数据库自身位置，入库会导致「改设置去找另一个库」----
   // defaultHint 在这里不是「兜底值」而是「没设时实际会落在哪」：只读项常常是空的（默认路径
   // 由应用自己拼），页面若只显示空输入框，运维会以为「没配置」而不知道数据到底在哪。
-  { key: 'MOTIF_DATA_DIR', group: 'data', label: '数据目录', kind: 'string', readOnly: true, defaultHint: 'apps/web/.data', hint: '决定数据库位置，属于先于数据库存在的引导参数，只能在环境变量里修改。未设置时用相对应用工作目录的 .data。' },
-  { key: 'MOTIF_DB_FILE', group: 'data', label: '数据库文件', kind: 'string', readOnly: true, defaultHint: '<数据目录>/motif.db', hint: '同上。未设置时用数据目录下的 motif.db。' },
+  {
+    key: 'MOTIF_DATA_DIR',
+    group: 'data',
+    label: '数据目录',
+    kind: 'string',
+    readOnly: true,
+    defaultHint: 'apps/web/.data',
+    hint: '决定数据库位置，属于先于数据库存在的引导参数，只能在环境变量里修改。未设置时用相对应用工作目录的 .data。',
+  },
+  {
+    key: 'MOTIF_DB_FILE',
+    group: 'data',
+    label: '数据库文件',
+    kind: 'string',
+    readOnly: true,
+    defaultHint: '<数据目录>/motif.db',
+    hint: '同上。未设置时用数据目录下的 motif.db。',
+  },
 ]
 
 const BY_KEY = new Map(SETTING_DEFS.map((d) => [d.key, d]))
@@ -150,7 +423,7 @@ export function resolveSetting(store: MotifStore, env: Record<string, string | u
  */
 export function resolveConfigValues(
   store: MotifStore,
-  env: Record<string, string | undefined>
+  env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {}
   for (const def of SETTING_DEFS) {
@@ -164,7 +437,7 @@ export function resolveBool(
   store: MotifStore,
   env: Record<string, string | undefined>,
   key: string,
-  fallback = false
+  fallback = false,
 ): boolean {
   const raw = resolveSetting(store, env, key)
   if (raw === null || raw === '') return fallback
@@ -183,7 +456,7 @@ export function resolvePositiveInt(
   store: MotifStore,
   env: Record<string, string | undefined>,
   key: string,
-  fallback: number
+  fallback: number,
 ): number {
   const raw = resolveSetting(store, env, key)
   if (raw === null || raw === '') return fallback
@@ -323,7 +596,7 @@ function validateValue(def: SettingDef, value: string): string | null {
 export function writeSettings(
   store: MotifStore,
   updates: Record<string, string>,
-  opts: { danger: boolean }
+  opts: { danger: boolean },
 ): WriteResult {
   const keys = Object.keys(updates)
   if (keys.length === 0) return { ok: false, error: '没有需要保存的配置项。' }

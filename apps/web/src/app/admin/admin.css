@@ -217,7 +217,9 @@
    可以确定性地关掉动画来验证抽屉状态，不必与卡住的过渡搏斗。 */
 @media (max-width: 1023px) and (prefers-reduced-motion: no-preference) {
   .admin-nav {
-    transition: transform 0.2s ease, visibility 0.2s;
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s;
   }
 }
 
@@ -250,7 +252,7 @@
   color: var(--foreground);
 }
 
-.admin-toolbar input[type='search'] {
+.admin-toolbar input[type="search"] {
   min-width: 180px;
 }
 
@@ -339,9 +341,18 @@
 
 /* 徽标底由状态色 color-mix 压深至 70%，白字实测 ≥5.88:1（原白字对 --status-pending 仅 3.22:1、
    对 --status-completed 仅 3.30:1）。用 color-mix 而非新令牌：底色仍派生自状态色这一唯一真相，不会漂移。 */
-.admin-chip.is-unredeemed { background: color-mix(in srgb, var(--status-pending) 70%, #000); color: #fff; }
-.admin-chip.is-redeemed { background: color-mix(in srgb, var(--status-completed) 70%, #000); color: #fff; }
-.admin-chip.is-revoked { background: color-mix(in srgb, var(--status-canceled) 70%, #000); color: #fff; }
+.admin-chip.is-unredeemed {
+  background: color-mix(in srgb, var(--status-pending) 70%, #000);
+  color: #fff;
+}
+.admin-chip.is-redeemed {
+  background: color-mix(in srgb, var(--status-completed) 70%, #000);
+  color: #fff;
+}
+.admin-chip.is-revoked {
+  background: color-mix(in srgb, var(--status-canceled) 70%, #000);
+  color: #fff;
+}
 
 /* 窄屏：表格转卡片，避免横向滚动（td 的 data-label 由页面提供） */
 @media (max-width: 767px) {

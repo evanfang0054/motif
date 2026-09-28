@@ -75,7 +75,7 @@ function resolve(tokens: Record<string, string>, name: string, depth = 0): strin
  */
 const HERUI_THEME = readFileSync(
   createRequire(import.meta.url).resolve('@heroui/styles/themes/default/variables.css'),
-  'utf8'
+  'utf8',
 )
 
 /** 从 HeroUI 主题文件里取某个令牌的原始值（不解析 var，只取字面量） */
@@ -112,7 +112,11 @@ function oklchToHex(l: number, c: number, hDeg: number): string {
       -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
       -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3,
     ]
-      .map((v) => Math.round(Math.min(1, Math.max(0, enc(v))) * 255).toString(16).padStart(2, '0'))
+      .map((v) =>
+        Math.round(Math.min(1, Math.max(0, enc(v))) * 255)
+          .toString(16)
+          .padStart(2, '0'),
+      )
       .join('')
   )
 }
@@ -158,7 +162,11 @@ function mixOklab(hexA: string, p: number, hexB: string, q: number): string {
       -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
       -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3,
     ]
-      .map((v) => Math.round(Math.min(1, Math.max(0, enc(v))) * 255).toString(16).padStart(2, '0'))
+      .map((v) =>
+        Math.round(Math.min(1, Math.max(0, enc(v))) * 255)
+          .toString(16)
+          .padStart(2, '0'),
+      )
       .join('')
   )
 }
@@ -186,7 +194,9 @@ function parseOklch(value: string): string {
 
 /** 解析 `color-mix(in oklab, var(--x) p%, var(--y) q%)` 里的 p / q */
 function mixWeights(value: string): [number, number] {
-  const m = value.match(/color-mix\(\s*in oklab\s*,\s*var\(--[\w-]+\)\s+([\d.]+)%\s*,\s*var\(--[\w-]+\)\s+([\d.]+)%\s*\)/)
+  const m = value.match(
+    /color-mix\(\s*in oklab\s*,\s*var\(--[\w-]+\)\s+([\d.]+)%\s*,\s*var\(--[\w-]+\)\s+([\d.]+)%\s*\)/,
+  )
   if (!m) throw new Error(`看不懂的 color-mix：${value}`)
   return [Number(m[1]), Number(m[2])]
 }
@@ -221,7 +231,14 @@ describe('文字对比度守卫（#55）', () => {
   it('亮色：--danger-quiet 对**它可能落在的每个表面**都 ≥4.5（不止 alert 那一处）', () => {
     const fg = resolve(LIGHT, '--danger-quiet')
     // 消费点：alert 底 / 面板 / 侧栏 / 三级面 / 悬停面 / 激活面
-    const surfaces = ['--danger-soft', '--surface-primary', '--surface-secondary', '--surface-tertiary', '--surface-hover', '--surface-active']
+    const surfaces = [
+      '--danger-soft',
+      '--surface-primary',
+      '--surface-secondary',
+      '--surface-tertiary',
+      '--surface-hover',
+      '--surface-active',
+    ]
     for (const s of surfaces) {
       const bg = resolve(LIGHT, s)
       expect(contrast(fg, bg), `--danger-quiet ${fg} vs ${s} ${bg}`).toBeGreaterThanOrEqual(AA)
@@ -240,7 +257,7 @@ describe('文字对比度守卫（#55）', () => {
     const unmeasurable = surfaces.filter((k) => !opaque.includes(k))
     expect(
       unmeasurable,
-      `这些 --surface-* 不是 6 位 hex，无法自动比对亮度，请人工复核后再决定去留：${unmeasurable.join(', ')}`
+      `这些 --surface-* 不是 6 位 hex，无法自动比对亮度，请人工复核后再决定去留：${unmeasurable.join(', ')}`,
     ).toEqual([])
     const darker = opaque.filter((k) => luminance(resolve(LIGHT, k)) < worst)
     expect(darker, `这些表面比 --surface-active 更暗，需复核 --danger-quiet 的对比度：${darker.join(', ')}`).toEqual([])
@@ -325,7 +342,10 @@ describe('主按钮文字对比度守卫（#72）', () => {
     // —— 是**往文字色（近白）混**，底变浅 ⇒ hover 比静止态更糊。
     // ⚠️ 本文件的令牌表只从 globals.css 建，**不含 HeroUI 的派生值**：真把这两行删掉，
     //    `resolve` 会抛「令牌不存在」而不是静默回落到派生值。所以下面那条断言才是「为什么必须显式定」的证据。
-    for (const [name, tokens] of [['亮色', LIGHT], ['暗色', DARK]] as const) {
+    for (const [name, tokens] of [
+      ['亮色', LIGHT],
+      ['暗色', DARK],
+    ] as const) {
       const hover = resolve(tokens, '--accent-hover')
       expect(hover, `${name} --accent-hover 不该是 color-mix 派生值`).not.toContain('color-mix')
       expect(contrast(BUTTON_FG, hover), `${name} hover ${hover}`).toBeGreaterThanOrEqual(AA)
@@ -354,9 +374,19 @@ describe('聚焦环对比度守卫（#72 连带）', () => {
   const NON_TEXT = 3
 
   it('亮/暗两态：--focus 对它可能落在的每个表面都 ≥3（暗色是最容易破的一侧）', () => {
-    for (const [name, tokens] of [['亮色', LIGHT], ['暗色', DARK]] as const) {
+    for (const [name, tokens] of [
+      ['亮色', LIGHT],
+      ['暗色', DARK],
+    ] as const) {
       const ring = resolve(tokens, '--focus')
-      const surfaces = ['--background', '--surface-primary', '--surface-secondary', '--surface-tertiary', '--surface-hover', '--surface-active']
+      const surfaces = [
+        '--background',
+        '--surface-primary',
+        '--surface-secondary',
+        '--surface-tertiary',
+        '--surface-hover',
+        '--surface-active',
+      ]
       for (const s of surfaces) {
         const bg = resolve(tokens, s)
         expect(contrast(ring, bg), `${name} 聚焦环 ${ring} vs ${s} ${bg}`).toBeGreaterThanOrEqual(NON_TEXT)

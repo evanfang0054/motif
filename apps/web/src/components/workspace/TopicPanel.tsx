@@ -132,7 +132,9 @@ function TopicPanel(p: Props) {
             ) : (
               <>
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <InlineText type="body-sm" className="min-w-0 flex-1 truncate">{t.title}</InlineText>
+                  <InlineText type="body-sm" className="min-w-0 flex-1 truncate">
+                    {t.title}
+                  </InlineText>
                   {/* ✎ / 🗑 原为文字字形与 emoji（emoji 还随平台变样），2026-09-21 换成图标库 + Tooltip */}
                   <IconButton
                     variant="secondary"
@@ -157,7 +159,9 @@ function TopicPanel(p: Props) {
                     <TrashBin />
                   </IconButton>
                 </div>
-                <InlineText type="body-xs" className="ws-badge w-fit">{TOPIC_STATUS_LABEL[t.status] ?? t.status}</InlineText>
+                <InlineText type="body-xs" className="ws-badge w-fit">
+                  {TOPIC_STATUS_LABEL[t.status] ?? t.status}
+                </InlineText>
               </>
             )}
           </div>

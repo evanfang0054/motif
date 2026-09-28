@@ -87,7 +87,9 @@ describe('管理员引导', () => {
   })
 
   it('env 提供密码与邮箱时以其为准，凭据文件写的就是 env 密码', () => {
-    const res = ensureRootAccount(deps({ MOTIF_ADMIN_EMAIL: 'ops@example.com', MOTIF_ADMIN_PASSWORD: 'My-Own-Pass-123' }))
+    const res = ensureRootAccount(
+      deps({ MOTIF_ADMIN_EMAIL: 'ops@example.com', MOTIF_ADMIN_PASSWORD: 'My-Own-Pass-123' }),
+    )
     expect(res.email).toBe('ops@example.com')
     expect(res.password).toBe('My-Own-Pass-123')
     const lines = readFileSync(join(dir, ADMIN_CREDENTIALS_FILE), 'utf8').split('\n')

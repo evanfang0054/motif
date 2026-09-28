@@ -41,7 +41,12 @@ function stringValue(value: unknown): string {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.map(stringValue).map((s) => s.trim()).filter(Boolean) : []
+  return Array.isArray(value)
+    ? value
+        .map(stringValue)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
 }
 
 /** 把条目里的相对路径解析成绝对 URL；解析不了就原样返回 */
@@ -64,10 +69,7 @@ function absoluteUrl(baseUrl: string, path: string): string {
  * - `id` 缺失 ⇒ 用 `${sourceId}-${序号 4 位补零}` 兜底（与上游一致，序号 = 数组下标 + 1）
  * - `coverUrl` 缺失 ⇒ 回退 `referenceImageUrls[0]`（列表要有图可看）
  */
-export function parsePromptSourcePayload(
-  raw: unknown,
-  source: { id: string; url: string }
-): PromptEntryInput[] {
+export function parsePromptSourcePayload(raw: unknown, source: { id: string; url: string }): PromptEntryInput[] {
   if (!Array.isArray(raw)) throw new Error('返回的不是提示词数组')
   const seen = new Set<string>()
   const out: PromptEntryInput[] = []
@@ -145,7 +147,7 @@ function isActiveOption(value: string): boolean {
  */
 export function filterPromptEntries<T extends PromptEntryRow>(
   entries: readonly T[],
-  options: { keyword: string; tags: readonly string[]; source: string }
+  options: { keyword: string; tags: readonly string[]; source: string },
 ): T[] {
   const keyword = options.keyword.trim().toLowerCase()
   return entries.filter((entry) => {

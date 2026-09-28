@@ -82,7 +82,7 @@ export class SmtpMailer implements Mailer {
   constructor(
     private config: { host: string; port: number; secure: boolean; user: string; pass: string; from: string },
     transportFactory: (opts: Record<string, unknown>) => Transporter = (opts) =>
-      nodemailer.createTransport(opts as TransportOptions)
+      nodemailer.createTransport(opts as TransportOptions),
   ) {
     this.transporter = transportFactory({
       host: config.host,
@@ -119,7 +119,7 @@ export class ResendMailer implements Mailer {
   constructor(
     private apiKey: string,
     private from: string,
-    private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch
+    private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch,
   ) {}
 
   async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
@@ -167,7 +167,7 @@ export class SendGridMailer implements Mailer {
   constructor(
     private apiKey: string,
     private from: string,
-    private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch
+    private fetchFn: (url: string, init?: RequestInit) => Promise<Response> = fetch,
   ) {}
 
   async sendVerificationCode(to: string, code: string, purpose: MailPurpose, link?: string): Promise<void> {
@@ -271,11 +271,13 @@ export function createMailerFromConfig(env: MailerConfigValues): MailerConfig {
       }
     }
     case 'resend': {
-      if (!env.RESEND_API_KEY || !from) throw new Error('[motif] MOTIF_MAILER=resend 缺少配置：RESEND_API_KEY, MAIL_FROM')
+      if (!env.RESEND_API_KEY || !from)
+        throw new Error('[motif] MOTIF_MAILER=resend 缺少配置：RESEND_API_KEY, MAIL_FROM')
       return { mailer: new ResendMailer(env.RESEND_API_KEY, from), isConsole: false }
     }
     case 'sendgrid': {
-      if (!env.SENDGRID_API_KEY || !from) throw new Error('[motif] MOTIF_MAILER=sendgrid 缺少配置：SENDGRID_API_KEY, MAIL_FROM')
+      if (!env.SENDGRID_API_KEY || !from)
+        throw new Error('[motif] MOTIF_MAILER=sendgrid 缺少配置：SENDGRID_API_KEY, MAIL_FROM')
       return { mailer: new SendGridMailer(env.SENDGRID_API_KEY, from), isConsole: false }
     }
     default:

@@ -44,15 +44,21 @@ export default function AdminHomePage() {
   if (err) {
     return (
       <section className="admin-panel">
-        <Typography type="h1" className="admin-title">概览</Typography>
-        <div className="admin-alert-err" role="alert">{err}</div>
+        <Typography type="h1" className="admin-title">
+          概览
+        </Typography>
+        <div className="admin-alert-err" role="alert">
+          {err}
+        </div>
       </section>
     )
   }
   if (!data) {
     return (
       <section className="admin-panel">
-        <Typography type="h1" className="admin-title">概览</Typography>
+        <Typography type="h1" className="admin-title">
+          概览
+        </Typography>
         <OverviewSkeleton />
       </section>
     )
@@ -64,35 +70,44 @@ export default function AdminHomePage() {
   const ledgerDiff = c.balance - c.ledgerSum
   // 只有期初结存时（刚升级完、本系统还没产生任何流水），「发放 0 / 净消耗 0」看着像坏了 —— 明确说清楚
   const onlyOpening =
-    c.openingBalance > 0 && c.granted === 0 && c.adjustedIn === 0 && c.adjustedOut === 0 && c.generatedCharged === 0 && c.refunded === 0
+    c.openingBalance > 0 &&
+    c.granted === 0 &&
+    c.adjustedIn === 0 &&
+    c.adjustedOut === 0 &&
+    c.generatedCharged === 0 &&
+    c.refunded === 0
 
   const cdkTotal = data.cdks.unredeemed + data.cdks.redeemed + data.cdks.revoked
   const srcMax = Math.max(1, ...c.bySource.map((s) => Math.abs(s.net)))
 
   return (
     <>
-    <section className="admin-panel">
-      <Typography type="h1" className="admin-title">概览</Typography>
+      <section className="admin-panel">
+        <Typography type="h1" className="admin-title">
+          概览
+        </Typography>
 
-      <div className="admin-cards">
-        <div className="admin-card" id="ov-users">
-          <div className="admin-card-label">用户（总数）</div>
-          <div className="admin-card-value">{data.users.total}</div>
-          <div className="admin-card-sub">近 7 日新增 {data.users.newLast7d}</div>
-        </div>
+        <div className="admin-cards">
+          <div className="admin-card" id="ov-users">
+            <div className="admin-card-label">用户（总数）</div>
+            <div className="admin-card-value">{data.users.total}</div>
+            <div className="admin-card-sub">近 7 日新增 {data.users.newLast7d}</div>
+          </div>
 
-        <div className="admin-card" id="ov-credits">
-          <div className="admin-card-label">额度（张 · 当前存量）</div>
-          <div className="admin-card-value">{c.balance}</div>
-          <div className="admin-card-sub">净消耗 {c.netSpent}（扣 {c.generatedCharged} / 退 {c.refunded}）</div>
-        </div>
+          <div className="admin-card" id="ov-credits">
+            <div className="admin-card-label">额度（张 · 当前存量）</div>
+            <div className="admin-card-value">{c.balance}</div>
+            <div className="admin-card-sub">
+              净消耗 {c.netSpent}（扣 {c.generatedCharged} / 退 {c.refunded}）
+            </div>
+          </div>
 
-        <div className="admin-card" id="ov-generations">
-          <div className="admin-card-label">生成轮次（总数）</div>
-          <div className="admin-card-value">{data.generations.total}</div>
-          <div className="admin-ring-row">
-            <div className="admin-ring-wrap">
-              {/* ⚠️ Track 必须显式给尺寸：组件默认 `size-7`（28px），而外层包裹盒（`.admin-ring-wrap`）
+          <div className="admin-card" id="ov-generations">
+            <div className="admin-card-label">生成轮次（总数）</div>
+            <div className="admin-card-value">{data.generations.total}</div>
+            <div className="admin-ring-row">
+              <div className="admin-ring-wrap">
+                {/* ⚠️ Track 必须显式给尺寸：组件默认 `size-7`（28px），而外层包裹盒（`.admin-ring-wrap`）
                   与环（`.admin-ring`）都是 **64px** —— 若 Track 留在 28px，环只有 28px 却把「100.0%」
                   的覆盖文字按 64px 居中，文字会压在环的左缘上（#79-1.2）。
                   64px 环 + 12px 字，内圈直径约 50px > 文字宽度，「100.0%」也放得下。
@@ -101,96 +116,128 @@ export default function AdminHomePage() {
                   收不成单一来源：这里是 Tailwind 字面量类，读不到 admin.css 里的 CSS 变量，
                   硬串一个变量会引入「变量名写错即静默失效」的新风险，故保留重复并在此声明耦合。
                   className 是官方定制面（不是覆盖组件内部样式）。 */}
-              <ProgressCircle aria-label="生成成功率" value={data.generations.successRate * 100} maxValue={100} className="admin-ring">
-                <ProgressCircle.Track className="size-16">
-                  <ProgressCircle.TrackCircle />
-                  <ProgressCircle.FillCircle />
-                </ProgressCircle.Track>
-              </ProgressCircle>
-              <InlineText type="body-xs" className="admin-ring-text">{pct(data.generations.successRate)}</InlineText>
+                <ProgressCircle
+                  aria-label="生成成功率"
+                  value={data.generations.successRate * 100}
+                  maxValue={100}
+                  className="admin-ring"
+                >
+                  <ProgressCircle.Track className="size-16">
+                    <ProgressCircle.TrackCircle />
+                    <ProgressCircle.FillCircle />
+                  </ProgressCircle.Track>
+                </ProgressCircle>
+                <InlineText type="body-xs" className="admin-ring-text">
+                  {pct(data.generations.successRate)}
+                </InlineText>
+              </div>
+              <InlineText type="body-xs" className="admin-card-sub">
+                分母为已结束轮次 {data.generations.terminal}
+              </InlineText>
             </div>
-            <InlineText type="body-xs" className="admin-card-sub">分母为已结束轮次 {data.generations.terminal}</InlineText>
+            {data.generations.topErrors.length > 0 ? (
+              <ul className="admin-card-list">
+                {data.generations.topErrors.map((e) => (
+                  <li key={e.error}>
+                    <InlineText type="body-sm" className="admin-mono">
+                      {e.error}
+                    </InlineText>
+                    <InlineText type="body-sm">{e.count}</InlineText>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="admin-card-sub">暂无失败记录</div>
+            )}
           </div>
-          {data.generations.topErrors.length > 0 ? (
-            <ul className="admin-card-list">
-              {data.generations.topErrors.map((e) => (
-                <li key={e.error}>
-                  <InlineText type="body-sm" className="admin-mono">{e.error}</InlineText>
-                  <InlineText type="body-sm">{e.count}</InlineText>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="admin-card-sub">暂无失败记录</div>
-          )}
-        </div>
 
-        {/* ⚠️ 主数字是**已支付**、不是订单总数；口径写在标签里，避免被读成总数（#75-3.2） */}
-        <div className="admin-card" id="ov-orders">
-          <div className="admin-card-label">订单（已支付）</div>
-          <div className="admin-card-value">{data.orders.paid}</div>
-          <div className="admin-card-sub">待支付 {data.orders.pending} · 合计 {data.orders.total} 笔</div>
-          {/* 币种随订单实际值推符号（此前写死 HK$，与订单页、购买弹窗矛盾）；
+          {/* ⚠️ 主数字是**已支付**、不是订单总数；口径写在标签里，避免被读成总数（#75-3.2） */}
+          <div className="admin-card" id="ov-orders">
+            <div className="admin-card-label">订单（已支付）</div>
+            <div className="admin-card-value">{data.orders.paid}</div>
+            <div className="admin-card-sub">
+              待支付 {data.orders.pending} · 合计 {data.orders.total} 笔
+            </div>
+            {/* 币种随订单实际值推符号（此前写死 HK$，与订单页、购买弹窗矛盾）；
               历史上改过币种时会同时存在多种，故按币种分行而不是跨币种求和 */}
-          <div className="admin-card-sub">
-            已支付金额{data.orders.amountByCurrency.length > 1 ? '（按币种）' : ''}{' '}
-            {data.orders.amountByCurrency.length === 0
-              ? '0.00'
-              : data.orders.amountByCurrency.map((x) => formatMoney(x.amountTotal, x.currency)).join(' + ')}
+            <div className="admin-card-sub">
+              已支付金额{data.orders.amountByCurrency.length > 1 ? '（按币种）' : ''}{' '}
+              {data.orders.amountByCurrency.length === 0
+                ? '0.00'
+                : data.orders.amountByCurrency.map((x) => formatMoney(x.amountTotal, x.currency)).join(' + ')}
+            </div>
+          </div>
+
+          {/* 同上：主数字是**未兑换**数，不是 CDK 总数 */}
+          <div className="admin-card" id="ov-cdks">
+            <div className="admin-card-label">CDK（未兑换）</div>
+            <div className="admin-card-value">{data.cdks.unredeemed}</div>
+            {cdkTotal > 0 ? (
+              <>
+                <div className="admin-card-sub">合计 {cdkTotal} 个</div>
+                <div className="admin-bar-row">
+                  <InlineText type="body-sm" className="admin-bar-label">
+                    未兑换
+                  </InlineText>
+                  <ProgressBar
+                    aria-label="未兑换"
+                    value={data.cdks.unredeemed}
+                    maxValue={cdkTotal}
+                    className="admin-bar"
+                  >
+                    <ProgressBar.Track>
+                      <ProgressBar.Fill />
+                    </ProgressBar.Track>
+                  </ProgressBar>
+                  <InlineText type="body-sm" className="admin-bar-value">
+                    {data.cdks.unredeemed}
+                  </InlineText>
+                </div>
+                <div className="admin-bar-row">
+                  <InlineText type="body-sm" className="admin-bar-label">
+                    已兑换
+                  </InlineText>
+                  <ProgressBar aria-label="已兑换" value={data.cdks.redeemed} maxValue={cdkTotal} className="admin-bar">
+                    <ProgressBar.Track>
+                      <ProgressBar.Fill />
+                    </ProgressBar.Track>
+                  </ProgressBar>
+                  <InlineText type="body-sm" className="admin-bar-value">
+                    {data.cdks.redeemed}
+                  </InlineText>
+                </div>
+                <div className="admin-bar-row">
+                  <InlineText type="body-sm" className="admin-bar-label">
+                    已作废
+                  </InlineText>
+                  <ProgressBar aria-label="已作废" value={data.cdks.revoked} maxValue={cdkTotal} className="admin-bar">
+                    <ProgressBar.Track>
+                      <ProgressBar.Fill />
+                    </ProgressBar.Track>
+                  </ProgressBar>
+                  <InlineText type="body-sm" className="admin-bar-value">
+                    {data.cdks.revoked}
+                  </InlineText>
+                </div>
+              </>
+            ) : (
+              <div className="admin-card-sub">暂无 CDK</div>
+            )}
+          </div>
+
+          {/* 反馈只有「待处理」一个口径，标签里写明，避免被读成反馈总数 */}
+          <div className="admin-card" id="ov-feedback">
+            <div className="admin-card-label">反馈（待处理）</div>
+            <div className="admin-card-value">{data.feedback.pending}</div>
+            <div className="admin-card-sub">已处理的反馈请在「反馈」页查看</div>
           </div>
         </div>
-
-        {/* 同上：主数字是**未兑换**数，不是 CDK 总数 */}
-        <div className="admin-card" id="ov-cdks">
-          <div className="admin-card-label">CDK（未兑换）</div>
-          <div className="admin-card-value">{data.cdks.unredeemed}</div>
-          {cdkTotal > 0 ? (
-            <>
-              <div className="admin-card-sub">合计 {cdkTotal} 个</div>
-              <div className="admin-bar-row">
-                <InlineText type="body-sm" className="admin-bar-label">未兑换</InlineText>
-                <ProgressBar aria-label="未兑换" value={data.cdks.unredeemed} maxValue={cdkTotal} className="admin-bar">
-                  <ProgressBar.Track>
-                    <ProgressBar.Fill />
-                  </ProgressBar.Track>
-                </ProgressBar>
-                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.unredeemed}</InlineText>
-              </div>
-              <div className="admin-bar-row">
-                <InlineText type="body-sm" className="admin-bar-label">已兑换</InlineText>
-                <ProgressBar aria-label="已兑换" value={data.cdks.redeemed} maxValue={cdkTotal} className="admin-bar">
-                  <ProgressBar.Track>
-                    <ProgressBar.Fill />
-                  </ProgressBar.Track>
-                </ProgressBar>
-                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.redeemed}</InlineText>
-              </div>
-              <div className="admin-bar-row">
-                <InlineText type="body-sm" className="admin-bar-label">已作废</InlineText>
-                <ProgressBar aria-label="已作废" value={data.cdks.revoked} maxValue={cdkTotal} className="admin-bar">
-                  <ProgressBar.Track>
-                    <ProgressBar.Fill />
-                  </ProgressBar.Track>
-                </ProgressBar>
-                <InlineText type="body-sm" className="admin-bar-value">{data.cdks.revoked}</InlineText>
-              </div>
-            </>
-          ) : (
-            <div className="admin-card-sub">暂无 CDK</div>
-          )}
-        </div>
-
-        {/* 反馈只有「待处理」一个口径，标签里写明，避免被读成反馈总数 */}
-        <div className="admin-card" id="ov-feedback">
-          <div className="admin-card-label">反馈（待处理）</div>
-          <div className="admin-card-value">{data.feedback.pending}</div>
-          <div className="admin-card-sub">已处理的反馈请在「反馈」页查看</div>
-        </div>
-      </div>
-    </section>
+      </section>
 
       <section className="admin-panel admin-ledger">
-        <Typography type="h2" className="admin-title">额度账目</Typography>
+        <Typography type="h2" className="admin-title">
+          额度账目
+        </Typography>
         <div className={ledgerDiff === 0 ? 'admin-ledger-ok' : 'admin-ledger-bad'} role="status">
           {/* ✓ / ⚠ 原为符号冒充图标（2026-09-21 换图标库）；句子本身是状态文案，保留文字 */}
           {ledgerDiff === 0 ? (
@@ -206,18 +253,24 @@ export default function AdminHomePage() {
           )}
         </div>
         {onlyOpening && (
-          <Typography type="body" className="admin-muted">本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。</Typography>
+          <Typography type="body" className="admin-muted">
+            本系统尚未产生额度流水：当前存量 {c.openingBalance} 张全部来自升级时的期初结存。
+          </Typography>
         )}
         <div className="admin-source-heading">来源构成</div>
         {c.bySource.map((s) => {
           const w = Math.round((Math.abs(s.net) / srcMax) * 100)
           return (
             <div className="admin-source-row" key={s.source}>
-              <InlineText type="body-sm" className="admin-source-label">{SOURCE_LABEL[s.source] ?? s.source}</InlineText>
+              <InlineText type="body-sm" className="admin-source-label">
+                {SOURCE_LABEL[s.source] ?? s.source}
+              </InlineText>
               <InlineText type="body-sm" className="admin-source-track">
                 <span className={`admin-source-fill ${s.net < 0 ? 'is-neg' : 'is-pos'}`} style={{ width: `${w}%` }} />
               </InlineText>
-              <InlineText type="body-xs" className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>{s.net > 0 ? `+${s.net}` : s.net}</InlineText>
+              <InlineText type="body-xs" className={`admin-source-value ${s.net < 0 ? 'admin-neg' : ''}`}>
+                {s.net > 0 ? `+${s.net}` : s.net}
+              </InlineText>
             </div>
           )
         })}

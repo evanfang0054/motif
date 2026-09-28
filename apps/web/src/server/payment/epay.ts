@@ -15,7 +15,9 @@ export function epaySign(params: Record<string, string>, key: string): string {
   const filtered = Object.entries(params).filter(([k, v]) => k !== 'sign' && k !== 'sign_type' && v !== '')
   filtered.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   const url = filtered.map(([k, v]) => `${k}=${v}`).join('&')
-  return createHash('md5').update(url + key).digest('hex')
+  return createHash('md5')
+    .update(url + key)
+    .digest('hex')
 }
 
 /** 下单：生成网关收银页跳转地址（GET /submit.php，参数含签名；先对原始值签名、再整体编码，与 go-epay 顺序一致） */
@@ -28,7 +30,7 @@ export function buildEpayPurchaseUrl(
     money: string
     notifyUrl: string
     returnUrl: string
-  }
+  },
 ): string {
   const params: Record<string, string> = {
     pid: cfg.pid,

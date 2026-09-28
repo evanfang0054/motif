@@ -13,7 +13,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const userId = (body.userId ?? '').trim()
     const role = body.role as UserRole
     if (!userId) throw new ServiceError(400, '缺少目标用户。')
-    if (role !== 'user' && role !== 'admin' && role !== 'root') throw new ServiceError(400, '角色只能是 user / admin / root。')
+    if (role !== 'user' && role !== 'admin' && role !== 'root')
+      throw new ServiceError(400, '角色只能是 user / admin / root。')
 
     const { store } = getRuntime()
     const target = store.getUserById(userId)
@@ -22,7 +23,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const from = target.role
     store.updateUserRole(userId, role)
-    writeAudit({ actorId: actor.id, action: 'user.role_change', targetType: 'user', targetId: userId, detail: { from, to: role } })
+    writeAudit({
+      actorId: actor.id,
+      action: 'user.role_change',
+      targetType: 'user',
+      targetId: userId,
+      detail: { from, to: role },
+    })
     return NextResponse.json({ user: store.getUserById(userId)! })
   } catch (e) {
     return jsonError(e)

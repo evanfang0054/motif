@@ -4,8 +4,24 @@ import { buildCdkCsv } from '@/lib/admin-csv'
 describe('CDK 导出 CSV', () => {
   it('表头与数据行数正确，空值渲染为空字段', () => {
     const csv = buildCdkCsv([
-      { code: 'MOTIF-AAA', credits: 10, status: '未兑换', redeemedBy: null, redeemedAt: null, revokedAt: null, createdAt: '2026-09-18T00:00:00.000Z' },
-      { code: 'MOTIF-BBB', credits: 20, status: '已兑换', redeemedBy: 'usr_1', redeemedAt: '2026-09-18T01:00:00.000Z', revokedAt: null, createdAt: '2026-09-18T00:00:00.000Z' },
+      {
+        code: 'MOTIF-AAA',
+        credits: 10,
+        status: '未兑换',
+        redeemedBy: null,
+        redeemedAt: null,
+        revokedAt: null,
+        createdAt: '2026-09-18T00:00:00.000Z',
+      },
+      {
+        code: 'MOTIF-BBB',
+        credits: 20,
+        status: '已兑换',
+        redeemedBy: 'usr_1',
+        redeemedAt: '2026-09-18T01:00:00.000Z',
+        revokedAt: null,
+        createdAt: '2026-09-18T00:00:00.000Z',
+      },
     ])
     const lines = csv.trimEnd().split('\n')
     expect(lines).toHaveLength(3)

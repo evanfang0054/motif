@@ -39,7 +39,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <ArrowLeft className="me-1 inline align-[-0.125em]" aria-hidden />
             返回工作台
           </Link>
-          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">Motif 管理后台</InlineText>
+          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">
+            Motif 管理后台
+          </InlineText>
         </div>
         <InlineText type="body-sm" className="admin-identity">
           {user.name}
@@ -66,7 +68,9 @@ function AdminSessionExpired() {
     <div className="admin-shell">
       <header className="admin-header">
         <div className="admin-header-left">
-          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">Motif 管理后台</InlineText>
+          <InlineText style={{ color: 'var(--foreground)' }} type="body-sm" className="admin-brand">
+            Motif 管理后台
+          </InlineText>
         </div>
       </header>
       <main className="admin-main">
@@ -78,7 +82,9 @@ function AdminSessionExpired() {
           <div className="admin-actions" style={{ marginTop: 14 }}>
             {/* .admin-btn-primary 原本只给 <button> 用，<a> 是行内元素、上下 padding 不生效，
                 故补 display 与去下划线（走 Tailwind 工具类，不往 admin.css 加控件样式） */}
-            <Link href="/" className="admin-btn-primary inline-block no-underline">去登录</Link>
+            <Link href="/" className="admin-btn-primary inline-block no-underline">
+              去登录
+            </Link>
           </div>
         </section>
       </main>

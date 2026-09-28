@@ -13,7 +13,12 @@ let token: string
 let topicId: string
 let userId: string
 
-const provider = { name: 'stub', generate: async () => { throw new Error('不应触发生成') } }
+const provider = {
+  name: 'stub',
+  generate: async () => {
+    throw new Error('不应触发生成')
+  },
+}
 
 function req(token: string | undefined, body: unknown): NextRequest {
   return {
@@ -23,13 +28,21 @@ function req(token: string | undefined, body: unknown): NextRequest {
 }
 
 function chargeRows(): number {
-  return (store.db.prepare("SELECT COUNT(*) AS c FROM credit_ledger WHERE source = 'generation_charge'").get() as { c: number }).c
+  return (
+    store.db.prepare("SELECT COUNT(*) AS c FROM credit_ledger WHERE source = 'generation_charge'").get() as {
+      c: number
+    }
+  ).c
 }
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'motif-409-'))
   store = new MotifStore(join(dir, 't.db'))
-  ;(globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime = { store, provider, dataDir: join(dir, 'data') }
+  ;(globalThis as unknown as { __motifRuntime?: unknown }).__motifRuntime = {
+    store,
+    provider,
+    dataDir: join(dir, 'data'),
+  }
   userId = store.createUser({ name: 'u', email: 'u@e.com', passwordHash: 'h', role: 'user', credits: 50 }).id
   token = store.createSession(userId, 60_000)
   topicId = store.createTopic(userId, '任务A').id
@@ -48,7 +61,13 @@ describe('同任务互斥 409', () => {
       // 而那正是「读取自愈」要落定的脏状态 —— 用它当夹具会让 409 永远测不到。
       const msgStatus = status === 'pending' ? 'queued' : status
       const m = store.createMessage({
-        topicId, userId, prompt: 'p', finalPrompt: 'p', size: 'auto', requestedCount: 1, enhancePrompt: false,
+        topicId,
+        userId,
+        prompt: 'p',
+        finalPrompt: 'p',
+        size: 'auto',
+        requestedCount: 1,
+        enhancePrompt: false,
       })
       store.setMessageStatus(m.id, msgStatus)
       store.setTopicActive(topicId, m.id, 'p', status)
@@ -56,10 +75,16 @@ describe('同任务互斥 409', () => {
       expect(store.getTopic(topicId)?.status).toBe(status)
 
       const before = chargeRows()
-      const res = await POST(req(token, {
-        prompt: '一只猫', count: 4, size: '1024x1024', enhance: false,
-        topicId, referenceCanvasImageIds: [],
-      }))
+      const res = await POST(
+        req(token, {
+          prompt: '一只猫',
+          count: 4,
+          size: '1024x1024',
+          enhance: false,
+          topicId,
+          referenceCanvasImageIds: [],
+        }),
+      )
       expect(res.status).toBe(409)
       expect(chargeRows()).toBe(before) // 一分钱没扣
       expect(store.getUserById(userId)!.credits).toBe(50) // 余额不变
@@ -67,10 +92,16 @@ describe('同任务互斥 409', () => {
   }
 
   it('topic.status=idle 时正常入队（对照组，证明上面的 409 不是「永远 409」）', async () => {
-    const res = await POST(req(token, {
-      prompt: '一只猫', count: 4, size: '1024x1024', enhance: false,
-      topicId, referenceCanvasImageIds: [],
-    }))
+    const res = await POST(
+      req(token, {
+        prompt: '一只猫',
+        count: 4,
+        size: '1024x1024',
+        enhance: false,
+        topicId,
+        referenceCanvasImageIds: [],
+      }),
+    )
     expect(res.status).toBe(202)
     expect(chargeRows()).toBe(1)
   })

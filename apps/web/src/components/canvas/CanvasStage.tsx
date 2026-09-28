@@ -21,7 +21,18 @@
  *   原样渲染，React context 穿过 Tooltip）—— 「画布归档」已是普通的 IconButton。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, ButtonGroup, Dropdown, Kbd, Label, Modal, ToggleButton, ToggleButtonGroup, Toolbar, Tooltip } from '@heroui/react'
+import {
+  Button,
+  ButtonGroup,
+  Dropdown,
+  Kbd,
+  Label,
+  Modal,
+  ToggleButton,
+  ToggleButtonGroup,
+  Toolbar,
+  Tooltip,
+} from '@heroui/react'
 import { InlineText } from '@/components/ui/typography'
 import {
   Archive,
@@ -52,14 +63,34 @@ import { zipEntriesFor, zipEntryName, zipFileName } from '@/lib/canvas/download'
 import { buildZip, readZip } from '@/lib/zip'
 import { errorMessage } from '@/lib/error-message'
 import { canvasArchiveEntries, mergeImportedPlacements, parseCanvasArchive } from '@/lib/canvas/archive'
-import { allocateSlots, centerRectsInViewport, displaySize, rectToPlacement, viewportOrigin } from '@/lib/canvas/placement'
+import {
+  allocateSlots,
+  centerRectsInViewport,
+  displaySize,
+  rectToPlacement,
+  viewportOrigin,
+} from '@/lib/canvas/placement'
 import { deriveLineage, isSameLayout, layoutLineageTree } from '@/lib/canvas/lineage'
-import { createCloudDriver, createLocalDriver, createCanvasPersistence, type CanvasSync } from '@/stores/canvas/persistence'
+import {
+  createCloudDriver,
+  createLocalDriver,
+  createCanvasPersistence,
+  type CanvasSync,
+} from '@/stores/canvas/persistence'
 import { MiniMap } from './MiniMap'
 import { CanvasWorld } from './CanvasWorld'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, baseScale, clampToolbarCenter, fitView, toolbarAnchor, toolbarBand, zoomStepsToFactor, type ToolbarPanelRect } from '@/lib/canvas/viewport'
+import {
+  ZOOM_STEP,
+  baseScale,
+  clampToolbarCenter,
+  fitView,
+  toolbarAnchor,
+  toolbarBand,
+  zoomStepsToFactor,
+  type ToolbarPanelRect,
+} from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
@@ -153,7 +184,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // 框选选框：`moved` 与坐标同放 state —— 渲染期不能读 marqueeRef.current
   // （react-hooks/refs：Cannot access refs during render）。ref 那份 `moved` 仍由手势处理函数
   // 读写（判定是否越过 3px 阈值），这里只是把同一事实镜像进 state 供渲染用。
-  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; moved: boolean } | null>(null)
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number; moved: boolean } | null>(
+    null,
+  )
   const syncRef = useRef<CanvasSync | null>(null)
 
   const placements = useCanvasStore((s) => s.placements)
@@ -169,9 +202,24 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const selected = useCanvasStore((s) => s.selected)
   const source = useCanvasStore((s) => s.source)
 
-  const dragRef = useRef<{ ids: string[]; pointerId: number; startX: number; startY: number; moved: boolean; lastX?: number; lastY?: number } | null>(null)
+  const dragRef = useRef<{
+    ids: string[]
+    pointerId: number
+    startX: number
+    startY: number
+    moved: boolean
+    lastX?: number
+    lastY?: number
+  } | null>(null)
   const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean } | null>(null)
-  const panRef = useRef<{ pointerId: number; startX: number; startY: number; moved: boolean; lastDx?: number; lastDy?: number } | null>(null)
+  const panRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    moved: boolean
+    lastDx?: number
+    lastDy?: number
+  } | null>(null)
   const frameRef = useRef<number | null>(null)
   const pendingPanRef = useRef<{ dx: number; dy: number } | null>(null)
   // 滚轮缩放与卡片拖拽各自的 rAF 槽：与平移的 frameRef 分开，避免一次手势把另一边的待处理值吃掉
@@ -187,7 +235,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
       if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
     },
-    []
+    [],
   )
   // 最新图片集合：首屏 init 是异步的，init 之后要用「当前」的图片对账，不能靠闭包里的旧值
   const imagesRef = useRef(images)
@@ -199,7 +247,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // ⚠️ 这三个「最新值」ref 只能在 effect 里刷新，不能在渲染期直接赋值：
   // 渲染期写 ref 会被 react-hooks/refs 判为「Cannot access refs during render」——
   // 并发渲染下这次渲染可能被丢弃/重放，写入会落到不该落的那一次。
-  // 不写依赖数组 ⇒ 每次提交后同步一次；读它们的地方（首屏 init 的异步回调、keydown 监听）
+  // 不写依赖数组 ⇒ 每次提交后同步一次；下面读它们的地方（首屏 init 的异步回调、keydown 监听）
   // 都在事件/异步时机读，拿到的仍是「当前已提交」的最新值，语义与原先一致。
   useEffect(() => {
     imagesRef.current = images
@@ -261,7 +309,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       } else {
         const draft = await local.load(topicId).catch(() => null)
         if (cancelled) return
-        useCanvasStore.getState().init(topicId, draft ?? { images: [], meta: useCanvasStore.getState().meta }, draft ? 'local' : 'cloud')
+        useCanvasStore
+          .getState()
+          .init(topicId, draft ?? { images: [], meta: useCanvasStore.getState().meta }, draft ? 'local' : 'cloud')
       }
       // ⚠️ init 必须在「按图片集合对账」之前：快照可能整个拿不到（接口失败/首屏竞态），
       // 而 detail 里每张图都自带服务端摆放 —— 不能因为快照为空就让画布整块空白。
@@ -310,9 +360,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       // 服务端 LWW 拒了更旧的写入（另一标签页改过）：取回服务端值覆盖本地并提示
       const server = await sync.load(topicId).catch(() => null)
       const rejectedSet = new Set(res.rejected)
-      useCanvasStore
-        .getState()
-        .applyServerPlacements((server?.images ?? []).filter((p) => rejectedSet.has(p.id)))
+      useCanvasStore.getState().applyServerPlacements((server?.images ?? []).filter((p) => rejectedSet.has(p.id)))
       showToast({ tone: 'warning', message: '另一处已更新，已同步为最新位置。' })
     })
   }, [placements, topicId])
@@ -399,7 +447,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       }
       e.currentTarget.setPointerCapture(e.pointerId)
     },
-    [spaceHeld]
+    [spaceHeld],
   )
 
   const onBackgroundPointerMove = useCallback((e: React.PointerEvent) => {
@@ -462,21 +510,18 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
   // ---------- 拖拽图片（沿用既有 3px 阈值 + 多选整体位移）----------
 
-  const startCardDrag = useCallback(
-    (e: React.PointerEvent, img: CanvasImage) => {
-      if (e.button !== 0) return
-      e.stopPropagation()
-      const store = useCanvasStore.getState()
-      const ids = store.selected.includes(img.id) ? store.selected : [img.id]
-      if (!store.selected.includes(img.id)) store.setSelected(e.shiftKey ? [...store.selected, img.id] : [img.id])
-      // ⚠️ key 必须由**本次手势捕获的稳定值**派生（不能含实时选区）：否则拖拽中途选区变化会
-      // 变成「不同手势」，一次拖拽落成两步撤销（history.begin 的换 key 分支）。
-      store.beginGesture(`drag:${[...ids].sort().join(',')}`)
-      dragRef.current = { ids, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false }
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    },
-    []
-  )
+  const startCardDrag = useCallback((e: React.PointerEvent, img: CanvasImage) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const store = useCanvasStore.getState()
+    const ids = store.selected.includes(img.id) ? store.selected : [img.id]
+    if (!store.selected.includes(img.id)) store.setSelected(e.shiftKey ? [...store.selected, img.id] : [img.id])
+    // ⚠️ key 必须由**本次手势捕获的稳定值**派生（不能含实时选区）：否则拖拽中途选区变化会
+    // 变成「不同手势」，一次拖拽落成两步撤销（history.begin 的换 key 分支）。
+    store.beginGesture(`drag:${[...ids].sort().join(',')}`)
+    dragRef.current = { ids, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }, [])
 
   const onCardPointerMove = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current
@@ -641,11 +686,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       allocateSlots(
         [],
         images.map((i) => displaySize(i.width, i.height)),
-        origin
+        origin,
       ),
       origin,
       stageSize.w / k,
-      stageSize.h / k
+      stageSize.h / k,
     )
     useCanvasStore.getState().applyPlacements(slots.map((s, i) => rectToPlacement(all[i], s, new Date().toISOString())))
     useCanvasStore.getState().endGesture()
@@ -743,7 +788,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    */
   const toolbarStyle = useMemo(() => {
     if (selectedImages.length === 0 || !toolbarViewport) return undefined
-    const anchor = toolbarAnchor(selectedImages.map((i) => placements[i.id]), toolbarViewport)
+    const anchor = toolbarAnchor(
+      selectedImages.map((i) => placements[i.id]),
+      toolbarViewport,
+    )
     if (!anchor) return undefined
     if (toolbarBox.w === 0 || bandInput.width === 0) return anchor
     const band = toolbarBand(bandInput.width, bandInput.panels, { top: anchor.top, height: toolbarBox.h })
@@ -764,17 +812,18 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    */
   const lineageImages = useMemo(
     () => images.map((i) => ({ id: i.id, messageId: i.messageId, serial: i.serial, origin: i.origin })),
-    [images]
+    [images],
   )
   /** 树形布局要显示尺寸：与空位槽分配用同一个 `displaySize`，保证排出来的卡片尺寸不变 */
   const lineageTreeImages = useMemo(
-    () => images.map((i) => ({ id: i.id, messageId: i.messageId, serial: i.serial, size: displaySize(i.width, i.height) })),
-    [images]
+    () =>
+      images.map((i) => ({ id: i.id, messageId: i.messageId, serial: i.serial, size: displaySize(i.width, i.height) })),
+    [images],
   )
   /** 溯源推导（`deriveLineage`）：图层与树形布局共用同一份（都只在开关打开时算） */
   const lineage = useMemo(
     () => (lineageOpen ? deriveLineage({ images: lineageImages, messages }) : null),
-    [lineageOpen, lineageImages, messages]
+    [lineageOpen, lineageImages, messages],
   )
   /**
    * 树形布局的锚点：**当前内容的包围盒左上角 + 竖直中心**，而不是视口原点。
@@ -791,7 +840,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   /** 树形布局的目标位置（只在溯源打开时算；点「按来源整理」时才落库） */
   const treePlan = useMemo(
     () => (lineage ? layoutLineageTree({ images: lineageTreeImages, lineage, origin: treeOrigin }) : []),
-    [lineage, lineageTreeImages, treeOrigin]
+    [lineage, lineageTreeImages, treeOrigin],
   )
   /**
    * 引导提示：**当前摆放与树形布局差得明显**时才出现。
@@ -806,7 +855,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const TREE_HINT_TOLERANCE = 80
   const showTreeHint = useMemo(
     () => (lineage && treePlan.length > 0 ? !isSameLayout(treePlan, placements, TREE_HINT_TOLERANCE) : false),
-    [lineage, treePlan, placements]
+    [lineage, treePlan, placements],
   )
 
   /**
@@ -867,7 +916,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         topicId,
         meta: store.meta,
         images: currentPlacements(),
-        archiveImages: images.map((i) => ({ id: i.id, serial: i.serial, name: i.name, src: i.src, mimeType: i.mimeType })),
+        archiveImages: images.map((i) => ({
+          id: i.id,
+          serial: i.serial,
+          name: i.name,
+          src: i.src,
+          mimeType: i.mimeType,
+        })),
         exportedAt: new Date().toISOString(),
       })
       const enc = new TextEncoder()
@@ -912,7 +967,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         const parsed = parseCanvasArchive(readZip(new Uint8Array(await file.arrayBuffer())))
         const store = useCanvasStore.getState()
         // ⚠️ 时间戳重盖为当前时间：沿用归档里的旧戳会被服务端图片级 LWW 整批拒掉
-        const { applied, skipped } = mergeImportedPlacements(currentPlacements(), parsed.images, new Date().toISOString())
+        const { applied, skipped } = mergeImportedPlacements(
+          currentPlacements(),
+          parsed.images,
+          new Date().toISOString(),
+        )
         if (applied.length > 0) {
           store.applyPlacements(applied)
           // 视口/图案只在**确实恢复了图片**且归档属于当前任务时才动：
@@ -923,7 +982,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           }
         }
         if (applied.length === 0) showToast({ tone: 'danger', message: '没有可恢复的图片（归档里的图不在当前任务）。' })
-        else if (skipped.length > 0) showToast({ tone: 'warning', message: `已恢复 ${applied.length} 张，${skipped.length} 张因图片不存在被跳过。` })
+        else if (skipped.length > 0)
+          showToast({
+            tone: 'warning',
+            message: `已恢复 ${applied.length} 张，${skipped.length} 张因图片不存在被跳过。`,
+          })
         // 位置落库走共用防抖队列（约 400ms 后发一次 PATCH），所以这里只说「已恢复」，
         // 不承诺已写进服务端；被 LWW 拒掉的情况由提交回调单独提示
         else showToast({ tone: 'success', message: `已恢复 ${applied.length} 张图的位置。` })
@@ -936,7 +999,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         setImporting(false)
       }
     },
-    [topicId, currentPlacements]
+    [topicId, currentPlacements],
   )
 
   const onArchiveAction = useCallback(
@@ -944,7 +1007,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       if (key === 'export') await onExportArchive()
       else if (key === 'import') importRef.current?.click()
     },
-    [onExportArchive]
+    [onExportArchive],
   )
 
   /**
@@ -987,7 +1050,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       else if (action === 'download') downloadImage(target)
       else onRemoveImages([target]) // 删除：走 Workspace 的二次确认
     },
-    [menu, onAddReferences, onRemoveImages, downloadImage, onRegenerate]
+    [menu, onAddReferences, onRemoveImages, downloadImage, onRegenerate],
   )
 
   /**
@@ -1007,7 +1070,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           const res = await fetch(e.src)
           if (!res.ok) throw new Error(`取图失败 ${res.status}`)
           return { name: e.name, data: new Uint8Array(await res.arrayBuffer()) }
-        })
+        }),
       )
       const url = URL.createObjectURL(new Blob([buildZip(files)], { type: 'application/zip' }))
       const a = document.createElement('a')
@@ -1140,7 +1203,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
               <ArrowDownToLine />
             </IconButton>
             <span className="canvas-tool-divider" />
-            <IconButton size="sm" variant="danger" label="删除所选图片" onPress={() => onRemoveImages([selectedImages[0]])}>
+            <IconButton
+              size="sm"
+              variant="danger"
+              label="删除所选图片"
+              onPress={() => onRemoveImages([selectedImages[0]])}
+            >
               <TrashBin />
             </IconButton>
           </Toolbar>
@@ -1157,7 +1225,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
             onPointerDown={(e) => e.stopPropagation()}
           >
             {/* 「已选 N 张」保留文字：它承载数字，换成图标会丢掉唯一的信息源 */}
-            <InlineText type="body-sm" style={{ fontSize: 12, color: 'var(--muted)' }}>已选 {selectedImages.length} 张</InlineText>
+            <InlineText type="body-sm" style={{ fontSize: 12, color: 'var(--muted)' }}>
+              已选 {selectedImages.length} 张
+            </InlineText>
             <span className="canvas-tool-divider" />
             <IconButton
               size="sm"
@@ -1195,7 +1265,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         <div className="pointer-events-none absolute bottom-[68px] left-1/2 -translate-x-1/2">
           {/* 「布局与来源不一致」这句**是提示的正文**而不是按钮标签 —— 换成图标 + Tooltip 会把
               「出问题了」这个信号藏进悬停里，正好废掉这条提示的作用。故保留文字，只补图标做视觉对齐 */}
-          <Button size="sm" variant="secondary" className="pointer-events-auto" data-canvas-no-zoom onPress={arrangeByLineage}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="pointer-events-auto"
+            data-canvas-no-zoom
+            onPress={arrangeByLineage}
+          >
             <LayoutCellsLarge />
             布局与来源不一致 · 按来源整理
           </Button>
@@ -1207,10 +1283,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           ⚠️ 位置从「左下角」改为「底部工具栏上方居中」：左下角现在被左侧浮动面板（left-12 起）盖住，
           而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
       {miniMapOpen && stageSize.w > 0 && (
-        <MiniMap
-          size={stageSize}
-          onJump={(v) => useCanvasStore.getState().setViewport(v)}
-        />
+        <MiniMap size={stageSize} onJump={(v) => useCanvasStore.getState().setViewport(v)} />
       )}
 
       {/* 图片右键菜单：锚点用容器内坐标（Dropdown 自己负责贴边翻转） */}
@@ -1225,16 +1298,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           分组顺序 = 「先看读数，再调视图，再摆内容，最后改外观」：
             ① 画布状态  ② 视图缩放  ③ 视图开关  ④ 内容操作  ⑤ 画布背景  ⑥ 溢出菜单
           ⚠️ **不换行**：放不下的项按 TOOLBAR_LEVELS 收进「…」下拉（窄屏仍能点到全部功能）。 */}
-      <Toolbar
-        ref={toolbarRef}
-        className="canvas-zoombar"
-        aria-label="画布工具栏"
-        data-canvas-no-zoom
-      >
+      <Toolbar ref={toolbarRef} className="canvas-zoombar" aria-label="画布工具栏" data-canvas-no-zoom>
         {/* ① 画布状态读数（原画布左上角的 pill）。「N 张图片」是纯读数；
             「本地草稿」是数据来源警示；「已选 N」带一个清空按钮 */}
         <div className="canvas-status">
-          <InlineText type="body-sm" className="canvas-status-count">{images.length} 张图片</InlineText>
+          <InlineText type="body-sm" className="canvas-status-count">
+            {images.length} 张图片
+          </InlineText>
           {/* 待生成张数（#88）：与「N 张图片」分列 —— 骨架**不计入**图片统计，
               这条读数才是「还有几张在生成」，让「4 张在生成、已出来 2 张」一眼可见。 */}
           {skeletons.length > 0 && (
@@ -1248,14 +1318,23 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           {source === 'local' && (
             <>
               <span className="canvas-status-divider" />
-              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">本地草稿</InlineText>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">
+                本地草稿
+              </InlineText>
             </>
           )}
           {selected.length > 0 && (
             <>
               <span className="canvas-status-divider" />
-              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">已选 {selected.length}</InlineText>
-              <IconButton size="sm" variant="ghost" label="清空选择" onPress={() => useCanvasStore.getState().clearSelection()}>
+              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
+                已选 {selected.length}
+              </InlineText>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                label="清空选择"
+                onPress={() => useCanvasStore.getState().clearSelection()}
+              >
                 <CircleXmark />
               </IconButton>
             </>
@@ -1396,7 +1475,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         {/* 隐藏的 file input **必须始终挂载**：溢出菜单在 showArchiveUnit 为 false（窄屏档位 ≥3）时
             仍提供「导入画布（zip）」项，而它的动作是 `importRef.current?.click()` ——
             input 若随归档单元一起卸载，窄屏点这一项就是静默无反应（无 toast 无日志）。 */}
-        <input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)} />
+        <input
+          ref={importRef}
+          type="file"
+          accept=".zip,application/zip"
+          hidden
+          onChange={(e) => void onImportFile(e.target.files?.[0] ?? null)}
+        />
         {/* ⑤ 画布背景：纯外观，放最后 */}
         {showBackgroundUnit && (
           <>
@@ -1488,7 +1573,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       {/* 屏幕阅读器图片清单 */}
       <ul className="sr-only">
         {images.map((img) => (
-          <li key={img.id}>#{String(img.serial).padStart(3, '0')} {img.name}</li>
+          <li key={img.id}>
+            #{String(img.serial).padStart(3, '0')} {img.name}
+          </li>
         ))}
       </ul>
 
@@ -1522,7 +1609,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                   `m-0` 同时压掉 `.modal__body{margin-top:8px}`。 */}
               <Modal.Body className="m-0 p-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preview.src} alt={preview.name} onClick={(e) => e.stopPropagation()} style={{ display: 'block', maxWidth: '100%', maxHeight: '72vh' }} />
+                <img
+                  src={preview.src}
+                  alt={preview.name}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: 'block', maxWidth: '100%', maxHeight: '72vh' }}
+                />
               </Modal.Body>
               {/* 2026-09-21 用户裁决：预览不要说明文字（「只需要有个蒙层和图片就好」+ 一个关闭按钮）。
                   原先那行「#003 名称 · W×H」挂在 `Modal.Footer` 里，去掉它顺带消掉

@@ -40,12 +40,19 @@ import { createLlmFromConfig } from './llm'
 import { readImageWithFallback } from './storage'
 import { createPaymentGateway } from './payment'
 import { checkRate } from './rate-limit'
-import { resolveBool, resolveConfigValues, resolveLlmReady, resolvePositiveInt, resolveSetting, yuanToFen } from './settings'
+import {
+  resolveBool,
+  resolveConfigValues,
+  resolveLlmReady,
+  resolvePositiveInt,
+  resolveSetting,
+  yuanToFen,
+} from './settings'
 
 export class ServiceError extends Error {
   constructor(
     readonly status: number,
-    message: string
+    message: string,
   ) {
     super(message)
   }
@@ -72,7 +79,7 @@ export async function sendCode(
   mailer: MailerConfig,
   purpose: 'register' | 'password-reset',
   email: string,
-  ip?: string
+  ip?: string,
 ): Promise<{ sent: true; devCode?: string; via: string }> {
   const err = validateEmail(email)
   if (err) throw new ServiceError(400, err)
@@ -89,14 +96,18 @@ export async function sendCode(
   const code = store.createVerificationCode(purpose, email, 1000 * 60 * 10)
   // 只给「找回密码」拼直达链接：注册验证码没有深链语义。
   // 站点地址缺失时 buildResetLink 返回 null → 邮件正文与改造前逐字一致（降级而非报错）。
-  const link = purpose === 'password-reset' ? buildResetLink(resolveSetting(store, process.env, 'SITE_URL') ?? undefined, email, code) : null
+  const link =
+    purpose === 'password-reset'
+      ? buildResetLink(resolveSetting(store, process.env, 'SITE_URL') ?? undefined, email, code)
+      : null
   // 真实渠道（smtp/resend/sendgrid）发信；console 为本地直出（只打日志）
   await mailer.mailer.sendVerificationCode(email, code, purpose, link ?? undefined)
   // 安全默认：devCode 回传仅限「console 渠道 + 非生产」或「显式开启直出开关」。
   // 开关读配置（数据库优先、回退环境变量），因此可以在管理后台危险区里热改。
   // ⚠️ 保留「非生产」这一半：本地开发默认直出是既有行为，改成纯开关会让本地注册流程拿不到验证码。
   const expose =
-    mailer.isConsole && (process.env.NODE_ENV !== 'production' || resolveBool(store, process.env, 'MOTIF_EXPOSE_DEV_CODE'))
+    mailer.isConsole &&
+    (process.env.NODE_ENV !== 'production' || resolveBool(store, process.env, 'MOTIF_EXPOSE_DEV_CODE'))
   return { sent: true, ...(expose ? { devCode: code } : {}), via: mailer.mailer.name }
 }
 
@@ -124,7 +135,7 @@ export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ 
 
 export function register(
   store: MotifStore,
-  input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string }
+  input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string },
 ): User {
   // 逐项校验：数组只承载「错误信息」，命中的第一条直接抛。
   for (const err of [
@@ -172,7 +183,12 @@ export function register(
     const inviter = store.getUserById(invitedBy)!
     const reward = inviteRewardFor(inviter.invitedCount, {
       credits: resolvePositiveInt(store, process.env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
-      maxInvitees: resolvePositiveInt(store, process.env, 'INVITE_REWARD_MAX_INVITEES', DEFAULT_INVITE_REWARD_MAX_INVITEES),
+      maxInvitees: resolvePositiveInt(
+        store,
+        process.env,
+        'INVITE_REWARD_MAX_INVITEES',
+        DEFAULT_INVITE_REWARD_MAX_INVITEES,
+      ),
     })
     store.recordInvite(invitedBy, reward, user.id)
   }
@@ -191,10 +207,7 @@ export function login(store: MotifStore, email: string, password: string): User 
   return user
 }
 
-export function resetPassword(
-  store: MotifStore,
-  input: { email: string; code: string; password: string }
-): void {
+export function resetPassword(store: MotifStore, input: { email: string; code: string; password: string }): void {
   if (validateEmail(input.email)) throw new ServiceError(400, validateEmail(input.email)!)
   if (validatePassword(input.password)) throw new ServiceError(400, validatePassword(input.password)!)
   if (!store.consumeVerificationCode('password-reset', input.email, input.code)) {
@@ -222,7 +235,7 @@ export async function enqueueGeneration(
   provider: ImageProvider,
   dataDir: string,
   user: User,
-  input: GenerateImagesInput
+  input: GenerateImagesInput,
 ): Promise<GenerateImagesResponse> {
   const promptErr = validatePrompt(input.prompt || '')
   if (promptErr) throw new ServiceError(400, promptErr)
@@ -404,7 +417,7 @@ export async function executeMessage(deps: WorkerDeps, messageId: string): Promi
           } catch {
             return null // 参考图文件缺失时降级为纯文生图
           }
-        })
+        }),
       )
     ).filter((x): x is { buffer: Buffer; mimeType: string } => x !== null)
 
@@ -583,11 +596,7 @@ export function friendlyGenerateError(raw: string, refund: number): string {
  *   身份不匹配则整体 no-op。**不传 = 不做身份校验** —— 只有租约回收路径（`requeueExpiredLeases`）
  *   会不传，因为它本来就是替「已消失的执行者」收尾。
  */
-export function finishCancel(
-  store: MotifStore,
-  msg: { id: string },
-  opts: { workerId?: string } = {}
-): void {
+export function finishCancel(store: MotifStore, msg: { id: string }, opts: { workerId?: string } = {}): void {
   store.finalizeCancel(msg.id, { workerId: opts.workerId })
 }
 
@@ -598,7 +607,7 @@ export async function saveReferenceImage(
   dataDir: string,
   user: User,
   topicId: string,
-  file: { buffer: Buffer; mimeType: string; name?: string }
+  file: { buffer: Buffer; mimeType: string; name?: string },
 ): Promise<StagedReference> {
   const topic = store.getTopic(topicId)
   if (!topic || topic.userId !== user.id) throw new ServiceError(404, '任务不存在。')
@@ -645,7 +654,7 @@ export async function resolveStagedReferences(
   dataDir: string,
   user: User,
   topicId: string,
-  stagedIds: string[]
+  stagedIds: string[],
 ): Promise<string[]> {
   // 第一遍：只读校验 + 并发读尺寸（尺寸读取互不依赖，串行等 IO 是白等；参考图上限 5 张，无资源压力）
   const refs = stagedIds.map((id) => {
@@ -656,7 +665,9 @@ export async function resolveStagedReferences(
   // 读真实像素尺寸再分配槽位：写死 0 会让渲染按原图比例、模型按 240 方形，两边对不上
   // 双读：本地优先（用 resolveReadStorages，理由同上 —— 本地老图不该因切了驱动就读不到）
   const { local: storage, remote } = resolveReadStorages(dataDir)
-  const sizes = await Promise.all(refs.map(async (r) => readImageSize(await readImageWithFallback(storage, remote, r.imageKey))))
+  const sizes = await Promise.all(
+    refs.map(async (r) => readImageSize(await readImageWithFallback(storage, remote, r.imageKey))),
+  )
 
   // 第二遍：落库。走到这里校验已全过，不会再抛
   // 落位上下文：转正的参考图也进「当前视口内的空位槽」，与生成产出共用同一套分配规则
@@ -693,12 +704,7 @@ export async function resolveStagedReferences(
  * 而且因为行已删、搬迁的 `liveKeys` 里也没有它，它会被当成孤儿一直挂着 —— 既不显示也不回收。
  * 与 `saveReferenceImage` 对称（那边写对象，这边删对象）。
  */
-export async function removeStagedReference(
-  store: MotifStore,
-  dataDir: string,
-  user: User,
-  id: string
-): Promise<void> {
+export async function removeStagedReference(store: MotifStore, dataDir: string, user: User, id: string): Promise<void> {
   const ref = store.getReferenceUpload(id)
   if (!ref) return // 已不存在视为已删除（幂等）
   const topic = store.getTopic(ref.topicId)
@@ -786,7 +792,12 @@ const CHECKOUT_UNAVAILABLE = '支付渠道暂不可用，请稍后再试；问�
  * 渠道切换不影响已建订单：notify/webhook 路由按各自 URL 定渠道、用当前凭据现构造网关，
  * 行为上对存量订单的回调依然友好（但凭据被替换后旧单回调会验签失败，换密钥需留意在途订单）。
  */
-export async function startCheckout(store: MotifStore, env: Record<string, string | undefined>, userId: string, packageId: string): Promise<CheckoutStart> {
+export async function startCheckout(
+  store: MotifStore,
+  env: Record<string, string | undefined>,
+  userId: string,
+  packageId: string,
+): Promise<CheckoutStart> {
   // 充值开关（默认关）：只拦**新订单**。回调入账（`creditPaidOrder`，只有 notify/epay 与
   // webhook/stripe 两个调用点）刻意不受它影响 —— 关开关不能把用户已经付掉的钱吞掉。
   // （return/epay 是 GET 跳转到结果页，不入账，也不该被这条闸影响。）
@@ -807,7 +818,7 @@ export async function startCheckout(store: MotifStore, env: Record<string, strin
         notifyUrl: `${base}/api/billing/notify/epay`,
         returnUrl: `${base}/billing/result?order=${orderId}`,
         cancelUrl: `${base}/billing/result?order=${orderId}&canceled=1`,
-      }
+      },
     )
     return { orderId, checkoutUrl: redirectUrl }
   } catch (e) {
@@ -821,7 +832,11 @@ export async function startCheckout(store: MotifStore, env: Record<string, strin
  * ok=入账；duplicate=重复通知（幂等忽略）；mismatch=金额不符（拒绝）；
  * not_found=订单不可见（异常时序），区别于 duplicate——调用方回 fail 让网关按策略重试，防真实付款丢单。
  */
-export function creditPaidOrder(store: MotifStore, orderId: string, paidFen: number): 'ok' | 'duplicate' | 'mismatch' | 'not_found' {
+export function creditPaidOrder(
+  store: MotifStore,
+  orderId: string,
+  paidFen: number,
+): 'ok' | 'duplicate' | 'mismatch' | 'not_found' {
   const order = store.getOrder(orderId)
   if (!order) return 'not_found'
   if (order.status !== 'pending') return 'duplicate'

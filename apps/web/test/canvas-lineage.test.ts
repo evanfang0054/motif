@@ -1,17 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { chainBounds, deriveLineage, edgePath, isSameLayout, layoutLineageTree, lineageLayerModel } from '@/lib/canvas/lineage'
+import {
+  chainBounds,
+  deriveLineage,
+  edgePath,
+  isSameLayout,
+  layoutLineageTree,
+  lineageLayerModel,
+} from '@/lib/canvas/lineage'
 import { parseCanvasExport, serializeCanvas } from '@/lib/canvas/serialization'
 import { DEFAULT_CANVAS_META } from '@motif/core'
 
 const img = (id: string, messageId: string | null, serial: number, origin: 'generated' | 'uploaded' = 'generated') => ({
-  id, messageId, serial, origin,
+  id,
+  messageId,
+  serial,
+  origin,
 })
 
 describe('deriveLineage 血缘与版本链推导', () => {
   it('同一 message 的产出聚成一簇，按 serial 升序', () => {
     const l = deriveLineage({
       images: [img('b', 'msg_1', 2), img('a', 'msg_1', 1), img('c', 'msg_2', 3)],
-      messages: [{ id: 'msg_1', referenceIds: [] }, { id: 'msg_2', referenceIds: [] }],
+      messages: [
+        { id: 'msg_1', referenceIds: [] },
+        { id: 'msg_2', referenceIds: [] },
+      ],
     })
     expect(l.chains).toEqual([
       { messageId: 'msg_1', imageIds: ['a', 'b'] },
@@ -32,7 +45,10 @@ describe('deriveLineage 血缘与版本链推导', () => {
       images: [img('a', null, 1, 'uploaded'), img('b', 'msg_1', 2), img('c', 'msg_1', 3)],
       messages: [{ id: 'msg_1', referenceIds: ['a'] }],
     })
-    expect(l.edges).toEqual([{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }])
+    expect(l.edges).toEqual([
+      { from: 'a', to: 'b' },
+      { from: 'a', to: 'c' },
+    ])
   })
 
   it('空 reference_ids 无上游', () => {
@@ -85,7 +101,9 @@ describe('serializeCanvas / parseCanvasExport', () => {
   const input = {
     topicId: 'top_1',
     meta: DEFAULT_CANVAS_META,
-    images: [{ id: 'cimg_a', canvasX: 1, canvasY: 2, canvasWidth: 3, canvasHeight: 4, updatedAt: '2026-09-20T00:00:00.000Z' }],
+    images: [
+      { id: 'cimg_a', canvasX: 1, canvasY: 2, canvasWidth: 3, canvasHeight: 4, updatedAt: '2026-09-20T00:00:00.000Z' },
+    ],
     exportedAt: '2026-09-20T00:00:00.000Z',
   }
 
@@ -105,19 +123,21 @@ describe('serializeCanvas / parseCanvasExport', () => {
   })
 
   it('缺 images 数组被拒', () => {
-    expect(() => parseCanvasExport(JSON.stringify({ app: 'motif', version: 1, topicId: 't', meta: DEFAULT_CANVAS_META }))).toThrow()
+    expect(() =>
+      parseCanvasExport(JSON.stringify({ app: 'motif', version: 1, topicId: 't', meta: DEFAULT_CANVAS_META })),
+    ).toThrow()
   })
 
   it('images 里元素形状非法被拒（不能只查「是不是数组」）', () => {
     const base = { app: 'motif', version: 1, exportedAt: '', topicId: 't', meta: DEFAULT_CANVAS_META }
     const bad = [
-      [{}],                                                                   // 缺全部字段
-      [null],                                                                 // 非对象
-      ['x'],                                                                  // 非对象
+      [{}], // 缺全部字段
+      [null], // 非对象
+      ['x'], // 非对象
       [{ id: 'c', canvasX: 'abc', canvasY: 0, canvasWidth: 1, canvasHeight: 1, updatedAt: 't' }], // 位置非数字
       [{ id: 'c', canvasX: 0, canvasY: 0, canvasWidth: Number.NaN, canvasHeight: 1, updatedAt: 't' }], // NaN
-      [{ id: 'c', canvasX: 0, canvasY: 0, canvasWidth: 0, canvasHeight: 1, updatedAt: 't' }],  // 尺寸非正
-      [{ id: 'c', canvasX: 0, canvasY: 0, canvasWidth: 1, canvasHeight: 1, updatedAt: '' }],   // 空版本
+      [{ id: 'c', canvasX: 0, canvasY: 0, canvasWidth: 0, canvasHeight: 1, updatedAt: 't' }], // 尺寸非正
+      [{ id: 'c', canvasX: 0, canvasY: 0, canvasWidth: 1, canvasHeight: 1, updatedAt: '' }], // 空版本
     ]
     for (const images of bad) {
       expect(() => parseCanvasExport(JSON.stringify({ ...base, images }))).toThrow()
@@ -130,12 +150,14 @@ describe('serializeCanvas / parseCanvasExport', () => {
   })
 
   it('serializeCanvas 对形状非法的入参抛错（不静默洗白成 {}）', () => {
-    expect(() => serializeCanvas({
-      topicId: 'top_1',
-      meta: DEFAULT_CANVAS_META,
-      images: [null as never],
-      exportedAt: '2026-09-20T00:00:00.000Z',
-    })).toThrow()
+    expect(() =>
+      serializeCanvas({
+        topicId: 'top_1',
+        meta: DEFAULT_CANVAS_META,
+        images: [null as never],
+        exportedAt: '2026-09-20T00:00:00.000Z',
+      }),
+    ).toThrow()
   })
 })
 
@@ -275,7 +297,10 @@ describe('lineageLayerModel 图层模型', () => {
 
   it('无可画内容时返回 null（组件据此不挂载整层）', () => {
     const model = lineageLayerModel({
-      lineage: deriveLineage({ images: [{ id: 'cimg_x', messageId: null, serial: 1, origin: 'uploaded' }], messages: [] }),
+      lineage: deriveLineage({
+        images: [{ id: 'cimg_x', messageId: null, serial: 1, origin: 'uploaded' }],
+        messages: [],
+      }),
       placements: { cimg_x: { x: 0, y: 0, w: 10, h: 10 } },
       k: 1,
     })
@@ -319,7 +344,11 @@ describe('layoutLineageTree 按血缘分层铺开', () => {
 
   it('没有上游的一轮全在最左列（诚实：它们确实没有上游）', () => {
     const solo = [mk('a', 'm9', 1), mk('b', 'm9', 2), mk('c', 'm9', 3)]
-    const out = layoutLineageTree({ images: solo, lineage: deriveLineage({ images: solo, messages: [] }), origin: { x: 0, y: 0 } })
+    const out = layoutLineageTree({
+      images: solo,
+      lineage: deriveLineage({ images: solo, messages: [] }),
+      origin: { x: 0, y: 0 },
+    })
     expect(new Set(out.map((o) => o.rect.x)).size).toBe(1)
     expect(out.map((o) => o.id)).toEqual(['a', 'b', 'c'])
     expect(out[1].rect.y).toBeGreaterThan(out[0].rect.y)
@@ -352,7 +381,9 @@ describe('layoutLineageTree 按血缘分层铺开', () => {
   })
 
   it('空输入返回空数组', () => {
-    expect(layoutLineageTree({ images: [], lineage: { edges: [], chains: [], roots: [] }, origin: { x: 0, y: 0 } })).toEqual([])
+    expect(
+      layoutLineageTree({ images: [], lineage: { edges: [], chains: [], roots: [] }, origin: { x: 0, y: 0 } }),
+    ).toEqual([])
   })
 })
 
@@ -364,11 +395,15 @@ describe('isSameLayout 引导提示的去抖与「整理」的幂等', () => {
 
   it('逐值一致（含容差内）⇒ true', () => {
     expect(isSameLayout(plan, { a: { x: 0, y: 0, w: 200, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } })).toBe(true)
-    expect(isSameLayout(plan, { a: { x: 0.5, y: -0.5, w: 200.5, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } })).toBe(true)
+    expect(
+      isSameLayout(plan, { a: { x: 0.5, y: -0.5, w: 200.5, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } }),
+    ).toBe(true)
   })
 
   it('超出容差的位置或尺寸差异 ⇒ false', () => {
-    expect(isSameLayout(plan, { a: { x: 40, y: 0, w: 200, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } })).toBe(false)
+    expect(isSameLayout(plan, { a: { x: 40, y: 0, w: 200, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } })).toBe(
+      false,
+    )
     expect(isSameLayout(plan, { a: { x: 0, y: 0, w: 260, h: 100 }, b: { x: 320, y: -50, w: 200, h: 100 } })).toBe(false)
   })
 
@@ -387,7 +422,10 @@ describe('isSameLayout 引导提示的去抖与「整理」的幂等', () => {
       { id: 'g2', messageId: 'm1', serial: 3, size: { width: 200, height: 100 } },
     ]
     const lineage = deriveLineage({
-      images: images.map((i) => ({ ...i, origin: (i.messageId ? 'generated' : 'uploaded') as 'generated' | 'uploaded' })),
+      images: images.map((i) => ({
+        ...i,
+        origin: (i.messageId ? 'generated' : 'uploaded') as 'generated' | 'uploaded',
+      })),
       messages: [{ id: 'm1', referenceIds: ['up'] }],
     })
     const origin = { x: 0, y: 0 }

@@ -58,54 +58,54 @@
 }
 
 html[data-theme="dark"] {
-    --home-background: #181715;
-    --background: #181715;
-    --foreground: #faf9f5;
-    --canvas-background: #181818;
-    --canvas-foreground: #faf9f5;
-    --canvas-muted: #a09d96;
-    /* 暗色下的中性图案色：纯白 alpha（中性，不暖化） */
-    --canvas-grid-line: rgba(255, 255, 255, 0.1);
-    --canvas-grid-dot: rgba(255, 255, 255, 0.24);
-    --surface-primary: #1f1e1b;
-    --surface-secondary: #252320;
-    --surface-tertiary: #32302b;
-    --surface-hover: #2a2723;
-    --surface-active: #332f2a;
-    --sidebar: #141311;
-    --border: #38342d;
-    --border-strong: #4a453c;
-    --muted: #a09d96;
-    --muted-strong: #d8d4ca;
-    --surface-accent: #2a2723;
-    --surface-accent-hover: #332f2a;
-    --surface-accent-soft: #252320;
-    --button: #2a2723;
-    --button-hover: #332f2a;
-    --button-text: #faf9f5;
-    --brand-warm: #cc785c;
-    --brand-warm-hover: #a9583e;
-    --brand-warm-text: #ffffff;
-    --danger: #d45757;
-    --danger-hover: #c64545;
-    --danger-text: #ffffff;
-    --danger-soft: #35201e;
-    --warning: #d4a017;
-    --warning-soft: #322a12;
-    --success: #5db872;
-    --success-soft: #1c2b20;
-    --status-idle: #8e8ea0;
-    --status-pending: #8e8ea0;
-    --status-running: #3b82f6;
-    --status-canceling: #f59e0b;
-    --status-completed: #16a34a;
-    --status-failed: #dc2626;
-    --status-canceled: #6b7280;
-    --scrim: #000000b3;
-    --shadow-soft: 0 18px 45px #00000066;
-    --scrollbar-track: transparent;
-    --scrollbar-thumb: #45403a;
-    --scrollbar-thumb-hover: #5a544b;
+  --home-background: #181715;
+  --background: #181715;
+  --foreground: #faf9f5;
+  --canvas-background: #181818;
+  --canvas-foreground: #faf9f5;
+  --canvas-muted: #a09d96;
+  /* 暗色下的中性图案色：纯白 alpha（中性，不暖化） */
+  --canvas-grid-line: rgba(255, 255, 255, 0.1);
+  --canvas-grid-dot: rgba(255, 255, 255, 0.24);
+  --surface-primary: #1f1e1b;
+  --surface-secondary: #252320;
+  --surface-tertiary: #32302b;
+  --surface-hover: #2a2723;
+  --surface-active: #332f2a;
+  --sidebar: #141311;
+  --border: #38342d;
+  --border-strong: #4a453c;
+  --muted: #a09d96;
+  --muted-strong: #d8d4ca;
+  --surface-accent: #2a2723;
+  --surface-accent-hover: #332f2a;
+  --surface-accent-soft: #252320;
+  --button: #2a2723;
+  --button-hover: #332f2a;
+  --button-text: #faf9f5;
+  --brand-warm: #cc785c;
+  --brand-warm-hover: #a9583e;
+  --brand-warm-text: #ffffff;
+  --danger: #d45757;
+  --danger-hover: #c64545;
+  --danger-text: #ffffff;
+  --danger-soft: #35201e;
+  --warning: #d4a017;
+  --warning-soft: #322a12;
+  --success: #5db872;
+  --success-soft: #1c2b20;
+  --status-idle: #8e8ea0;
+  --status-pending: #8e8ea0;
+  --status-running: #3b82f6;
+  --status-canceling: #f59e0b;
+  --status-completed: #16a34a;
+  --status-failed: #dc2626;
+  --status-canceled: #6b7280;
+  --scrim: #000000b3;
+  --shadow-soft: 0 18px 45px #00000066;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #45403a;
+  --scrollbar-thumb-hover: #5a544b;
 }
 
 /*
@@ -154,7 +154,10 @@ html[data-theme="dark"] {
 [data-theme="light"] {
   --accent: #b05a38; /* 压深自品牌珊瑚 #cc785c（原值配按钮近白文字仅 3.19:1，未达 AA，issue #72）；实测对 --accent-foreground #fcfcfc 4.69 */
   --accent-hover: #a9583e; /* 接 --brand-warm-hover：HeroUI 默认往浅色混会让 hover 掉到 3.91，这里改为变深（4.93） */
-  --focus: var(--accent); /* 聚焦环。HeroUI 默认即 var(--accent)，这里写出来是为了可测：亮色 3.67–4.57（改前 #cc785c 只有 2.50–3.11，未达非文字 3:1） */
+  /* 聚焦环。HeroUI 默认即 var(--accent)，这里写出来是为了可测：亮色 3.67–4.57（改前 #cc785c 只有 2.50–3.11，未达非文字 3:1） */
+  /* ⚠️ 注释必须写在声明**上一行**：写成行尾注释会把本行推过 printWidth，Prettier 就会把可断行的
+     `var()` 拆成三行，而 design-token-contrast 测试按行解析 CSS，拆行后取不到该令牌。 */
+  --focus: var(--accent);
   --danger-quiet: #a63a3a; /* 压深自 #c64545（原值对 --danger-soft 仅 4.20:1，未达 AA）。实测：对 --danger-soft #f9ecec 5.55 · 对最暗亮色表面 --surface-active #e8e0d2 4.87 */
   --success-quiet: #2f6b3c; /* 实测对 --success-soft #e9f2ea 5.58:1 */
 }
@@ -162,7 +165,9 @@ html[data-theme="dark"] {
 html[data-theme="dark"] {
   --accent: #b05a38; /* 与亮色同值（暗下按钮文字同为近白，理由同上）。本文件未分层，恒胜 HeroUI 的 @layer theme 块 */
   --accent-hover: #a9583e; /* 同上：显式定死，别让 HeroUI 往浅色混 */
-  --focus: var(--brand-warm); /* ⚠️ 暗色**必须**显式接回品牌珊瑚，不能跟着 --accent 变深：#b05a38 在暗色 --surface-hover/tertiary/active 上只有 3.09/2.74/2.76，跌破非文字 3:1；#cc785c 是 4.54/4.02/4.05（= 改动前观感） */
+  /* ⚠️ 暗色**必须**显式接回品牌珊瑚，不能跟着 --accent 变深：#b05a38 在暗色 --surface-hover/tertiary/active 上只有 3.09/2.74/2.76，跌破非文字 3:1；#cc785c 是 4.54/4.02/4.05（= 改动前观感） */
+  /* 同上：注释写在上一行，避免 Prettier 拆行后测试取不到该令牌。 */
+  --focus: var(--brand-warm);
   --danger-quiet: #eb6962; /* 实测 vs #181715 5.74 · #252320 5.02 · #2a2723 4.76。⚠️ 约束：**不要**把它放在更暗的 --surface-tertiary #32302b / --surface-active #332f2a 上（实测 4.22 / 4.26，低于 AA）—— 要用就先提亮本值 */
   --success-quiet: var(--success); /* 暗色沿用 #5db872：对 --success-soft #1c2b20 实测 6.05:1 */
   --overlay: var(--surface-primary); /* 暗色弹窗面板暖黑化（原 HeroUI 冷黑 oklch） */
@@ -428,9 +433,15 @@ html[data-theme="dark"] .lp-hero {
   color: var(--lp-hero-muted);
 }
 
-.lp-hero .lp-hero-title { color: var(--lp-hero-fg); }
-.lp-hero .lp-hero-sub { color: var(--lp-hero-muted); }
-.lp-hero .lp-hero-points { color: var(--lp-hero-muted); }
+.lp-hero .lp-hero-title {
+  color: var(--lp-hero-fg);
+}
+.lp-hero .lp-hero-sub {
+  color: var(--lp-hero-muted);
+}
+.lp-hero .lp-hero-points {
+  color: var(--lp-hero-muted);
+}
 
 /* 平板/移动：banner 全幅垫顶 + 底部 180° 渐变融合，内容贴底（dragonpass overlay 结构） */
 @media (max-width: 1023px) {
@@ -439,7 +450,10 @@ html[data-theme="dark"] .lp-hero {
     justify-content: flex-end;
   }
 
-  .lp-hero-visual { left: 0; right: 0; }
+  .lp-hero-visual {
+    left: 0;
+    right: 0;
+  }
 
   /* 文字压图区需要足够暗度：三段坡（内容贴底锚定，底部 ~40% 是文字区），
      42% 处 62% 暗、64% 处全暗——否则 badge/副文压亮图不可读（响应式冒烟发现） */
@@ -452,7 +466,9 @@ html[data-theme="dark"] .lp-hero {
     );
   }
 
-  .lp-hero-solid { display: none; }
+  .lp-hero-solid {
+    display: none;
+  }
 
   .lp-hero-copy {
     max-width: none;
@@ -462,7 +478,9 @@ html[data-theme="dark"] .lp-hero {
 
 /* 移动：间距收紧 */
 @media (max-width: 639px) {
-  .lp-hero-copy { padding-bottom: 40px; }
+  .lp-hero-copy {
+    padding-bottom: 40px;
+  }
 }
 
 .lp-hero-badge {
@@ -522,23 +540,6 @@ html[data-theme="dark"] .lp-hero {
   font-size: 13px;
   color: var(--muted);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /* 展示区（色带职责已移入 .lp-band-showcase） */
 
@@ -727,7 +728,7 @@ html[data-theme="dark"] .lp-hero {
    那个开关是 CanvasStage 的局部状态，为一条定位规则改数据流不划算。
    （Tailwind v4 的最低浏览器版本已含 `:has()`，无需降级方案。） */
 @media (min-width: 1024px) {
-  .ws-canvas:has([data-testid='canvas-minimap']) .ws-float-left {
+  .ws-canvas:has([data-testid="canvas-minimap"]) .ws-float-left {
     bottom: 184px;
   }
 }
@@ -969,7 +970,9 @@ html[data-theme="dark"] .lp-hero {
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .ws-ref-add:hover:not(:disabled) {
@@ -987,7 +990,6 @@ html[data-theme="dark"] .lp-hero {
   cursor: not-allowed;
 }
 
-
 /* 画布图片 */
 
 .canvas-img-card {
@@ -998,7 +1000,9 @@ html[data-theme="dark"] .lp-hero {
   background: var(--surface-secondary);
   touch-action: none;
   user-select: none;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .canvas-img-card:hover {
@@ -1078,11 +1082,6 @@ html[data-theme="dark"] .lp-hero {
   box-shadow: var(--shadow-soft);
 }
 
-
-
-
-
-
 .canvas-tool-divider {
   width: 1px;
   height: 20px;
@@ -1146,16 +1145,6 @@ html[data-theme="dark"] .lp-hero {
   flex: none;
 }
 
-
-
-
-
-
-
-
-
-
-
 /* 任务列表行：**两行布局**（标题 + 操作按钮 / 状态徽标）。
    左面板只有 280px 宽，挤成一行时标题会被徽标与两个图标按钮压到只剩几十像素。 */
 .ws-topic-item {
@@ -1169,12 +1158,9 @@ html[data-theme="dark"] .lp-hero {
   cursor: pointer;
 }
 
-.ws-topic-item[data-active='true'] {
+.ws-topic-item[data-active="true"] {
   border-color: color-mix(in srgb, var(--brand-warm) 65%, var(--border));
 }
-
-
-
 
 .ws-status-dot {
   width: 8px;
@@ -1224,12 +1210,3 @@ html[data-theme="dark"] .lp-hero {
   border-radius: 8px;
   overflow: hidden;
 }
-
-
-
-
-
-
-
-
-

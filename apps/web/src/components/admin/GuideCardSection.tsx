@@ -51,7 +51,11 @@ export function GuideCardSection({ cards }: { cards: GuideCard[] }) {
           <a className="admin-guide-link" href={c.linkUrl} target="_blank" rel="noreferrer">
             {c.linkLabel} <ArrowUpRightFromSquare className="ms-1 inline align-[-0.125em]" aria-hidden />
           </a>
-          {c.note && <Typography type="body" className="admin-field-hint">{c.note}</Typography>}
+          {c.note && (
+            <Typography type="body" className="admin-field-hint">
+              {c.note}
+            </Typography>
+          )}
         </div>
       ))}
     </details>

@@ -46,7 +46,7 @@ export interface PendingSkeleton {
  */
 export function pendingSkeletonSlots(
   messages: ReadonlyArray<SkeletonMessageSource>,
-  generatedCountByMessage: Record<string, number>
+  generatedCountByMessage: Record<string, number>,
 ): PendingSkeleton[] {
   const out: PendingSkeleton[] = []
   for (const m of messages) {

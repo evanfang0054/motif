@@ -113,7 +113,13 @@ function CanvasWorld({
             aria-label={`#${String(img.serial).padStart(3, '0')} ${img.name}`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.src} alt={img.name} draggable={false} loading="lazy" style={{ width: '100%', display: 'block' }} />
+            <img
+              src={img.src}
+              alt={img.name}
+              draggable={false}
+              loading="lazy"
+              style={{ width: '100%', display: 'block' }}
+            />
             <figcaption className="canvas-img-label">
               #{String(img.serial).padStart(3, '0')} {img.name}
               {img.origin === 'uploaded' ? ' · 参考图' : ''}
@@ -151,7 +157,7 @@ function WorldLayer({
   // ⚠️ 溯源层必须在这里算：线宽是 `strokeWidth = 1.5 / viewport.k`，依赖 viewport。
   const lineageLayer = useMemo(
     () => (lineage ? lineageLayerModel({ lineage, placements, k: viewport.k }) : null),
-    [lineage, placements, viewport.k]
+    [lineage, placements, viewport.k],
   )
 
   return (
@@ -162,7 +168,10 @@ function WorldLayer({
       {/* 世界层 */}
       <div
         className="absolute left-0 top-0"
-        style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`, transformOrigin: '0 0' }}
+        style={{
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
+          transformOrigin: '0 0',
+        }}
       >
         {/* 溯源层（UI 文案；代码里叫 lineage）：与世界层同一 transform ⇒ 线与框粘在卡片上，缩放平移都不用重算。
             只读（pointer-events: none），在卡片**之前**渲染 ⇒ 永远在卡片之下。
@@ -202,7 +211,11 @@ function WorldLayer({
               </g>
             ))}
             {lineageLayer.edges.map((e) => (
-              <path key={e.key} d={e.d} style={{ fill: 'none', stroke: 'var(--border)', strokeWidth: 1.5 / viewport.k }} />
+              <path
+                key={e.key}
+                d={e.d}
+                style={{ fill: 'none', stroke: 'var(--border)', strokeWidth: 1.5 / viewport.k }}
+              />
             ))}
           </svg>
         )}

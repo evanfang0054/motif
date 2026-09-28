@@ -27,12 +27,12 @@ describe('createMailerFromEnv', () => {
     expect(() => createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'resend' })).toThrow(/RESEND_API_KEY/)
     expect(() => createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'sendgrid' })).toThrow(/SENDGRID_API_KEY/)
     expect(
-      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
-        ResendMailer
+      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'a@b.co' })
+        .mailer instanceof ResendMailer,
     ).toBe(true)
     expect(
-      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'sendgrid', SENDGRID_API_KEY: 'sg_x', MAIL_FROM: 'a@b.co' }).mailer instanceof
-        SendGridMailer
+      createMailerFromEnv({ NODE_ENV: 'test', MOTIF_MAILER: 'sendgrid', SENDGRID_API_KEY: 'sg_x', MAIL_FROM: 'a@b.co' })
+        .mailer instanceof SendGridMailer,
     ).toBe(true)
   })
 })
@@ -48,7 +48,7 @@ describe('SMTP / API 发信载荷', () => {
             sent.push(mail)
             return {}
           },
-        }) as never
+        }) as never,
     )
     await mailer.sendVerificationCode('user@b.co', '123456', 'register')
     const mail = sent[0] as { to: string; subject: string; html: string }
@@ -89,7 +89,7 @@ describe('SMTP / API 发信载荷', () => {
   it('API 失败抛出含状态码异常', async () => {
     const fetchFn = (async () => new Response('bad key', { status: 401 })) as unknown as (
       url: string,
-      init?: RequestInit
+      init?: RequestInit,
     ) => Promise<Response>
     const mailer = new ResendMailer('bad', 'a@b.co', fetchFn)
     await expect(mailer.sendVerificationCode('u@b.co', '123456', 'register')).rejects.toThrow(/401/)

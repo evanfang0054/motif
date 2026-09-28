@@ -72,7 +72,7 @@ describe('验证码直出开关读配置', () => {
       store,
       { mailer: { name: 'smtp', sendVerificationCode: async () => {} }, isConsole: false } as never,
       'register',
-      'd@b.co'
+      'd@b.co',
     )
     expect(r.devCode).toBeUndefined()
   })

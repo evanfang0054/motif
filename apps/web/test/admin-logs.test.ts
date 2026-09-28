@@ -26,7 +26,16 @@ function sessionFor(role: 'user' | 'admin' | 'root', email: string): string {
 
 /** 造一轮超期的已终态旧日志，返回其 id */
 function seedOldCompleted(userId: string, topicId: string): string {
-  const m = store.createMessage({ topicId, userId, prompt: '旧提示词', finalPrompt: '旧最终提示词', size: '1:1', requestedCount: 1, enhancePrompt: false, referenceIds: [] })
+  const m = store.createMessage({
+    topicId,
+    userId,
+    prompt: '旧提示词',
+    finalPrompt: '旧最终提示词',
+    size: '1:1',
+    requestedCount: 1,
+    enhancePrompt: false,
+    referenceIds: [],
+  })
   store.setMessageStatus(m.id, 'completed')
   store.db.prepare("UPDATE messages SET created_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(m.id)
   return m.id
@@ -60,8 +69,26 @@ describe('GET /api/admin/logs（跨用户视图）', () => {
     const u2 = store.createUser({ email: 'l2@b.co', passwordHash: 'h', name: '乙' })
     const t1 = store.createTopic(u1.id, 't1')
     const t2 = store.createTopic(u2.id, 't2')
-    store.createMessage({ topicId: t1.id, userId: u1.id, prompt: '甲说', finalPrompt: '甲发', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
-    store.createMessage({ topicId: t2.id, userId: u2.id, prompt: '乙说', finalPrompt: '乙发', size: '1:1', requestedCount: 1, enhancePrompt: true, referenceIds: [] })
+    store.createMessage({
+      topicId: t1.id,
+      userId: u1.id,
+      prompt: '甲说',
+      finalPrompt: '甲发',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: true,
+      referenceIds: [],
+    })
+    store.createMessage({
+      topicId: t2.id,
+      userId: u2.id,
+      prompt: '乙说',
+      finalPrompt: '乙发',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: true,
+      referenceIds: [],
+    })
     const t = sessionFor('admin', 'a2@b.co')
 
     const body = (await (await logsGET(req(t))).json()) as { items: AdminLogRow[]; total: number }
@@ -102,8 +129,28 @@ describe('POST /api/admin/logs/cleanup', () => {
     const u = store.createUser({ email: 'l4@b.co', passwordHash: 'h', name: 'x', credits: 20 })
     const t = store.createTopic(u.id, 't')
     const staleId = seedOldCompleted(u.id, t.id)
-    store.insertCanvasImage({ topicId: t.id, userId: u.id, messageId: staleId, origin: 'generated', name: 'a.png', imageKey: 'k/a.png', mimeType: 'image/png', bytes: 1, width: 1, height: 1 })
-    const fresh = store.createMessage({ topicId: t.id, userId: u.id, prompt: '新', finalPrompt: '新', size: '1:1', requestedCount: 1, enhancePrompt: false, referenceIds: [] })
+    store.insertCanvasImage({
+      topicId: t.id,
+      userId: u.id,
+      messageId: staleId,
+      origin: 'generated',
+      name: 'a.png',
+      imageKey: 'k/a.png',
+      mimeType: 'image/png',
+      bytes: 1,
+      width: 1,
+      height: 1,
+    })
+    const fresh = store.createMessage({
+      topicId: t.id,
+      userId: u.id,
+      prompt: '新',
+      finalPrompt: '新',
+      size: '1:1',
+      requestedCount: 1,
+      enhancePrompt: false,
+      referenceIds: [],
+    })
     store.setMessageStatus(fresh.id, 'completed')
 
     const before = {
@@ -119,7 +166,9 @@ describe('POST /api/admin/logs/cleanup', () => {
 
     expect(store.countAllMessages({})).toBe(1) // 未超期那条还在
     expect((store.db.prepare('SELECT COUNT(*) AS c FROM canvas_images').get() as { c: number }).c).toBe(before.images)
-    expect((store.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(before.ledgerRows)
+    expect((store.db.prepare('SELECT COUNT(*) AS c FROM credit_ledger').get() as { c: number }).c).toBe(
+      before.ledgerRows,
+    )
     expect(store.getUserById(u.id)!.credits).toBe(before.credits)
 
     const audit = store.listAudit({}).filter((r) => r.action === 'logs.cleanup')

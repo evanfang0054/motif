@@ -3,8 +3,7 @@
  * 运行时 ref 随 props 由 React 19 透传到 <a>，press/焦点接线完整保留，此处仅类型层面转换。
  * 用法：<Button variant="primary" render={anchorRender({ href: '/', onClick })}>文案</Button>
  */
-export const anchorRender =
-  <A extends { href: string }>(extra: A) =>
+export const anchorRender = <A extends { href: string }>(extra: A) =>
   // 具名函数表达式：匿名箭头会被 react/display-name 判为「Component definition is missing display name」
   function AnchorRender(p: React.ComponentPropsWithRef<'button'>) {
     const anchorProps = p as unknown as React.ComponentPropsWithRef<'a'> & A

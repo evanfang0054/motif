@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateStrongPassword, roleAtLeast, validateEmail, validateName, type UserRole, type UserStatus } from '@motif/core'
+import {
+  generateStrongPassword,
+  roleAtLeast,
+  validateEmail,
+  validateName,
+  type UserRole,
+  type UserStatus,
+} from '@motif/core'
 import { requireAdmin, writeAudit } from '@/server/admin'
 import { hashPassword } from '@/server/auth'
 import { getRuntime } from '@/server/context'
@@ -18,7 +25,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const roleRaw = sp.get('role')
     const statusRaw = sp.get('status')
     const role = roleRaw && (ROLES as readonly string[]).includes(roleRaw) ? (roleRaw as UserRole) : undefined
-    const status = statusRaw && (STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as UserStatus) : undefined
+    const status =
+      statusRaw && (STATUSES as readonly string[]).includes(statusRaw) ? (statusRaw as UserStatus) : undefined
     const page = Math.max(1, Number(sp.get('page') ?? 1) || 1)
     const pageSize = Math.min(200, Math.max(1, Number(sp.get('pageSize') ?? 50) || 50))
 

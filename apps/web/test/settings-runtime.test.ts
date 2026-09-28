@@ -201,7 +201,7 @@ describe('运行时重建', () => {
           seedText: 's',
           referenceImages: [],
           indexInBatch: 0,
-        })
+        }),
       ).rejects.toThrow(/系统设置/)
     } finally {
       getRuntime().store.close()

@@ -54,7 +54,15 @@ interface Props {
  *    才是菜单该有的样子。
  * ③ 下拉改为**菜单式内边距**（外框 6px、行铺满），行与行不再靠底色区分、改由分隔线分组。
  */
-function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEnabled, onOpenProfile, onLogout }: Props) {
+function TopNav({
+  user,
+  onOpenBilling,
+  onOpenRedeem,
+  billingEnabled,
+  cdkRedeemEnabled,
+  onOpenProfile,
+  onLogout,
+}: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
   const isAdmin = roleAtLeast(user.role, 'admin')
@@ -142,7 +150,9 @@ function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEn
                 {/* 账号身份只做展示（不可点）：邮箱是「我是谁」的判据 */}
                 <div className="min-w-0 px-2.5 pt-1.5 pb-2">
                   <div className="truncate text-sm font-semibold">{user.name}</div>
-                  <div className="truncate text-xs" style={{ color: 'var(--muted)' }}>{user.email}</div>
+                  <div className="truncate text-xs" style={{ color: 'var(--muted)' }}>
+                    {user.email}
+                  </div>
                 </div>
                 <div className="my-1.5" style={{ borderTop: '1px solid var(--border)' }} />
 
@@ -154,7 +164,8 @@ function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEn
                     onOpenProfile()
                   }}
                 >
-                  <Person />个人资料
+                  <Person />
+                  个人资料
                 </Button>
 
                 {isAdmin && (
@@ -164,7 +175,8 @@ function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEn
                     render={anchorRender({ href: '/admin' })}
                     onPress={closeMenu}
                   >
-                    <Shield />管理后台
+                    <Shield />
+                    管理后台
                   </Button>
                 )}
 
@@ -174,7 +186,9 @@ function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEn
                     点任意一段即收起（点击冒泡捕获）。 */}
                 <div className="flex h-8 items-center gap-1.5 px-2.5" onClick={closeMenu}>
                   <Palette />
-                  <InlineText type="body-sm" className="flex-1">外观</InlineText>
+                  <InlineText type="body-sm" className="flex-1">
+                    外观
+                  </InlineText>
                   <ThemeToggle />
                 </div>
 
@@ -187,7 +201,8 @@ function TopNav({ user, onOpenBilling, onOpenRedeem, billingEnabled, cdkRedeemEn
                     onLogout()
                   }}
                 >
-                  <Power />退出
+                  <Power />
+                  退出
                 </Button>
               </div>
             </Popover.Content>

@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MotifStore, storagePathFor } from '@motif/db'
 import type { ImageProvider } from '@motif/image-provider'
-import { enqueueGeneration, removeStagedReference, resolveStagedReferences, saveReferenceImage, ServiceError } from '@/server/services'
+import {
+  enqueueGeneration,
+  removeStagedReference,
+  resolveStagedReferences,
+  saveReferenceImage,
+  ServiceError,
+} from '@/server/services'
 
 let dir: string
 let store: MotifStore
@@ -38,7 +44,11 @@ afterEach(() => {
 
 describe('暂存参考图（上传不进画布）', () => {
   it('上传后：暂存表有记录，画布为空', async () => {
-    const ref = await saveReferenceImage(store, dataDir, store.getUserById(userId)!, topicId, { buffer: PNG, mimeType: 'image/png', name: '商品图.png' })
+    const ref = await saveReferenceImage(store, dataDir, store.getUserById(userId)!, topicId, {
+      buffer: PNG,
+      mimeType: 'image/png',
+      name: '商品图.png',
+    })
     expect(ref.id.startsWith('refu_')).toBe(true)
     expect(ref.name).toBe('商品图.png')
     expect(store.listReferenceUploads(topicId).length).toBe(1)
@@ -107,7 +117,7 @@ describe('暂存参考图（上传不进画布）', () => {
         topicId,
         // 已被删掉的暂存参考：转正时抛 400
         referenceCanvasImageIds: ['refu_not_there'],
-      })
+      }),
     ).rejects.toThrow(ServiceError)
     expect(store.getUserById(userId)!.credits).toBe(before)
 
@@ -123,9 +133,15 @@ describe('暂存参考图（上传不进画布）', () => {
 
   it('转正失败不留半截：多张参考里有一张非法时，画布与暂存表都保持原样', async () => {
     const user = store.getUserById(userId)!
-    const ok = await saveReferenceImage(store, dataDir, user, topicId, { buffer: PNG, mimeType: 'image/png', name: 'ok.png' })
+    const ok = await saveReferenceImage(store, dataDir, user, topicId, {
+      buffer: PNG,
+      mimeType: 'image/png',
+      name: 'ok.png',
+    })
     // 第二张非法 → 两遍走的第一遍就抛，不该留下 ok.png 已转正的痕迹
-    await expect(resolveStagedReferences(store, dataDir, user, topicId, [ok.id, 'refu_gone'])).rejects.toThrow(ServiceError)
+    await expect(resolveStagedReferences(store, dataDir, user, topicId, [ok.id, 'refu_gone'])).rejects.toThrow(
+      ServiceError,
+    )
     expect(store.listCanvasImages(topicId)).toEqual([])
     expect(store.listReferenceUploads(topicId).map((r) => r.id)).toEqual([ok.id])
   })

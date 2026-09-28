@@ -13,7 +13,9 @@ function Panel() {
   const search = useSearchParams()
   const orderId = search.get('order') ?? ''
   const canceled = search.get('canceled') === '1'
-  const [state, setState] = useState<'pending' | 'paid' | 'canceled' | 'error'>(canceled ? 'canceled' : orderId ? 'pending' : 'error')
+  const [state, setState] = useState<'pending' | 'paid' | 'canceled' | 'error'>(
+    canceled ? 'canceled' : orderId ? 'pending' : 'error',
+  )
   const [credits, setCredits] = useState<number | null>(null)
   const [errText, setErrText] = useState(orderId ? '' : '链接缺少订单号，请从工作台重新发起充值。')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -46,11 +48,11 @@ function Panel() {
         setErrText(
           e instanceof ApiError && e.status === 401
             ? '登录已过期，请重新登录后回到本页（已支付额度不丢）。'
-            : '订单不存在或查询失败。'
+            : '订单不存在或查询失败。',
         )
       }
     },
-    [orderId]
+    [orderId],
   )
 
   useEffect(() => {
@@ -65,7 +67,10 @@ function Panel() {
 
   return (
     <Card className="p-6" style={{ width: 'min(420px, 100%)', textAlign: 'center' }}>
-      <div className="flex items-center justify-center gap-2"><BrandMark /><b>支付结果</b></div>
+      <div className="flex items-center justify-center gap-2">
+        <BrandMark />
+        <b>支付结果</b>
+      </div>
       {/* ⚠️ 下面那条 `align="center"` 不能省：外层 Card 靠内联 `textAlign: 'center'` 居中，而 `Typography`
           自己在元素上带 `text-align: start` —— 元素自己的声明盖掉祖先的继承值，去掉就变左对齐。 */}
       {state === 'pending' && (
@@ -94,11 +99,23 @@ function Panel() {
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Title>{errText}</Alert.Title>
-            <Button size="sm" variant="outline" className="mt-2" onPress={() => { setErrText(''); setState('pending') }}>重新查询</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onPress={() => {
+                setErrText('')
+                setState('pending')
+              }}
+            >
+              重新查询
+            </Button>
           </Alert.Content>
         </Alert>
       )}
-      <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>返回工作台</Button>
+      <Button variant="primary" className="mt-4 self-center" render={anchorRender({ href: '/' })}>
+        返回工作台
+      </Button>
     </Card>
   )
 }
@@ -106,7 +123,9 @@ function Panel() {
 export default function ResultPage() {
   return (
     <div className="pay-page">
-      <Suspense fallback={null}><Panel /></Suspense>
+      <Suspense fallback={null}>
+        <Panel />
+      </Suspense>
     </div>
   )
 }

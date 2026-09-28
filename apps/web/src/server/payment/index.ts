@@ -17,7 +17,10 @@ function requireEpayConfig(values: Record<string, string | undefined>) {
  * 支付网关工厂：按渠道现读配置现构造（不进 runtime 缓存，配置保存即热生效）。
  * mock 渠道不走本工厂（checkout 直接返回站内收银台链接）。
  */
-export function createPaymentGateway(channel: 'epay' | 'stripe', values: Record<string, string | undefined>): PaymentGateway {
+export function createPaymentGateway(
+  channel: 'epay' | 'stripe',
+  values: Record<string, string | undefined>,
+): PaymentGateway {
   if (channel === 'stripe') return createStripeGateway(values)
   if (channel !== 'epay') throw new Error(`PAYMENT_CHANNEL 配置非法：${String(channel)}`)
   const cfg = requireEpayConfig(values)

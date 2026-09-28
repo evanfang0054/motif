@@ -69,8 +69,14 @@ describe('enumDisplayValue：枚举下拉回显当前生效值', () => {
   })
 
   it('没有 defaultHint / 没有 options 时保持原样', () => {
-    expect(enumDisplayValue({ value: null, defaultHint: null, options: ['a'] })).toEqual({ value: null, fromDefault: false })
-    expect(enumDisplayValue({ value: null, defaultHint: 'a', options: null })).toEqual({ value: null, fromDefault: false })
+    expect(enumDisplayValue({ value: null, defaultHint: null, options: ['a'] })).toEqual({
+      value: null,
+      fromDefault: false,
+    })
+    expect(enumDisplayValue({ value: null, defaultHint: 'a', options: null })).toEqual({
+      value: null,
+      fromDefault: false,
+    })
   })
 
   it('空串按「未设置」处理（与存储层 null 同义）', () => {
@@ -89,7 +95,9 @@ describe('describeAdminError：错误文案不透传英文原文', () => {
   })
 
   it('保留服务端的中文业务原因（403 的具体理由不能丢）', () => {
-    expect(describeAdminError(new ApiError(403, '管理员不可调整超级管理员的额度。'))).toBe('管理员不可调整超级管理员的额度。')
+    expect(describeAdminError(new ApiError(403, '管理员不可调整超级管理员的额度。'))).toBe(
+      '管理员不可调整超级管理员的额度。',
+    )
   })
 
   it('403 的英文原文（框架默认 Forbidden）换成中文指引', () => {
@@ -111,7 +119,7 @@ describe('describeAdminError：错误文案不透传英文原文', () => {
     // 管理页只调 api.*：不是 ApiError 的抛出就是传输层故障；而通用 errorMessage 必须透传中文
     //（画布归档解析等纯函数故意抛中文 Error），两者判据不同，此处钉住管理端这一侧。
     expect(describeAdminError(new Error('读取失败：不是合法的 zip（找不到中央目录结尾记录）。'))).toBe(
-      '网络异常，请检查网络后重试。'
+      '网络异常，请检查网络后重试。',
     )
   })
 

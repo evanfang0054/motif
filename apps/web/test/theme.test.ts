@@ -61,9 +61,7 @@ interface RunResult {
   queriedMedia: string[]
 }
 
-function runThemeInit(
-  opts: { stored?: string | null; systemDark?: boolean; storageThrows?: boolean } = {}
-): RunResult {
+function runThemeInit(opts: { stored?: string | null; systemDark?: boolean; storageThrows?: boolean } = {}): RunResult {
   const { stored = null, systemDark = false, storageThrows = false } = opts
   const dataset: Record<string, string | undefined> = {}
   const readKeys: string[] = []

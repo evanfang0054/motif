@@ -22,7 +22,7 @@ function cell(v: string | number | null): string {
 export function buildCdkCsv(rows: CdkCsvRow[]): string {
   const head = ['code', 'credits', 'status', 'redeemed_by', 'redeemed_at', 'revoked_at', 'created_at']
   const body = rows.map((r) =>
-    [r.code, r.credits, r.status, r.redeemedBy, r.redeemedAt, r.revokedAt, r.createdAt].map(cell).join(',')
+    [r.code, r.credits, r.status, r.redeemedBy, r.redeemedAt, r.revokedAt, r.createdAt].map(cell).join(','),
   )
   return `${head.join(',')}\n${body.join('\n')}\n`
 }

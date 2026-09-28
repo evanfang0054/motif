@@ -278,7 +278,9 @@ export function layoutLineageTree(input: {
     if (index > 0) {
       col.sort((a, b) => {
         const bary = (img: TreeLayoutImage) => {
-          const ps = (parents.get(img.id) ?? []).map((p) => orderInPrev.get(p)).filter((v): v is number => v !== undefined)
+          const ps = (parents.get(img.id) ?? [])
+            .map((p) => orderInPrev.get(p))
+            .filter((v): v is number => v !== undefined)
           return ps.length === 0 ? Number.MAX_SAFE_INTEGER : ps.reduce((s, v) => s + v, 0) / ps.length
         }
         const ba = bary(a)
@@ -321,7 +323,7 @@ export function layoutLineageTree(input: {
 export function isSameLayout(
   plan: readonly { id: string; rect: Rect }[],
   placements: Record<string, Rect | undefined>,
-  tolerance = 1
+  tolerance = 1,
 ): boolean {
   if (plan.length === 0) return true
   for (const p of plan) {
@@ -334,4 +336,3 @@ export function isSameLayout(
   }
   return true
 }
-

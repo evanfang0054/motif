@@ -37,7 +37,9 @@ export default function AdminUsersPage() {
   // 一次性密码弹窗（只此一次，不落任何持久化位置）
   const [reset, setReset] = useState<{ name: string; password: string } | null>(null)
   // 建号抽屉：表单 → 提交后切到「凭据一次性展示」视图
-  const [create, setCreate] = useState<{ email: string; name: string; credits: string; role: 'user' | 'admin' } | null>(null)
+  const [create, setCreate] = useState<{ email: string; name: string; credits: string; role: 'user' | 'admin' } | null>(
+    null,
+  )
   // 建号成功后的一次性凭据（与重置密码共用同一份展示形态）
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null)
 
@@ -46,7 +48,13 @@ export default function AdminUsersPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await api.adminListUsers({ q: q || undefined, role: role || undefined, status: status || undefined, page, pageSize: PAGE_SIZE })
+      const r = await api.adminListUsers({
+        q: q || undefined,
+        role: role || undefined,
+        status: status || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      })
       setItems(r.items)
       setTotal(r.total)
       setListErr(null)
@@ -66,7 +74,10 @@ export default function AdminUsersPage() {
   }, [load])
 
   useEffect(() => {
-    void api.me().then((r) => setMe(r.user)).catch(() => setMe(null))
+    void api
+      .me()
+      .then((r) => setMe(r.user))
+      .catch(() => setMe(null))
   }, [])
 
   async function submitAdjust() {
@@ -125,7 +136,12 @@ export default function AdminUsersPage() {
   }
 
   async function resetPassword(u: User) {
-    if (!(await confirm({ message: `确认为 ${u.name} 重置密码？\n\n旧密码会立刻失效，该用户现有登录也会失效。新密码只显示一次。` }))) return
+    if (
+      !(await confirm({
+        message: `确认为 ${u.name} 重置密码？\n\n旧密码会立刻失效，该用户现有登录也会失效。新密码只显示一次。`,
+      }))
+    )
+      return
     setBusy(true)
     setActionErr(null)
     try {
@@ -164,7 +180,9 @@ export default function AdminUsersPage() {
 
   return (
     <section className="admin-panel">
-      <Typography type="h1" className="admin-title">用户</Typography>
+      <Typography type="h1" className="admin-title">
+        用户
+      </Typography>
 
       <div className="admin-toolbar">
         {/* 搜索三路命中：邮箱 / 昵称模糊匹配 + `usr_` ID 精确匹配（服务端 userWhere）。
@@ -172,7 +190,10 @@ export default function AdminUsersPage() {
         <SearchField
           aria-label="搜索邮箱 / 昵称 / ID"
           value={q}
-          onChange={(v) => { setQ(v); setPage(1) }}
+          onChange={(v) => {
+            setQ(v)
+            setPage(1)
+          }}
         >
           <SearchField.Group>
             <SearchField.SearchIcon />
@@ -182,30 +203,58 @@ export default function AdminUsersPage() {
         </SearchField>
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
             两个下拉各自用哨兵 `all`（id 只需在同一个 ListBox 内唯一），在 onChange 边界映射回 `''`。 */}
-        <Select aria-label="角色筛选" value={role || 'all'} onChange={(v) => { setRole(v === 'all' ? '' : (v as RoleFilter)); setPage(1) }}>
+        <Select
+          aria-label="角色筛选"
+          value={role || 'all'}
+          onChange={(v) => {
+            setRole(v === 'all' ? '' : (v as RoleFilter))
+            setPage(1)
+          }}
+        >
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="all" id="all">全部角色</ListBox.Item>
-              <ListBox.Item key="user" id="user">普通用户</ListBox.Item>
-              <ListBox.Item key="admin" id="admin">管理员</ListBox.Item>
-              <ListBox.Item key="root" id="root">超级管理员</ListBox.Item>
+              <ListBox.Item key="all" id="all">
+                全部角色
+              </ListBox.Item>
+              <ListBox.Item key="user" id="user">
+                普通用户
+              </ListBox.Item>
+              <ListBox.Item key="admin" id="admin">
+                管理员
+              </ListBox.Item>
+              <ListBox.Item key="root" id="root">
+                超级管理员
+              </ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
-        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
+        <Select
+          aria-label="状态筛选"
+          value={status || 'all'}
+          onChange={(v) => {
+            setStatus(v === 'all' ? '' : (v as StatusFilter))
+            setPage(1)
+          }}
+        >
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
-              <ListBox.Item key="active" id="active">正常</ListBox.Item>
-              <ListBox.Item key="disabled" id="disabled">已禁用</ListBox.Item>
+              <ListBox.Item key="all" id="all">
+                全部状态
+              </ListBox.Item>
+              <ListBox.Item key="active" id="active">
+                正常
+              </ListBox.Item>
+              <ListBox.Item key="disabled" id="disabled">
+                已禁用
+              </ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
@@ -214,22 +263,35 @@ export default function AdminUsersPage() {
         <ListCount loading={loading} total={total} unit="个" errored={!!listErr} />
         <button
           className="admin-btn-primary"
-          onClick={() => { setActionErr(null); setCreate({ email: '', name: '', credits: '0', role: 'user' }) }}
+          onClick={() => {
+            setActionErr(null)
+            setCreate({ email: '', name: '', credits: '0', role: 'user' })
+          }}
         >
           创建用户
         </button>
       </div>
 
-      {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
+      {msg && (
+        <div className="admin-alert-ok" role="status">
+          {msg}
+        </div>
+      )}
       {/* 动作失败（校验 / 403 / 网络异常）只影响这一次操作，表本身仍然可信 —— 用表格上方的 banner 提示，
           不换成整页错误块（否则运营会以为整张用户表都坏了，也丢掉了继续操作其他人的入口） */}
-      {actionErr && <div className="admin-alert-err" role="alert">{actionErr}</div>}
+      {actionErr && (
+        <div className="admin-alert-err" role="alert">
+          {actionErr}
+        </div>
+      )}
 
       {listErr ? (
         // 整页错误态：只有**列表取数失败**才走到这里（中文文案 + 重试入口）
         <div className="admin-alert-err flex items-center justify-between gap-3" role="alert">
           <span>{listErr}</span>
-          <button className="admin-btn-primary" disabled={loading} onClick={() => void load()}>重试</button>
+          <button className="admin-btn-primary" disabled={loading} onClick={() => void load()}>
+            重试
+          </button>
         </div>
       ) : (
         <>
@@ -245,18 +307,16 @@ export default function AdminUsersPage() {
                       丢掉，等于没设。className 走 HeroUI 的 `composeTwRenderProps` 合并到 `<th>`，真正生效。
                       合计最小宽 828px（各列之和），容器约 1018px；更窄的视口会横向滚动
                       （`table__scroll-container` 自带 `overflow-x-auto`）。 */}
-                  <Table.Column isRowHeader className="min-w-[200px]">邮箱</Table.Column>
+                  <Table.Column isRowHeader className="min-w-[200px]">
+                    邮箱
+                  </Table.Column>
                   <Table.Column className="min-w-[120px]">昵称</Table.Column>
                   <Table.Column className="min-w-[88px]">角色</Table.Column>
                   <Table.Column className="min-w-[88px]">状态</Table.Column>
                   <Table.Column className="min-w-[72px]">额度</Table.Column>
                   <Table.Column className="min-w-[260px]">操作</Table.Column>
                 </Table.Header>
-                <Table.Body
-                  renderEmptyState={() =>
-                    loading ? null : <ListEmptyContent text="（无匹配的用户）" />
-                  }
-                >
+                <Table.Body renderEmptyState={() => (loading ? null : <ListEmptyContent text="（无匹配的用户）" />)}>
                   {loading ? (
                     <ListLoadingRows cols={6} />
                   ) : (
@@ -265,7 +325,9 @@ export default function AdminUsersPage() {
                       const isRootTarget = u.role === 'root'
                       return (
                         <Table.Row key={u.id}>
-                          <Table.Cell className="admin-mono" data-label="邮箱">{u.email}</Table.Cell>
+                          <Table.Cell className="admin-mono" data-label="邮箱">
+                            {u.email}
+                          </Table.Cell>
                           <Table.Cell data-label="昵称">{u.name}</Table.Cell>
                           <Table.Cell data-label="角色">
                             <span className="admin-chip">{ROLE_LABEL[u.role] ?? u.role}</span>
@@ -299,12 +361,18 @@ export default function AdminUsersPage() {
                                   {/* ⚠️ 全站唯一保留的**原生**表单控件（2026-09-24 走查确认）：它在表格行内，
                                       原生下拉比 HeroUI 的 popover Select 更稳、更省事；且它本就有 UA 边框，
                                       不属于「输入框缺边框」那一类。要换 HeroUI Select 请单独做（会改交互与可访问性）。 */}
-                                  <select value={u.role} disabled={busy} onChange={(e) => void changeRole(u, e.target.value)}>
+                                  <select
+                                    value={u.role}
+                                    disabled={busy}
+                                    onChange={(e) => void changeRole(u, e.target.value)}
+                                  >
                                     <option value="user">普通用户</option>
                                     <option value="admin">管理员</option>
                                     <option value="root">超级管理员</option>
                                   </select>
-                                  <button disabled={busy} onClick={() => void resetPassword(u)}>重置密码</button>
+                                  <button disabled={busy} onClick={() => void resetPassword(u)}>
+                                    重置密码
+                                  </button>
                                 </>
                               )}
                             </div>
@@ -322,7 +390,12 @@ export default function AdminUsersPage() {
         </>
       )}
 
-      <Drawer.Backdrop isOpen={create !== null} onOpenChange={(o) => { if (!o) setCreate(null) }}>
+      <Drawer.Backdrop
+        isOpen={create !== null}
+        onOpenChange={(o) => {
+          if (!o) setCreate(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -337,13 +410,22 @@ export default function AdminUsersPage() {
                   </Typography>
                   <label className="admin-field">
                     邮箱
-                    <TextField className="w-full" value={create.email} onChange={(v) => setCreate({ ...create, email: v })}>
+                    <TextField
+                      className="w-full"
+                      value={create.email}
+                      onChange={(v) => setCreate({ ...create, email: v })}
+                    >
                       <Input placeholder="如 teammate@example.com" />
                     </TextField>
                   </label>
                   <label className="admin-field">
                     昵称
-                    <TextField className="w-full" value={create.name} onChange={(v) => setCreate({ ...create, name: v })} maxLength={40}>
+                    <TextField
+                      className="w-full"
+                      value={create.name}
+                      onChange={(v) => setCreate({ ...create, name: v })}
+                      maxLength={40}
+                    >
                       <Input placeholder="如 设计小王" />
                     </TextField>
                   </label>
@@ -363,15 +445,22 @@ export default function AdminUsersPage() {
                   {isRoot && (
                     <label className="admin-field">
                       角色
-                      <Select value={create.role} onChange={(v) => setCreate({ ...create, role: v as 'user' | 'admin' })}>
+                      <Select
+                        value={create.role}
+                        onChange={(v) => setCreate({ ...create, role: v as 'user' | 'admin' })}
+                      >
                         <Select.Trigger>
                           <Select.Value />
                           <Select.Indicator />
                         </Select.Trigger>
                         <Select.Popover>
                           <ListBox>
-                            <ListBox.Item key="user" id="user">普通用户</ListBox.Item>
-                            <ListBox.Item key="admin" id="admin">管理员</ListBox.Item>
+                            <ListBox.Item key="user" id="user">
+                              普通用户
+                            </ListBox.Item>
+                            <ListBox.Item key="admin" id="admin">
+                              管理员
+                            </ListBox.Item>
                           </ListBox>
                         </Select.Popover>
                       </Select>
@@ -385,7 +474,9 @@ export default function AdminUsersPage() {
                     >
                       创建
                     </button>
-                    <button disabled={busy} onClick={() => setCreate(null)}>取消</button>
+                    <button disabled={busy} onClick={() => setCreate(null)}>
+                      取消
+                    </button>
                   </div>
                 </>
               )}
@@ -394,7 +485,12 @@ export default function AdminUsersPage() {
         </Drawer.Content>
       </Drawer.Backdrop>
 
-      <Drawer.Backdrop isOpen={adjust !== null} onOpenChange={(o) => { if (!o) setAdjust(null) }}>
+      <Drawer.Backdrop
+        isOpen={adjust !== null}
+        onOpenChange={(o) => {
+          if (!o) setAdjust(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -404,7 +500,9 @@ export default function AdminUsersPage() {
             <Drawer.Body>
               {adjust && (
                 <>
-                  <Typography type="body" className="admin-muted">当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。</Typography>
+                  <Typography type="body" className="admin-muted">
+                    当前 {adjust.user.credits} 张。正数为补发，负数为回收；扣减超过余额会被拒绝。
+                  </Typography>
                   <label className="admin-field">
                     调整张数
                     <NumberField
@@ -429,10 +527,16 @@ export default function AdminUsersPage() {
                     </TextField>
                   </label>
                   <div className="admin-actions">
-                    <button className="admin-btn-primary" disabled={busy || !adjust.reason.trim() || !adjust.delta} onClick={() => void submitAdjust()}>
+                    <button
+                      className="admin-btn-primary"
+                      disabled={busy || !adjust.reason.trim() || !adjust.delta}
+                      onClick={() => void submitAdjust()}
+                    >
                       确认调整
                     </button>
-                    <button disabled={busy} onClick={() => setAdjust(null)}>取消</button>
+                    <button disabled={busy} onClick={() => setAdjust(null)}>
+                      取消
+                    </button>
                   </div>
                 </>
               )}
@@ -441,7 +545,12 @@ export default function AdminUsersPage() {
         </Drawer.Content>
       </Drawer.Backdrop>
 
-      <Drawer.Backdrop isOpen={reset !== null} onOpenChange={(o) => { if (!o) setReset(null) }}>
+      <Drawer.Backdrop
+        isOpen={reset !== null}
+        onOpenChange={(o) => {
+          if (!o) setReset(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -456,7 +565,10 @@ export default function AdminUsersPage() {
                   </Typography>
                   <pre className="admin-detail">{reset.password}</pre>
                   <div className="admin-actions">
-                    <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(reset.password).catch(() => undefined)}>
+                    <button
+                      className="admin-btn-primary"
+                      onClick={() => void navigator.clipboard.writeText(reset.password).catch(() => undefined)}
+                    >
                       复制
                     </button>
                     <button onClick={() => setReset(null)}>我已记录，关闭</button>
@@ -468,7 +580,12 @@ export default function AdminUsersPage() {
         </Drawer.Content>
       </Drawer.Backdrop>
 
-      <Drawer.Backdrop isOpen={created !== null} onOpenChange={(o) => { if (!o) setCreated(null) }}>
+      <Drawer.Backdrop
+        isOpen={created !== null}
+        onOpenChange={(o) => {
+          if (!o) setCreated(null)
+        }}
+      >
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -483,7 +600,10 @@ export default function AdminUsersPage() {
                   </Typography>
                   <pre className="admin-detail">{created.password}</pre>
                   <div className="admin-actions">
-                    <button className="admin-btn-primary" onClick={() => void navigator.clipboard.writeText(created.password).catch(() => undefined)}>
+                    <button
+                      className="admin-btn-primary"
+                      onClick={() => void navigator.clipboard.writeText(created.password).catch(() => undefined)}
+                    >
                       复制
                     </button>
                     <button onClick={() => setCreated(null)}>我已记录，关闭</button>

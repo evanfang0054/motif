@@ -29,7 +29,11 @@ describe('normalizeCanvasMeta 容错（脏 JSON 不能把画布打不开）', ()
   })
 
   it('NaN / Infinity 视口回退默认', () => {
-    expect(normalizeCanvasMeta({ viewport: { x: Number.NaN, y: Number.POSITIVE_INFINITY, k: 1 } }).viewport).toEqual({ x: 0, y: 0, k: 1 })
+    expect(normalizeCanvasMeta({ viewport: { x: Number.NaN, y: Number.POSITIVE_INFINITY, k: 1 } }).viewport).toEqual({
+      x: 0,
+      y: 0,
+      k: 1,
+    })
   })
 
   it('k <= 0 回退为正的默认缩放（否则 viewportOrigin 除零 → NaN → 落库 NOT NULL 崩）', () => {
@@ -87,11 +91,15 @@ describe('displaySize', () => {
 
 describe('allocateSlots', () => {
   it('从原点起 4 列排布，任意两个槽位互不重叠', () => {
-    const slots = allocateSlots([], Array.from({ length: 8 }, () => ({ width: 240, height: 240 })), { x: 0, y: 0 })
+    const slots = allocateSlots(
+      [],
+      Array.from({ length: 8 }, () => ({ width: 240, height: 240 })),
+      { x: 0, y: 0 },
+    )
     expect(slots[0]).toEqual({ x: 0, y: 0, w: 240, h: 240 })
     expect(slots[1]).toEqual({ x: 280, y: 0, w: 240, h: 240 })
     expect(slots[4]).toEqual({ x: 0, y: 280, w: 240, h: 240 })
-    const overlaps = (a: typeof slots[number], b: typeof slots[number]) =>
+    const overlaps = (a: (typeof slots)[number], b: (typeof slots)[number]) =>
       a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
     for (let i = 0; i < slots.length; i += 1) {
       for (let j = i + 1; j < slots.length; j += 1) expect(overlaps(slots[i], slots[j])).toBe(false)
@@ -106,8 +114,10 @@ describe('allocateSlots', () => {
 })
 
 describe('planSlotRects（#88 骨架槽位计划）', () => {
-  const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
-    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  const overlaps = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+  ) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 
   it('数量 = 请求张数，且从视口原点起 4 列排布、互不重叠', () => {
     const slots = planSlotRects([], '1024x1024', 4, { x: 0, y: 0 })
@@ -148,13 +158,18 @@ describe('planSlotRects（#88 骨架槽位计划）', () => {
 describe('planLineageColumn（血缘落位：新图/骨架落在参考图右侧一列）', () => {
   const overlaps = (
     a: { x: number; y: number; w: number; h: number },
-    b: { x: number; y: number; w: number; h: number }
+    b: { x: number; y: number; w: number; h: number },
   ) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
   /** 参考图：左上角 (0,0)、240 见方 */
   const anchor = { x: 0, y: 0, w: 240, h: 240 }
   const square = { width: 240, height: 240 }
   const filled = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({ x: anchor.x + anchor.w + LINEAGE_COL_GAP, y: i * SLOT_STEP, w: 240, h: 240 }))
+    Array.from({ length: n }, (_, i) => ({
+      x: anchor.x + anchor.w + LINEAGE_COL_GAP,
+      y: i * SLOT_STEP,
+      w: 240,
+      h: 240,
+    }))
 
   it('列左缘 = 锚点右缘 + 列间距；列顶与锚点顶边对齐；列内按固定步长往下排', () => {
     const col = planLineageColumn([], [square, square, square], anchor)
@@ -253,7 +268,12 @@ describe('planSlotRects 的血缘分支（有锚点走列、无锚点走原网�
 })
 
 describe('centerRectsInViewport', () => {
-  const eight = () => allocateSlots([], Array.from({ length: 8 }, () => ({ width: 240, height: 240 })), { x: 0, y: 0 })
+  const eight = () =>
+    allocateSlots(
+      [],
+      Array.from({ length: 8 }, () => ({ width: 240, height: 240 })),
+      { x: 0, y: 0 },
+    )
 
   it('装得下时把包围盒摆到视口正中', () => {
     const slots = centerRectsInViewport(eight(), { x: 0, y: 0 }, 1400, 800)
@@ -293,7 +313,14 @@ describe('centerRectsInViewport', () => {
 describe('placementRect / rectToPlacement 互逆', () => {
   it('矩形与摆放可互相转换', () => {
     const p = rectToPlacement('cimg_a', { x: 10, y: 20, w: 240, h: 120 }, '2026-09-20T10:00:00.000Z')
-    expect(p).toEqual({ id: 'cimg_a', canvasX: 10, canvasY: 20, canvasWidth: 240, canvasHeight: 120, updatedAt: '2026-09-20T10:00:00.000Z' })
+    expect(p).toEqual({
+      id: 'cimg_a',
+      canvasX: 10,
+      canvasY: 20,
+      canvasWidth: 240,
+      canvasHeight: 120,
+      updatedAt: '2026-09-20T10:00:00.000Z',
+    })
     expect(placementRect(p)).toEqual({ x: 10, y: 20, w: 240, h: 120 })
   })
 })

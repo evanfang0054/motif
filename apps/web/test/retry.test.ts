@@ -47,8 +47,7 @@ describe('失败重试的表单还原（#73-1.5）', () => {
   })
 
   it('张数按核心库的 clampCount 归一（0 / 超上限 / 非整数都拉回合法区间）', () => {
-    const clamp = (n: number) =>
-      planRetryFromMessage({ message: msg({ requestedCount: n }), canvasImageIds: [] }).count
+    const clamp = (n: number) => planRetryFromMessage({ message: msg({ requestedCount: n }), canvasImageIds: [] }).count
     expect(clamp(0)).toBe(COUNT_MIN)
     expect(clamp(-3)).toBe(COUNT_MIN)
     expect(clamp(99)).toBe(COUNT_MAX)

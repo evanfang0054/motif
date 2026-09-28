@@ -33,8 +33,7 @@ export interface RegenerateInput {
 }
 
 export type RegeneratePlan =
-  | { ok: true; prompt: string; referenceIds: string[]; reusedPrompt: boolean }
-  | { ok: false; reason: 'cap' }
+  { ok: true; prompt: string; referenceIds: string[]; reusedPrompt: boolean } | { ok: false; reason: 'cap' }
 
 export function planRegenerateFromImage(input: RegenerateInput): RegeneratePlan {
   // 先校验后产出：超上限就整体不生效，绝不出现「提示词换了、参考图没换」的半截状态
@@ -46,9 +45,7 @@ export function planRegenerateFromImage(input: RegenerateInput): RegeneratePlan 
 
   // `messageId` 为 null（上传图）与「该轮次已被日志清理删掉」都落到这里：
   // 没有可复用的提示词，就一个字都不动
-  const source = input.image.messageId
-    ? input.messages.find((m) => m.id === input.image.messageId)
-    : undefined
+  const source = input.image.messageId ? input.messages.find((m) => m.id === input.image.messageId) : undefined
   if (!source) return { ok: true, prompt: input.currentPrompt, referenceIds, reusedPrompt: false }
 
   const marker = `#${String(input.image.serial).padStart(3, '0')}`

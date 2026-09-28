@@ -140,10 +140,7 @@ describe('terminalNotice 文案与判定', () => {
   it('取消但一张没少（全交付）：不提示', () => {
     const d = makeDetail({
       messages: [makeMessage({ status: 'canceled', requestedCount: 2 })],
-      canvasImages: [
-        makeImage({ id: 'cimg_1', serial: 1 }),
-        makeImage({ id: 'cimg_2', serial: 2 }),
-      ],
+      canvasImages: [makeImage({ id: 'cimg_1', serial: 1 }), makeImage({ id: 'cimg_2', serial: 2 })],
     })
     expect(terminalNotice(d)).toBeNull()
   })
@@ -202,7 +199,10 @@ describe('planTopicNotices 列表级回执判定', () => {
 
   it('非当前任务从「在跑」落到「不在跑」⇒ 提示它', () => {
     const plan = planTopicNotices({
-      prev: new Map([['a', 'pending'], ['b', 'idle']]),
+      prev: new Map([
+        ['a', 'pending'],
+        ['b', 'idle'],
+      ]),
       topics: [row('a', 'idle', '海报'), row('b', 'idle')],
       activeId: 'b',
     })
@@ -237,7 +237,10 @@ describe('planTopicNotices 列表级回执判定', () => {
 
   it('仍在跑、或从未在跑，都不提示', () => {
     const plan = planTopicNotices({
-      prev: new Map([['a', 'pending'], ['b', 'idle']]),
+      prev: new Map([
+        ['a', 'pending'],
+        ['b', 'idle'],
+      ]),
       topics: [row('a', 'running'), row('b', 'pending')],
       activeId: null,
     })

@@ -113,7 +113,9 @@ export default function AdminCdksPage() {
 
   return (
     <section className="admin-panel">
-      <Typography type="h1" className="admin-title">CDK 管理</Typography>
+      <Typography type="h1" className="admin-title">
+        CDK 管理
+      </Typography>
 
       <div className="admin-form">
         <label>
@@ -146,38 +148,80 @@ export default function AdminCdksPage() {
       <div className="admin-toolbar">
         {/* ⚠️ Select 的 value 就是 ListBox.Item 的 id，id 必须等于要回传给接口的裸值；
             「全部」用哨兵 `all`，在 onChange 边界映射回 `''`（空串 id 不被 React Aria 接受）。 */}
-        <Select aria-label="状态筛选" value={status || 'all'} onChange={(v) => { setStatus(v === 'all' ? '' : (v as StatusFilter)); setPage(1) }}>
+        <Select
+          aria-label="状态筛选"
+          value={status || 'all'}
+          onChange={(v) => {
+            setStatus(v === 'all' ? '' : (v as StatusFilter))
+            setPage(1)
+          }}
+        >
           <Select.Trigger>
             <Select.Value />
             <Select.Indicator />
           </Select.Trigger>
           <Select.Popover>
             <ListBox>
-              <ListBox.Item key="all" id="all">全部状态</ListBox.Item>
-              <ListBox.Item key="unredeemed" id="unredeemed">未兑换</ListBox.Item>
-              <ListBox.Item key="redeemed" id="redeemed">已兑换</ListBox.Item>
-              <ListBox.Item key="revoked" id="revoked">已作废</ListBox.Item>
+              <ListBox.Item key="all" id="all">
+                全部状态
+              </ListBox.Item>
+              <ListBox.Item key="unredeemed" id="unredeemed">
+                未兑换
+              </ListBox.Item>
+              <ListBox.Item key="redeemed" id="redeemed">
+                已兑换
+              </ListBox.Item>
+              <ListBox.Item key="revoked" id="revoked">
+                已作废
+              </ListBox.Item>
             </ListBox>
           </Select.Popover>
         </Select>
-        <SearchField aria-label="搜索码" value={q} onChange={(v) => { setQ(v); setPage(1) }}>
+        <SearchField
+          aria-label="搜索码"
+          value={q}
+          onChange={(v) => {
+            setQ(v)
+            setPage(1)
+          }}
+        >
           <SearchField.Group>
             <SearchField.SearchIcon />
             <SearchField.Input placeholder="搜索码" />
             <SearchField.ClearButton />
           </SearchField.Group>
         </SearchField>
-        <IconButton variant="secondary" label="复制列表" tooltip="复制当前页全部 CDK" isDisabled={items.length === 0} onPress={() => void copyCodes()}>
+        <IconButton
+          variant="secondary"
+          label="复制列表"
+          tooltip="复制当前页全部 CDK"
+          isDisabled={items.length === 0}
+          onPress={() => void copyCodes()}
+        >
           <Copy />
         </IconButton>
-        <IconButton variant="secondary" label="导出 CSV" tooltip="导出筛选结果（CSV）" isDisabled={items.length === 0} onPress={exportCsv}>
+        <IconButton
+          variant="secondary"
+          label="导出 CSV"
+          tooltip="导出筛选结果（CSV）"
+          isDisabled={items.length === 0}
+          onPress={exportCsv}
+        >
           <FileArrowDown />
         </IconButton>
         <ListCount loading={loading} total={total} unit="个" />
       </div>
 
-      {msg && <div className="admin-alert-ok" role="status">{msg}</div>}
-      {err && <div className="admin-alert-err" role="alert">{err}</div>}
+      {msg && (
+        <div className="admin-alert-ok" role="status">
+          {msg}
+        </div>
+      )}
+      {err && (
+        <div className="admin-alert-err" role="alert">
+          {err}
+        </div>
+      )}
 
       <Table>
         <Table.ScrollContainer className="admin-table-scroll">
@@ -190,11 +234,7 @@ export default function AdminCdksPage() {
               <Table.Column>创建时间</Table.Column>
               <Table.Column>操作</Table.Column>
             </Table.Header>
-            <Table.Body
-              renderEmptyState={() =>
-                loading ? null : <ListEmptyContent text="（无匹配的 CDK）" />
-              }
-            >
+            <Table.Body renderEmptyState={() => (loading ? null : <ListEmptyContent text="（无匹配的 CDK）" />)}>
               {loading ? (
                 <ListLoadingRows cols={6} />
               ) : (
@@ -202,14 +242,22 @@ export default function AdminCdksPage() {
                   const st = statusOf(c)
                   return (
                     <Table.Row key={c.code}>
-                      <Table.Cell className="admin-mono" data-label="码">{c.code}</Table.Cell>
+                      <Table.Cell className="admin-mono" data-label="码">
+                        {c.code}
+                      </Table.Cell>
                       <Table.Cell data-label="面额">{c.credits}</Table.Cell>
-                      <Table.Cell data-label="状态"><span className={`admin-chip is-${st}`}>{STATUS_LABEL[st]}</span></Table.Cell>
-                      <Table.Cell className="admin-mono" data-label="兑换者">{c.redeemedBy ?? '—'}</Table.Cell>
+                      <Table.Cell data-label="状态">
+                        <span className={`admin-chip is-${st}`}>{STATUS_LABEL[st]}</span>
+                      </Table.Cell>
+                      <Table.Cell className="admin-mono" data-label="兑换者">
+                        {c.redeemedBy ?? '—'}
+                      </Table.Cell>
                       <Table.Cell data-label="创建时间">{formatDateTime(c.createdAt)}</Table.Cell>
                       <Table.Cell data-label="操作">
                         {st === 'unredeemed' ? (
-                          <button className="admin-btn-danger" onClick={() => void revoke(c.code)}>作废</button>
+                          <button className="admin-btn-danger" onClick={() => void revoke(c.code)}>
+                            作废
+                          </button>
                         ) : (
                           <span className="admin-muted">—</span>
                         )}
