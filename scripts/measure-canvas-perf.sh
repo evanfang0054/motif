@@ -26,6 +26,10 @@
 #   4) 基线（main）与改动后（分支）必须在**同一会话**内各跑一次，且各自都从**同一份数据副本**
 #      重新起服务 —— 否则视口/机器热漂移会让数字不可比。建议 A/B/A/B 交替各跑一轮再取中位数。
 #
+# ⚠️ **隔离责任在操作者**：本脚本自己不碰数据库，只读 `/tmp/motif-perf/.data/admin-credentials.txt`
+#    并向 3300 发 HTTP。它**无法**从外部判断那个服务读的是哪份数据 —— 起服务时漏写
+#    `MOTIF_DATA_DIR=/tmp/motif-perf/.data` 就会直接改到真实库的画布视口。起完服务请核对启动日志里的数据目录。
+#
 # 仪器边界：`ScriptDuration` 只覆盖**主线程 JS** 成本。本机无独立 GPU 进程，
 # 合成/栅格成本不在本脚本范围内，结论不得表述为「整体流畅度」。
 set -euo pipefail
@@ -35,13 +39,21 @@ RUNS="${2:-5}"
 EVENTS="${3:-60}"
 OUT="/tmp/motif-perf/result-$LABEL.txt"
 
+# 参数校验：LABEL 会拼进文件路径与 JSON，RUNS/EVENTS 必须是正整数
+case "$LABEL" in *[!A-Za-z0-9._-]*) echo "标签只允许字母数字与 . _ -（收到：$LABEL）" >&2; exit 2 ;; esac
+case "$RUNS" in ''|*[!0-9]*) echo "跑数必须是正整数（收到：$RUNS）" >&2; exit 2 ;; esac
+case "$EVENTS" in ''|*[!0-9]*) echo "每跑事件数必须是正整数（收到：$EVENTS）" >&2; exit 2 ;; esac
+[ "$RUNS" -gt 0 ] && [ "$EVENTS" -gt 0 ] || { echo "跑数与事件数都必须 > 0" >&2; exit 2; }
+
 mkdir -p /tmp/motif-perf
 printf '{"label":"%s","runs":%s,"events":%s}\n' "$LABEL" "$RUNS" "$EVENTS" > /tmp/motif-perf/cfg.json
 
 # heredoc 用 `<<'EOF'`（带引号）：免去 `$` 与反引号的转义，代价是脚本内拿不到父 shell 变量 ——
 # 故参数经 /tmp/motif-perf/cfg.json 传入。
 # ⚠️ 必须写 `2>&1`：ego-browser 的输出走 **stderr**，只接 stdout 的话 `tee` 会写出 0 字节文件。
-ego-browser nodejs <<'EOF' 2>&1 | tee "$OUT"
+# `|| ego_status=$?` 是为了让采样失败时**仍然打印汇总**（`set -e` 否则会直接退出，什么也看不到）。
+ego_status=0
+ego-browser nodejs <<'EOF' 2>&1 | tee "$OUT" || ego_status=$?
 const fs = await import('node:fs')
 
 const CFG = JSON.parse(fs.readFileSync('/tmp/motif-perf/cfg.json', 'utf8'))
@@ -171,21 +183,21 @@ await page.waitForTimeout(800) // 等 bandInput / 工具栏尺寸测量 effect �
 
 console.log(`ENV label=${CFG.label} runs=${CFG.runs} events=${CFG.events}`)
 
-// D4：在**任何视口改动之前**取「同一组（选中集合 + 视口）」下的工具栏外框与缩放读数
+// 工具栏外框与缩放读数：必须在**任何视口改动之前**取，两版本才是「同一组（选中集合 + 视口）」
 await page.mouse.click(EMPTY[0], EMPTY[1], { label: '清空选中' })
 await page.waitForTimeout(250)
 await page.click(CARD1, { label: '单选第 1 张' })
 await page.waitForTimeout(300)
-const d4Single = await readToolbar()
+const tbSingle = await readToolbar()
 await page.keyboard.down('Shift')
 await page.click(CARD2, { label: '加选第 2 张' })
 await page.keyboard.up('Shift')
 await page.waitForTimeout(300)
-const d4Multi = await readToolbar()
+const tbMulti = await readToolbar()
 await page.mouse.click(EMPTY[0], EMPTY[1], { label: '清空选中' })
 await page.waitForTimeout(250)
-console.log(`D4 single ${JSON.stringify(d4Single)}`)
-console.log(`D4 multi ${JSON.stringify(d4Multi)}`)
+console.log(`TOOLBAR single ${JSON.stringify(tbSingle)}`)
+console.log(`TOOLBAR multi ${JSON.stringify(tbMulti)}`)
 
 async function scenario(name, setup, act, probe) {
   const vals = []
@@ -195,6 +207,9 @@ async function scenario(name, setup, act, probe) {
       await page.waitForTimeout(200)
     }
     const settled = await drain()
+    // 静不下来说明后台还有 JS（例如防抖落库的响应处理还没落地）—— 这一跑会把别人的活算进来，
+    // 直接作废比记一个偏高的数字诚实。
+    if (!settled) throw new Error(`${name} 第 ${r} 跑：8 次重试内页面没静下来，本次采样不可信`)
     await assertEmpty()
     const p0 = probe ? await probe() : null
     const m0 = await readMetrics()
@@ -217,17 +232,31 @@ async function scenario(name, setup, act, probe) {
     vals.push(after - before)
     console.log(
       `RUN ${name} ${r} ${(after - before).toFixed(4)} task=${(m1.task - m0.task).toFixed(4)}` +
-        ` layout=${m1.layout - m0.layout} recalc=${m1.recalc - m0.recalc} settled=${settled}`,
+        ` layout=${m1.layout - m0.layout} recalc=${m1.recalc - m0.recalc}`,
     )
   }
   const sorted = [...vals].sort((a, b) => a - b)
-  const median = sorted[(sorted.length - 1) >> 1]
+  const half = sorted.length >> 1
+  // 偶数跑取中间两个的平均 —— 用「下中位数」会让 RUNS 为偶数时的 MEDIAN 与报告里的口径对不上
+  const median = sorted.length % 2 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2
   console.log(`MEDIAN ${name} ${median.toFixed(4)} spread=${(sorted[sorted.length - 1] - sorted[0]).toFixed(4)}`)
   return median
 }
 
-const clearSel = () => page.mouse.click(EMPTY[0], EMPTY[1], { label: '清空选中' })
-const selectOne = () => page.click(CARD1, { label: '选中第 1 张' })
+/**
+ * 清空 / 选中都**断言到位**再开测。
+ *
+ * ⚠️ 少了这一步，`pan-select` 会在「其实没选中」时退化成 `pan-none`，
+ * 而它的净位移断言照样通过 —— 看起来一切正常，却把 pan-select 的收益抹掉了。
+ */
+const clearSel = async () => {
+  await page.mouse.click(EMPTY[0], EMPTY[1], { label: '清空选中' })
+  await page.waitForFunction(() => !document.querySelector('.canvas-toolbar'), undefined, { timeout: 3000 })
+}
+const selectOne = async () => {
+  await page.click(CARD1, { label: '选中第 1 张' })
+  await page.waitForSelector('.canvas-toolbar[aria-label="图片操作"]', { state: 'visible', timeout: 3000 })
+}
 
 /**
  * 等两帧。
@@ -268,4 +297,5 @@ console.log(`SUMMARY ${CFG.label} zoom=${zoom.toFixed(4)} pan-select=${panSelect
 EOF
 
 echo "=== $LABEL 汇总 ==="
-grep -E '^(ENV|D4|RUN|MEDIAN|SUMMARY)' "$OUT" || true
+grep -E '^(ENV|TOOLBAR|RUN|MEDIAN|SUMMARY)' "$OUT" || true
+exit "$ego_status"
