@@ -79,6 +79,7 @@ import {
 } from '@/stores/canvas/persistence'
 import { MiniMap } from './MiniMap'
 import { CanvasWorld } from './CanvasWorld'
+import { CanvasZoomReadout } from './CanvasZoomReadout'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
 import {
@@ -193,11 +194,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // ⚠️ 只订阅**具体字段**，不要订阅整份 `meta`：平移每帧都改 meta，订阅整份会让外层
   // （缩放条、顶部 pill、选中工具栏、背景选择器）每帧重渲染。三个窄订阅的取舍：
   //  - `background` 是字符串，极少变；
-  //  - `viewportK` 只在**缩放**时变，**平移时不变** ⇒ 平移不触发外层重渲染；
-  //  - 选中工具栏的锚点才需要整个 viewport，且**只在有选中时**才需要 —— 无选中时恒返回
-  //    `null`，`Object.is(null, null)` 为真 ⇒ 不重渲染。
+  //  - 缩放读数（`viewport.k`）的订阅已下沉到 `CanvasZoomReadout`：`k` 在**缩放**时变，
+  //    留在这里会让外层重渲染 ⇒ 重建 20 张卡片的 `children` ⇒ 卡片逐帧 reconcile。
   const background = useCanvasStore((s) => s.meta.background)
-  const viewportK = useCanvasStore((s) => s.meta.viewport.k)
   const toolbarViewport = useCanvasStore((s) => (s.selected.length > 0 ? s.meta.viewport : null))
   const selected = useCanvasStore((s) => s.selected)
   const source = useCanvasStore((s) => s.source)
@@ -1346,18 +1345,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           <IconButton size="sm" variant="secondary" label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>
             <Minus />
           </IconButton>
-          {/* 百分比保留文字：它是**状态读数**，图标化等于把缩放比例删掉 */}
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-label="重置为 100%"
-            onPress={() => {
-              const v = useCanvasStore.getState().meta.viewport
-              useCanvasStore.getState().setViewport({ ...v, k: 1 })
-            }}
-          >
-            {Math.round(viewportK * 100)}%
-          </Button>
+          {/* 百分比保留文字：它是**状态读数**，图标化等于把缩放比例删掉。
+              读数与 `k` 的订阅都在组件里 —— 留在外层会让**缩放**逐帧重渲染整棵卡片子树。 */}
+          <CanvasZoomReadout />
           <IconButton size="sm" variant="secondary" label="放大" onPress={() => zoomAtCenter(ZOOM_STEP)}>
             <Plus />
           </IconButton>
