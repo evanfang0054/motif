@@ -125,6 +125,16 @@ export function applySchema(db: Database): void {
       revoked_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS registration_invites (
+      code TEXT PRIMARY KEY,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      used_by TEXT,
+      used_at TEXT,
+      revoked_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

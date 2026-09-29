@@ -15,6 +15,7 @@ const filled: AuthFieldState = {
   password: 'Passw0rd!',
   passwordConfirm: 'Passw0rd!',
   inviteCode: 'INVITE01',
+  registrationCode: 'ACC3SSCODE',
 }
 
 const empty = { name: '', email: '', code: '', password: '', passwordConfirm: '' }
@@ -116,7 +117,7 @@ describe('isFormFilled：提交按钮的置灰判据（#74-2.2）', () => {
   })
 })
 
-describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）', () => {
+describe('switchAuthFields：切视图只保留邮箱与两个「入口上下文」码（#80-1.2）', () => {
   it('密码类字段被清空 —— 登录密码不得被带进「找回密码」的新密码框', () => {
     const next = switchAuthFields(filled)
     expect(next.password).toBe('')
@@ -129,10 +130,11 @@ describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）',
     expect(next.code).toBe('')
   })
 
-  it('邮箱与邀请码保留（邮箱三视图共用；邀请码是入口上下文，清掉会静默丢奖励）', () => {
+  it('邮箱、邀请码与注册准入码保留（邮箱三视图共用；两个码是入口上下文，清掉会静默丢奖励 / 要用户重贴）', () => {
     const next = switchAuthFields(filled)
     expect(next.email).toBe('me@example.com')
     expect(next.inviteCode).toBe('INVITE01')
+    expect(next.registrationCode).toBe('ACC3SSCODE')
   })
 
   it('是纯函数：不改动入参', () => {
@@ -141,5 +143,81 @@ describe('switchAuthFields：切视图只保留邮箱与邀请码（#80-1.2）',
     expect(filled.passwordConfirm).toBe('Passw0rd!')
     expect(filled.name).toBe('小美')
     expect(filled.code).toBe('123456')
+    expect(filled.registrationCode).toBe('ACC3SSCODE')
+  })
+})
+
+describe('注册免邮箱验证码（后台开关 REGISTRATION_REQUIRE_EMAIL_CODE）', () => {
+  it('clientAuthError：requireEmailCode=false 时不再报「验证码缺失」', () => {
+    expect(
+      clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' }, { requireEmailCode: false }),
+    ).toBe('请输入密码。')
+  })
+
+  it('clientAuthError：requireEmailCode=false 时也不再校验验证码格式', () => {
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' }, { requireEmailCode: false })).toBeNull()
+  })
+
+  it('clientAuthError：不传 opts 时保持既有语义（仍要求 6 位数字）', () => {
+    expect(clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' })).toBe('验证码应为 6 位数字。')
+  })
+
+  it('clientAuthError：本开关只作用于注册，找回密码的验证码始终必填', () => {
+    expect(clientAuthError('reset', { ...empty, email: 'me@example.com' }, { requireEmailCode: false })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+  })
+
+  it('isFormFilled：requireEmailCode=false 时注册不再要求验证码', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: false })).toBe(true)
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true })).toBe(false)
+    // 不传 opts → 与改动前逐字一致
+    expect(isFormFilled('register', { ...filled, code: '' })).toBe(false)
+  })
+
+  it('isFormFilled：reset 模式的验证码始终必填（opts 对它无效）', () => {
+    expect(isFormFilled('reset', { ...filled, code: '' }, { requireEmailCode: false })).toBe(false)
+  })
+})
+
+describe('注册准入码免邮箱验证码（hasAccessCode）', () => {
+  it('isFormFilled：带准入码时不填验证码也可提交', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { hasAccessCode: true })).toBe(true)
+    // 对照：不带准入码时同一份字段值不可提交（防「这一支恒真」的假绿）
+    expect(isFormFilled('register', { ...filled, code: '' }, { hasAccessCode: false })).toBe(false)
+    expect(isFormFilled('register', { ...filled, code: '' })).toBe(false)
+  })
+
+  it('clientAuthError：带准入码时不再报「验证码缺失」', () => {
+    expect(
+      clientAuthError('register', { ...empty, name: '小美', email: 'me@example.com' }, { hasAccessCode: true }),
+    ).toBe('请输入密码。')
+    expect(clientAuthError('register', { ...filled, code: '' }, { hasAccessCode: true })).toBeNull()
+  })
+
+  it('clientAuthError：带准入码时也不再校验验证码格式（填了半截也不拦）', () => {
+    expect(clientAuthError('register', { ...filled, code: 'abcdef' }, { hasAccessCode: true })).toBeNull()
+  })
+
+  it('hasAccessCode 不作用于 reset：找回密码的验证码始终必填', () => {
+    expect(clientAuthError('reset', { ...empty, email: 'me@example.com' }, { hasAccessCode: true })).toBe(
+      '请输入 6 位邮箱验证码。',
+    )
+    expect(isFormFilled('reset', { ...filled, code: '' }, { hasAccessCode: true })).toBe(false)
+  })
+
+  it('两个 opts 同时给出时取「任一放宽」（准入码与后台开关互不干扰）', () => {
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: false, hasAccessCode: true })).toBe(
+      true,
+    )
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true, hasAccessCode: true })).toBe(
+      true,
+    )
+    expect(isFormFilled('register', { ...filled, code: '' }, { requireEmailCode: true, hasAccessCode: false })).toBe(
+      false,
+    )
   })
 })

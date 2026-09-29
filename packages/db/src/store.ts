@@ -17,6 +17,7 @@ import {
   newTopicId,
   newUserId,
   newInviteCode,
+  newRegistrationCode,
   newVerificationCode,
   newSessionToken,
   newOrderId,
@@ -45,6 +46,9 @@ import { applySchema } from './schema'
 function nowIso(): string {
   return new Date().toISOString()
 }
+
+/** 仅供 createUserWithRegistrationCode 在事务内触发整事务回滚用；不外传 */
+class RegistrationCodeRejected extends Error {}
 
 /** 读取自愈落定后的 topic 态（由同一份派生函数给出，不写字面量） */
 const SETTLED_TOPIC_STATUS = topicStatusFromMessage(null)
@@ -1919,6 +1923,150 @@ export class MotifStore {
       return row.credits
     })
     return tx()
+  }
+
+  // ---------- registration invites（注册准入码）----------
+
+  createRegistrationInvite(input: { code: string; note?: string; createdBy?: string }): void {
+    this.db
+      .prepare('INSERT INTO registration_invites (code, note, created_by, created_at) VALUES (?, ?, ?, ?)')
+      .run(input.code.toUpperCase(), input.note ?? null, input.createdBy ?? null, nowIso())
+  }
+
+  /**
+   * 批量生成准入码：单事务插入，码冲突时换码重试。任一步失败整批回滚（形态照抄 createCdkBatch）。
+   */
+  createRegistrationInviteBatch(input: {
+    count: number
+    note?: string
+    createdBy?: string
+    /** 仅测试注入用；生产走 newRegistrationCode */
+    codeFactory?: () => string
+  }): string[] {
+    const factory = input.codeFactory ?? newRegistrationCode
+    const tx = this.db.transaction((): string[] => {
+      const out: string[] = []
+      const insert = this.db.prepare(
+        'INSERT INTO registration_invites (code, note, created_by, created_at) VALUES (?, ?, ?, ?)',
+      )
+      let guard = 0
+      while (out.length < input.count) {
+        if (++guard > input.count * 20) throw new Error('准入码生成失败：连续冲突次数过多')
+        const code = factory().toUpperCase()
+        try {
+          insert.run(code, input.note ?? null, input.createdBy ?? null, nowIso())
+          out.push(code)
+        } catch {
+          // 主键冲突 → 换一个码重试
+        }
+      }
+      return out
+    })
+    return tx()
+  }
+
+  listRegistrationInvites(filter: { limit?: number; offset?: number }): Array<{
+    code: string
+    note: string | null
+    createdBy: string | null
+    usedBy: string | null
+    usedAt: string | null
+    revokedAt: string | null
+    createdAt: string
+  }> {
+    const limit = filter.limit ?? 100
+    const offset = filter.offset ?? 0
+    // ⚠️ SQL 返回的是 snake_case，**必须逐行映射**（照抄 listCdks 的写法）。
+    //    直接 `as Array<{ createdBy: … }>` 会让所有字段是 undefined，测试与页面同时静默失效。
+    const rows = this.db
+      .prepare(
+        `SELECT code, note, created_by, used_by, used_at, revoked_at, created_at FROM registration_invites ORDER BY created_at DESC, code DESC LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset) as Array<{
+      code: string
+      note: string | null
+      created_by: string | null
+      used_by: string | null
+      used_at: string | null
+      revoked_at: string | null
+      created_at: string
+    }>
+    return rows.map((r) => ({
+      code: r.code,
+      note: r.note,
+      createdBy: r.created_by,
+      usedBy: r.used_by,
+      usedAt: r.used_at,
+      revokedAt: r.revoked_at,
+      createdAt: r.created_at,
+    }))
+  }
+
+  /**
+   * 准入码总数（与 `listRegistrationInvites` 同一张表、不带筛选）—— 分页器要的是**总条数**，
+   * 而不是当前页的条数；少了它分页器永远只看到第一页（`Pager` 在 `total <= pageSize` 时不渲染）。
+   */
+  countRegistrationInvites(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM registration_invites').get() as { n: number }
+    return row.n
+  }
+
+  revokeRegistrationInvite(code: string): boolean {
+    const res = this.db
+      .prepare(
+        'UPDATE registration_invites SET revoked_at = ? WHERE code = ? AND used_by IS NULL AND revoked_at IS NULL',
+      )
+      .run(nowIso(), code.toUpperCase())
+    return res.changes === 1
+  }
+
+  /**
+   * 准入码当前是否**可用**（存在、未使用、未作废）—— **只读**，不核销。
+   *
+   * 存在的理由（安全）：`registerWithAccessCode` 必须**先**确认码可用、**再**查邮箱是否已注册。
+   * 反过来的话，「垃圾码 + 已注册邮箱」会得 409、「垃圾码 + 未注册邮箱」得 400 —— 两个不同响应
+   * 把「这个邮箱是否已注册」变成**无需任何凭据即可探测**的枚举信号，恰好抵消掉邮箱验证码路径
+   * 刻意保留的那层防枚举保护（见 `services.ts` 的 `register`）。
+   */
+  isRegistrationCodeUsable(code: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM registration_invites WHERE code = ? AND used_by IS NULL AND revoked_at IS NULL')
+      .get(code.toUpperCase())
+    return Boolean(row)
+  }
+
+  /**
+   * 核销准入码并建号：**必须在同一事务内**，失败全回滚。
+   *
+   * 顺序是「先建号、再条件 UPDATE 核销」：`used_by` 要写新用户的 id，而 id 由 `createUser`
+   * 内部生成。核销失败时抛错让整个事务回滚（`createUser` 自身也开事务，better-sqlite3 检测到
+   * 已在事务中会改用 SAVEPOINT）。
+   *
+   * ⚠️ 条件 UPDATE（`used_by IS NULL`）是并发防线 —— 多进程部署下同码只会有一个写入成功。
+   *    本机单进程 better-sqlite3 下构造不出真并发，该防线靠机制断言与代码审查背书。
+   *
+   * ⚠️ **回滚成立的前提（别改坏它）**：错误必须**逃出外层 `tx()` 的函数体**。
+   *    `createUser` 内层那个 SAVEPOINT 的 `RELEASE` 只释放保存点、**不提交**；随后这里抛错
+   *    ⇒ 外层包装执行整事务 `ROLLBACK`，`users` 的 INSERT 一并撤销。
+   *    **若把 try/catch 挪进事务函数体内把错误吞掉，回滚即失效。**
+   */
+  createUserWithRegistrationCode(input: CreateUserInput, code: string): User | null {
+    const tx = this.db.transaction((): User | null => {
+      const user = this.createUser(input)
+      const res = this.db
+        .prepare(
+          'UPDATE registration_invites SET used_by = ?, used_at = ? WHERE code = ? AND used_by IS NULL AND revoked_at IS NULL',
+        )
+        .run(user.id, nowIso(), code.toUpperCase())
+      if (res.changes !== 1) throw new RegistrationCodeRejected()
+      return user
+    })
+    try {
+      return tx()
+    } catch (e) {
+      if (e instanceof RegistrationCodeRejected) return null
+      throw e
+    }
   }
 
   // ---------- orders ----------

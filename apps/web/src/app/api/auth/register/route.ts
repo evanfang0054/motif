@@ -13,6 +13,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       password: string
       passwordConfirm: string
       inviteCode?: string
+      registrationCode?: string
     }>(req)
     const user = register(getRuntime().store, {
       name: body.name ?? '',
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       password: body.password ?? '',
       passwordConfirm: body.passwordConfirm ?? '',
       inviteCode: body.inviteCode,
+      registrationCode: body.registrationCode,
     })
     return createSessionResponse({ user }, user.id, 201)
   } catch (e) {

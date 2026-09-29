@@ -19,6 +19,7 @@ import {
   validatePrompt,
   validateReferenceCount,
   validateSize,
+  validateVerificationCode,
   viewportOrigin,
   type CanvasImagePlacement,
   type CanvasRect,
@@ -81,6 +82,14 @@ export async function sendCode(
   email: string,
   ip?: string,
 ): Promise<{ sent: true; devCode?: string; via: string }> {
+  // 注册用途的两道门：总开关关闭、或本次注册不需要邮箱验证码时，发码入口一并拒绝。
+  // 不拒就等于「开关关了还能发验证码」——半个入口还在，且发出去的码在开关重开后仍在 TTL 内有效。
+  if (purpose === 'register' && !resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
+    throw new ServiceError(403, '本站暂未开放注册。')
+  }
+  if (purpose === 'register' && !resolveBool(store, process.env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true)) {
+    throw new ServiceError(403, '当前注册无需邮箱验证码。')
+  }
   const err = validateEmail(email)
   if (err) throw new ServiceError(400, err)
   // 防邮件轰炸/防爆破：每邮箱 60s 冷却 + 每小时 5 封；每 IP 每小时 30 封
@@ -133,15 +142,97 @@ export async function sendTestMail(mailer: MailerConfig, to: string): Promise<{ 
   return { ok: true, via: mailer.mailer.name }
 }
 
-export function register(
+/** 注册入参（`register` 与准入码分支 `registerWithAccessCode` 共用） */
+export interface RegisterInput {
+  name: string
+  email: string
+  code: string
+  password: string
+  passwordConfirm: string
+  inviteCode?: string
+  /** 注册准入码（**不是**推荐用的邀请码，两者正交） */
+  registrationCode?: string
+}
+
+/**
+ * 准入码分支：码本身就是凭据，**不消费邮箱验证码**。
+ *
+ * 单独成函数只为把 `register` 的分支数压回规模门禁（`complexity` ≤ 20）——
+ * 两条路径共用前面的校验，但落库与奖励各自独立，拆开后各自的意图也更清楚。
+ */
+function registerWithAccessCode(store: MotifStore, input: RegisterInput, accessCode: string): User {
+  // ⚠️ 顺序（安全，**别调换**）：先确认码**可用**（只读、不核销），再查邮箱是否已注册。
+  //    反过来的话，「垃圾码 + 已注册邮箱」得 409、「垃圾码 + 未注册邮箱」得 400 —— 两个不同响应
+  //    把「这个邮箱是否已注册」变成**无需任何凭据即可探测**的枚举信号，恰好抵消掉下方邮箱验证码
+  //    路径刻意保留的那层防枚举保护（见 `register` 里「先消费验证码再做邮箱查重」的注释）。
+  if (!store.isRegistrationCodeUsable(accessCode)) {
+    throw new ServiceError(400, '注册准入码无效或已被使用。')
+  }
+  // ⚠️ 顺序（额度）：查重在核销之前 —— 准入码是稀缺凭据，不该因邮箱重复被白烧。
+  if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')
+  // 额度与奖励配置：与邮箱验证码路径共用同一份读法（读一次、传下去，避免同函数内多处现读造成口径漂移）
+  const inviteOn = resolveBool(store, process.env, 'INVITE_REWARD_ENABLED', false)
+  const bonus = resolvePositiveInt(store, process.env, 'SIGNUP_BONUS_CREDITS', DEFAULT_SIGNUP_BONUS_CREDITS)
+  // ⚠️ 准入码**不**建立推荐关系（它与推荐码正交）；只有调用方同时传了推荐码时才按既有逻辑走。
+  let inviter: string | null = null
+  if (inviteOn && input.inviteCode?.trim()) {
+    const found = store.getUserByInviteCode(input.inviteCode.trim())
+    if (found) inviter = found.id
+  }
+  // 核销与建号在**同一事务**内（见 store.createUserWithRegistrationCode）
+  const created = store.createUserWithRegistrationCode(
+    {
+      email: input.email,
+      passwordHash: hashPassword(input.password),
+      name: input.name.trim(),
+      invitedBy: inviter,
+      credits: 0,
+    },
+    accessCode,
+  )
+  if (!created) throw new ServiceError(400, '注册准入码无效或已被使用。')
+  store.addCredits(created.id, bonus, { source: 'signup_bonus', note: '注册赠送' })
+  if (inviter) {
+    const owner = store.getUserById(inviter)!
+    const reward = inviteRewardFor(owner.invitedCount, {
+      credits: resolvePositiveInt(store, process.env, 'INVITE_REWARD_CREDITS', DEFAULT_INVITE_REWARD_CREDITS),
+      maxInvitees: resolvePositiveInt(
+        store,
+        process.env,
+        'INVITE_REWARD_MAX_INVITEES',
+        DEFAULT_INVITE_REWARD_MAX_INVITEES,
+      ),
+    })
+    store.recordInvite(inviter, reward, created.id)
+  }
+  return store.getUserById(created.id)!
+}
+
+/**
+ * 注册前置：读两个开关 + 逐项校验，返回后续分支要用的两个开关值。
+ *
+ * 单独成函数只为把 `register` 的分支数压回规模门禁（`complexity` ≤ 20）——
+ * 校验逻辑本身与改动前逐字一致，未改判据、未改报错文案、未改顺序。
+ */
+function checkRegisterPreconditions(
   store: MotifStore,
-  input: { name: string; email: string; code: string; password: string; passwordConfirm: string; inviteCode?: string },
-): User {
+  input: RegisterInput,
+): { requireCode: boolean; accessCode: string | undefined } {
+  // 注册总开关：关闭时任何组合都在这里终止，不触碰任何一张表。
+  if (!resolveBool(store, process.env, 'REGISTRATION_ENABLED', true)) {
+    throw new ServiceError(403, '本站暂未开放注册。')
+  }
   // 逐项校验：数组只承载「错误信息」，命中的第一条直接抛。
+  // ⚠️ 验证码格式判据走 core 的纯函数（前端先行校验用的是同一份），不再内联 /^.{6}$/ ——
+  //    后者接受任意 6 字符，与前端 inputMode="numeric" 的「6 位数字」提示不一致。
+  const requireCode = resolveBool(store, process.env, 'REGISTRATION_REQUIRE_EMAIL_CODE', true)
+  const accessCode = input.registrationCode?.trim()
   for (const err of [
     validateName(input.name || ''),
     validateEmail(input.email || ''),
-    /^.{6}$/.test(input.code || '') ? null : '请输入 6 位邮箱验证码。',
+    // ⚠️ 顺序约束：有准入码时它本身就是凭据，跳过邮箱验证码的格式判据。
+    //    若这里不认准入码，「带准入码 + 不填验证码」会先被 400 拦死，准入码路径根本不可达。
+    accessCode || !requireCode ? null : validateVerificationCode(input.code || ''),
     validatePassword(input.password || ''),
   ]) {
     if (err) throw new ServiceError(400, err)
@@ -150,8 +241,19 @@ export function register(
   // 避免「前端说没问题、后端却拒」这种只在某一侧改过规则才会出现的分叉。
   const confirmErr = validatePasswordConfirm(input.password || '', input.passwordConfirm || '')
   if (confirmErr) throw new ServiceError(400, confirmErr)
+  return { requireCode, accessCode }
+}
+
+export function register(store: MotifStore, input: RegisterInput): User {
+  const { requireCode, accessCode } = checkRegisterPreconditions(store, input)
+
+  // 准入码路径：见 registerWithAccessCode（拆出去也是为了压住本函数的分支数）
+  if (accessCode) return registerWithAccessCode(store, input, accessCode)
+
   // 先消费验证码再做邮箱查重：避免「邮箱已注册」成为匿名可探测的枚举信号
-  if (!store.consumeVerificationCode('register', input.email, input.code)) {
+  // ⚠️ 关闭「注册需邮箱验证码」时跳过消费。**已知取舍**：上面那层防枚举保护随之消失 ——
+  //    原设计用它避免「邮箱已注册」成为匿名可探测的枚举信号。这是开关带来的、需求已接受的代价。
+  if (requireCode && !store.consumeVerificationCode('register', input.email, input.code)) {
     throw new ServiceError(400, '验证码无效或已过期。')
   }
   if (store.getUserByEmail(input.email)) throw new ServiceError(409, '该邮箱已注册，请直接登录。')

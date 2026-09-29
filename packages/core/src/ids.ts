@@ -44,12 +44,27 @@ export function newOrderId(): string {
 
 const INVITE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
+/** 10 位大写字母数字随机码；`newInviteCode` / `newRegistrationCode` 共用 */
+function randomCode(length: number): string {
+  const bytes = randomBytes(length)
+  let out = ''
+  for (let i = 0; i < length; i++) out += INVITE_ALPHABET[bytes[i] % INVITE_ALPHABET.length]
+  return out
+}
+
 /** 邀请码：10 位大写字母数字 */
 export function newInviteCode(): string {
-  const bytes = randomBytes(10)
-  let out = ''
-  for (let i = 0; i < 10; i++) out += INVITE_ALPHABET[bytes[i] % INVITE_ALPHABET.length]
-  return out
+  return randomCode(10)
+}
+
+/**
+ * 注册准入码：10 位大写字母数字。
+ *
+ * ⚠️ **不复用 `newInviteCode`** —— 那会让「注册准入码」与「邀请码」在代码层重新混成一件事。
+ * 两者用途正交：邀请码建推荐关系并发奖，准入码只管「谁能注册」。
+ */
+export function newRegistrationCode(): string {
+  return randomCode(10)
 }
 
 /** 6 位数字邮箱验证码 */

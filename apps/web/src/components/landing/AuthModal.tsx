@@ -32,6 +32,8 @@ interface AuthModalProps {
    * 只当 useState 的**初值**用 —— 之后以弹窗内 state 为准，不受父组件重渲染影响。
    */
   prefill?: ResetPrefill
+  /** 进弹窗时就要显示的一次性提示（如「本站暂未开放注册。」）；只当 useState 初值用 */
+  initialNotice?: string
 }
 
 /** 可见性切换的密码输入框（HeroUI InputGroup 形态；ariaBase 恒为字面量，不随模式变化） */
@@ -72,17 +74,19 @@ function PasswordInput({
 }
 
 /** 登录 / 注册 / 找回密码 三合一弹窗（原 AuthCard 表单逻辑零改动，外壳 Card → HeroUI Modal） */
-function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
+function AuthModal({ mode, onModeChange, onClose, prefill, initialNotice }: AuthModalProps) {
   const router = useRouter()
   const [name, setName] = useState('')
   // 深链预填只写进初值：用户改过之后不该被父组件的重渲染覆盖回去
   const [email, setEmail] = useState(prefill?.email ?? '')
   const [inviteCode, setInviteCode] = useState('')
+  /** 注册准入码（管理端发放，免邮箱验证码）；与上面的推荐邀请码是两回事 */
+  const [registrationCode, setRegistrationCode] = useState('')
   const [code, setCode] = useState(prefill?.code ?? '')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(initialNotice ?? null)
   const [busy, setBusy] = useState(false)
   // 发送验证码的「就地」反馈与冷却：出现在验证码行正下方，触屏视口内必然可见
   const [codeMsg, setCodeMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -98,9 +102,17 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
    * 选 ref 而不是「把六个字段收成一个 state 对象」：后者要改所有 setter、`isFormFilled` /
    * `clientAuthError` 的调用点与预填初值，改动面大且容易碰到行为；ref 只多一个 ref + 一个 effect。
    */
-  const fieldsRef = useRef<AuthFieldState>({ name, email, code, password, passwordConfirm, inviteCode })
+  const fieldsRef = useRef<AuthFieldState>({
+    name,
+    email,
+    code,
+    password,
+    passwordConfirm,
+    inviteCode,
+    registrationCode,
+  })
   useEffect(() => {
-    fieldsRef.current = { name, email, code, password, passwordConfirm, inviteCode }
+    fieldsRef.current = { name, email, code, password, passwordConfirm, inviteCode, registrationCode }
   })
 
   // HeroUI 无触发器上下文（本壳由调用方条件挂载）：关闭后手动还原焦点到打开前的元素（与通用弹窗外壳同一套焦点还原做法）
@@ -143,7 +155,8 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       setNotice(null)
       setCodeMsg(null)
       setCooldown(0)
-      // #80-1.2：切换视图只保留邮箱与邀请码 —— 清空规则集中在 lib/auth-form 的 switchAuthFields（可单测）。
+      // #80-1.2：切换视图只保留邮箱与两个「入口上下文」码（邀请码 / 注册准入码）—— 清空规则集中在
+      // lib/auth-form 的 switchAuthFields（可单测）。
       // 读 ref 而不是闭包里的六个 state：见 fieldsRef 的说明（依赖数组不再随击键变化）。
       const next = switchAuthFields(fieldsRef.current)
       setName(next.name)
@@ -152,16 +165,37 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
       setPassword(next.password)
       setPasswordConfirm(next.passwordConfirm)
       setInviteCode(next.inviteCode)
+      setRegistrationCode(next.registrationCode)
     },
     [onModeChange],
   )
+
+  const cfg = usePublicConfig()
+  // 未知态（`cfg` 首帧为 null）取**服务端默认值** —— 本仓既有口径（见 `workspace/dialogs.tsx:87`）。
+  // 这里刻意**不**按「未知即隐藏」：验证码是**必填输入**，隐藏它会让表单在配置到达前无法提交；
+  // 而按默认值（要求验证码）渲染，最坏只是多显示一个字段、配置到达后自动消失。
+  // ⚠️ 必须声明在 `submit` **之前**：`submit` 的 useCallback 闭包要用它，声明在后会命中
+  //    「Cannot access variable before it is declared」且闭包会捕获到过期值。
+  const registrationEnabled = cfg?.registrationEnabled ?? true
+  const registrationRequireEmailCode = cfg?.registrationRequireEmailCode ?? true
+  /**
+   * 填了注册准入码时邮箱验证码整行都不需要 —— 准入码本身就是凭据（与服务端 `register` 同一判据）。
+   *
+   * ⚠️ 必须传给 `clientAuthError` **与** `isFormFilled` 两处：只给前者的话提交按钮仍是灰的，
+   *    「带准入码 + 不填验证码」这条路径在界面上根本点不下去 —— 功能不可达。
+   */
+  const hasAccessCode = Boolean(registrationCode.trim())
 
   const submit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
       // 客户端先行校验：空表单 / 格式 / 密码规则 / 两次不一致都在这里就地报错，不发请求。
       // 命中时只 setError 后 return —— 对话框保持打开，用户能立刻看到原因（#80-1.1）。
-      const localErr = clientAuthError(mode, { name, email, code, password, passwordConfirm })
+      const localErr = clientAuthError(
+        mode,
+        { name, email, code, password, passwordConfirm },
+        { requireEmailCode: registrationRequireEmailCode, hasAccessCode },
+      )
       if (localErr) {
         setNotice(null)
         setError(localErr)
@@ -177,7 +211,15 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
         } else if (mode === 'register') {
           // 服务端错误（验证码无效 / 邮箱已注册…）一律由下面的 catch 落进对话框内的 Alert；
           // 只有成功才 refresh —— 失败路径既不关窗也不吞错（#80-1.1）。
-          await api.register({ name, email, code, password, passwordConfirm, inviteCode: inviteCode || undefined })
+          await api.register({
+            name,
+            email,
+            code,
+            password,
+            passwordConfirm,
+            inviteCode: inviteCode || undefined,
+            registrationCode: registrationCode || undefined,
+          })
           router.refresh()
         } else {
           await fetch('/api/auth/password-reset', {
@@ -202,7 +244,20 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
         setBusy(false)
       }
     },
-    [mode, name, email, code, password, passwordConfirm, inviteCode, router, switchMode],
+    [
+      mode,
+      name,
+      email,
+      code,
+      password,
+      passwordConfirm,
+      inviteCode,
+      registrationCode,
+      registrationRequireEmailCode,
+      hasAccessCode,
+      router,
+      switchMode,
+    ],
   )
 
   const sendCode = useCallback(async () => {
@@ -237,7 +292,6 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
   }, [mode, email, cooldown, startCooldown])
 
   const title = mode === 'reset' ? '找回密码' : mode === 'register' ? '创建账号' : '欢迎回来'
-  const cfg = usePublicConfig()
   const subtitle =
     mode === 'reset'
       ? '输入注册邮箱与验证码设置新密码。'
@@ -302,7 +356,16 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                 </TextField>
               )}
 
-              {mode !== 'login' && (
+              {/* ⚠️ 与上一行的「邀请码」是**两回事**（CONTEXT.md：准入码管「谁能注册」，邀请码管推荐关系）——
+                  文案必须能区分，不要合并成一行 */}
+              {mode === 'register' && (
+                <TextField className="mt-3.5" value={registrationCode} onChange={setRegistrationCode}>
+                  <Label>注册准入码（选填）</Label>
+                  <Input placeholder="有准入码可免邮箱验证码" />
+                </TextField>
+              )}
+
+              {mode !== 'login' && (mode !== 'register' || registrationRequireEmailCode) && (
                 <>
                   <div className="mt-3.5 flex items-end gap-2">
                     <TextField className="min-w-0 flex-1" value={code} onChange={setCode}>
@@ -407,7 +470,14 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
                 form="auth-form"
                 variant="primary"
                 className="w-full"
-                isDisabled={busy || !isFormFilled(mode, { name, email, code, password, passwordConfirm })}
+                isDisabled={
+                  busy ||
+                  !isFormFilled(
+                    mode,
+                    { name, email, code, password, passwordConfirm },
+                    { requireEmailCode: registrationRequireEmailCode, hasAccessCode },
+                  )
+                }
               >
                 {busy
                   ? '处理中…'
@@ -423,9 +493,11 @@ function AuthModal({ mode, onModeChange, onClose, prefill }: AuthModalProps) {
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
                 {mode === 'login' ? (
-                  <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>
-                    注册账号
-                  </Link>
+                  registrationEnabled && (
+                    <Link onPress={() => switchMode('register')} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                      注册账号
+                    </Link>
+                  )
                 ) : (
                   <Link onPress={() => switchMode('login')} style={{ fontSize: 13, color: 'var(--muted)' }}>
                     已有账号？登录

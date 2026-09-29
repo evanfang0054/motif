@@ -147,7 +147,7 @@ describe('读取视图（密钥只回掩码）', () => {
       readSettingsView(store, {})
         .filter((v) => v.danger)
         .map((v) => v.key),
-    ).toEqual(['MOTIF_EXPOSE_DEV_CODE', 'PAYMENT_CHANNEL'])
+    ).toEqual(['MOTIF_EXPOSE_DEV_CODE', 'PAYMENT_CHANNEL', 'REGISTRATION_REQUIRE_EMAIL_CODE'])
   })
 })
 
@@ -244,6 +244,15 @@ describe('写入校验', () => {
     const r = writeSettings(store, { MOTIF_EXPOSE_DEV_CODE: 'true' }, { danger: false })
     expect(r.ok).toBe(false)
     expect(store.getSetting('MOTIF_EXPOSE_DEV_CODE')).toBeNull()
+    // 新键同样走这条校验：普通入口拒收、且不落库
+    expect(writeSettings(store, { REGISTRATION_REQUIRE_EMAIL_CODE: 'false' }, { danger: false })).toMatchObject({
+      ok: false,
+    })
+    expect(store.getSetting('REGISTRATION_REQUIRE_EMAIL_CODE')).toBeNull()
+    // 反向正对照：危险区入口接受它（防「拒得太宽」把开关彻底锁死）
+    expect(writeSettings(store, { REGISTRATION_REQUIRE_EMAIL_CODE: 'false' }, { danger: true })).toMatchObject({
+      ok: true,
+    })
   })
 
   it('普通键混进危险区保存被拒（反向也要挡，否则危险区入口成了万能入口）', () => {
@@ -389,5 +398,18 @@ describe('payment 注册表', () => {
   it('旧键 MOTIF_BILLING_MODE 已从注册表移除', () => {
     expect(writeSettings(store, { MOTIF_BILLING_MODE: 'live' }, { danger: true })).toMatchObject({ ok: false })
     expect(SETTING_DEFS.some((d) => d.key === 'MOTIF_BILLING_MODE')).toBe(false)
+  })
+})
+
+describe('注册与登录分组（auth）', () => {
+  it('开放注册开关存在、布尔、默认开、既非只读也非危险区', () => {
+    const defs = SETTING_DEFS.filter((d) => d.group === 'auth')
+    expect(defs.map((d) => d.key).sort()).toEqual(['REGISTRATION_ENABLED'])
+    const def = defs[0]!
+    expect(def.kind).toBe('boolean')
+    // 默认必须与改动前的实际行为一致：注册当前是无条件开放的
+    expect(def.defaultHint).toBe('true')
+    expect(def.readOnly).toBeFalsy()
+    expect(def.danger).toBeFalsy()
   })
 })

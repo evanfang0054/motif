@@ -61,7 +61,7 @@ COPY --from=builder /app/pnpm-workspace.yaml /app/pnpm-workspace.yaml
 # 而 worker.mjs / storage-migrate.mjs 会 `import '../apps/web/src/server/*.ts'`（要靠 tsx + 源码），
 # 运行时镜像里没有源码 —— 带进来只会让人 `node /app/scripts/worker.mjs` 撞一个费解的模块解析错误。
 # 那两个命令请在仓库检出目录里、用 MOTIF_DATA_DIR 指向同一份 ./data 执行。
-COPY --from=builder /app/scripts/admin.mjs /app/scripts/cdk.mjs /app/scripts/
+COPY --from=builder /app/scripts/admin.mjs /app/scripts/cdk.mjs /app/scripts/invite.mjs /app/scripts/
 
 RUN mkdir -p /app/apps/web/.data
 EXPOSE 3100

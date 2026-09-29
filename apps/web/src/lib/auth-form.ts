@@ -20,9 +20,11 @@ export interface AuthFields {
   passwordConfirm: string
 }
 
-/** 切视图时要一并处理的**全部**字段：表单字段 + 入口上下文邀请码（邀请码不在表单里） */
+/** 切视图时要一并处理的**全部**字段：表单字段 + 入口上下文邀请码 + 注册准入码（后两者都不是 `AuthFields` 的成员） */
 export interface AuthFieldState extends AuthFields {
   inviteCode: string
+  /** 注册准入码：**不是**推荐用的邀请码（见 CONTEXT.md），只在注册视图出现 */
+  registrationCode: string
 }
 
 /**
@@ -33,37 +35,64 @@ export interface AuthFieldState extends AuthFields {
  * 2) 服务端文案是**兜底**，不是唯一的反馈渠道 —— 邮箱格式、密码规则、两次一致这三条与 core 共用同一份判据，
  *    不会出现两侧口径分叉。
  *
- * ⚠️ **验证码是唯一的例外**：服务端用的是内联 `/^.{6}$/`（只判长度，见 `server/services.ts` 的 `register`），
- * 这里用 core 的 `validateVerificationCode`（`/^\d{6}$/`，必须是 6 位数字）—— 即客户端**更严**，
- * 只会拦下服务端也会拒的输入，不会放过服务端会拒的。收紧服务端那条是另一件事，此处不做。
+ * ⚠️ **验证码这一条两侧用的是同一份判据**：服务端 `register` 也走 core 的 `validateVerificationCode`
+ * （`/^\d{6}$/`，必须是 6 位数字）—— 早先服务端那条是内联 `/^.{6}$/`（只判长度、客户端更严），
+ * 已一并收紧，故此处不再有「哪边更严」的分叉。
  *
  * 顺序刻意与用户填写顺序一致（必填 → 格式 → 规则 → 两次一致），一次只报一条，改一个填一个。
  */
-export function clientAuthError(mode: AuthMode, f: AuthFields): string | null {
+/**
+ * 注册视图的先行校验。
+ *
+ * 邮箱验证码是否**必填**由两件事共同决定（与服务端 `register` 的判据同源）：
+ * - `requireEmailCode`：后台开关 `REGISTRATION_REQUIRE_EMAIL_CODE`；
+ * - `hasAccessCode`：用户填了**注册准入码** —— 码本身就是凭据，验证码整行都不需要。
+ *
+ * ⚠️ 少了 `hasAccessCode` 这一支，「带准入码 + 不填验证码」会被这里先拦死（提交按钮还是灰的），
+ *    服务端那条准入码路径就永远走不到 —— 功能在界面上不可达。
+ */
+function registerAuthError(f: AuthFields, opts: { requireEmailCode: boolean; hasAccessCode: boolean }): string | null {
+  const needCode = opts.requireEmailCode && !opts.hasAccessCode
+  if (!f.name.trim()) return '请输入昵称。'
+  if (!f.email.trim()) return '请输入邮箱。'
+  if (needCode && !f.code.trim()) return '请输入 6 位邮箱验证码。'
+  if (!f.password) return '请输入密码。'
+  if (!f.passwordConfirm) return '请再次输入密码。'
+  const emailErr = validateEmail(f.email)
+  if (emailErr) return emailErr
+  if (needCode) {
+    const codeErr = validateVerificationCode(f.code)
+    if (codeErr) return codeErr
+  }
+  const pwdErr = validatePassword(f.password)
+  if (pwdErr) return pwdErr
+  return validatePasswordConfirm(f.password, f.passwordConfirm)
+}
+
+/** 找回密码视图的先行校验。⚠️ 验证码**始终必填** —— 注册那个开关与它无关。 */
+function resetAuthError(f: AuthFields): string | null {
+  if (!f.email.trim()) return '请输入邮箱。'
+  if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
+  if (!f.password) return '请输入新密码。'
+  const emailErr = validateEmail(f.email)
+  if (emailErr) return emailErr
+  const codeErr = validateVerificationCode(f.code)
+  if (codeErr) return codeErr
+  return validatePassword(f.password)
+}
+
+export function clientAuthError(
+  mode: AuthMode,
+  f: AuthFields,
+  opts: { requireEmailCode?: boolean; hasAccessCode?: boolean } = {},
+): string | null {
   if (mode === 'register') {
-    if (!f.name.trim()) return '请输入昵称。'
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入密码。'
-    if (!f.passwordConfirm) return '请再次输入密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
-    const codeErr = validateVerificationCode(f.code)
-    if (codeErr) return codeErr
-    const pwdErr = validatePassword(f.password)
-    if (pwdErr) return pwdErr
-    return validatePasswordConfirm(f.password, f.passwordConfirm)
+    return registerAuthError(f, {
+      requireEmailCode: opts.requireEmailCode ?? true,
+      hasAccessCode: opts.hasAccessCode ?? false,
+    })
   }
-  if (mode === 'reset') {
-    if (!f.email.trim()) return '请输入邮箱。'
-    if (!f.code.trim()) return '请输入 6 位邮箱验证码。'
-    if (!f.password) return '请输入新密码。'
-    const emailErr = validateEmail(f.email)
-    if (emailErr) return emailErr
-    const codeErr = validateVerificationCode(f.code)
-    if (codeErr) return codeErr
-    return validatePassword(f.password)
-  }
+  if (mode === 'reset') return resetAuthError(f)
   // 登录：只拦空值 —— 邮箱格式错误与凭据错误都归服务端统一口径（「邮箱或密码不正确。」），
   // 免得客户端把「账号不存在」与「邮箱写错」说成两句不同的话，反而泄露账号是否存在。
   if (!f.email.trim()) return '请输入邮箱。'
@@ -74,10 +103,20 @@ export function clientAuthError(mode: AuthMode, f: AuthFields): string | null {
 /**
  * 必填是否齐全（只判「非空」，不判格式与规则）—— 用于提交按钮置灰。
  * 与 clientAuthError 分工：空表单直接不让点（#74-2.2），格式/规则类错误点下去就地报（能说清为什么）。
+ *
+ * ⚠️ 两个 opts 与 clientAuthError 同源同判据（`hasAccessCode` 见 registerAuthError 的说明）：
+ *    这里漏一支，按钮就永远是灰的 —— 报错文案再准也点不下去。
  */
-export function isFormFilled(mode: AuthMode, f: AuthFields): boolean {
+export function isFormFilled(
+  mode: AuthMode,
+  f: AuthFields,
+  opts: { requireEmailCode?: boolean; hasAccessCode?: boolean } = {},
+): boolean {
   if (mode === 'register') {
-    return Boolean(f.name.trim() && f.email.trim() && f.code.trim() && f.password && f.passwordConfirm)
+    // ⚠️ 两个开关只作用于注册；reset 走下面那行，验证码始终必填（opts 对它无效）。
+    const requireCode = opts.requireEmailCode ?? true
+    const needCode = requireCode && !(opts.hasAccessCode ?? false)
+    return Boolean(f.name.trim() && f.email.trim() && f.password && f.passwordConfirm && (!needCode || f.code.trim()))
   }
   if (mode === 'reset') return Boolean(f.email.trim() && f.code.trim() && f.password)
   return Boolean(f.email.trim() && f.password)
@@ -97,6 +136,8 @@ export function isFormFilled(mode: AuthMode, f: AuthFields): boolean {
  * - **保留**邮箱：三种视图都要用，是用户输入成本最高的一项。
  * - **保留**邀请码：它来自邀请链接（`?invite=`），属于**入口上下文**而不是视图字段 ——
  *   清掉会让被邀请人切一次视图就静默丢掉奖励。
+ * - **保留**注册准入码：同属**入口上下文**（用户从管理端拿到的一次性凭据，多为粘贴输入），
+ *   且只在注册视图提交 —— 带着它切走不会泄漏到别的视图，清掉却要用户重贴一次。
  */
 export function switchAuthFields(prev: AuthFieldState): AuthFieldState {
   return {
@@ -106,5 +147,6 @@ export function switchAuthFields(prev: AuthFieldState): AuthFieldState {
     password: '',
     passwordConfirm: '',
     inviteCode: prev.inviteCode,
+    registrationCode: prev.registrationCode,
   }
 }

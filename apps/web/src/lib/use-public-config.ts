@@ -41,3 +41,35 @@ export function usePublicConfig(): PublicConfig | null {
   }, [])
   return cfg
 }
+
+/**
+ * 与 `usePublicConfig` 同源（同一份模块级缓存、同一次请求），但额外给出**是否已定局**：
+ * 取到值（`settled: true`）或明确失败（`settled: true, cfg: null`）都算定局。
+ *
+ * 为什么需要：落地页的**深链** effect（`?reset=…` / `?invite=…` / `?mode=…`）必须等配置到位才能
+ * 决定落哪个视图 —— 否则关停了注册的站点会先落注册视图、配置到达后才改回登录，用户看得见这次闪跳。
+ * 但「等」不能是无限期：请求失败时 `usePublicConfig` 的 `cfg` **永远**是 null，深链就静默失效 ——
+ * 其中 `?reset=1&email=…&code=…` 是被锁在门外的用户**唯一**的恢复路径。
+ * 有了 `settled`，调用方就能区分「还没到」与「不会到了」，后者按服务端默认值继续走。
+ */
+export function usePublicConfigSettled(): { cfg: PublicConfig | null; settled: boolean } {
+  const [state, setState] = useState<{ cfg: PublicConfig | null; settled: boolean }>(() =>
+    cached ? { cfg: cached, settled: true } : { cfg: null, settled: false },
+  )
+  useEffect(() => {
+    let alive = true
+    void load()
+      .then((c) => {
+        if (alive) setState({ cfg: c, settled: true })
+      })
+      .catch(() => {
+        // 失败也算定局：按保守默认渲染，但不再让深链无限期等着
+        inflight = null
+        if (alive) setState({ cfg: null, settled: true })
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+  return state
+}

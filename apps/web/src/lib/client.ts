@@ -32,6 +32,17 @@ export interface AdminCdk {
   createdAt: string
 }
 
+/** 管理后台：注册准入码行。一码一用；`usedBy` 非空即已使用，`revokedAt` 非空即已作废 */
+export interface AdminRegistrationInvite {
+  code: string
+  note: string | null
+  createdBy: string | null
+  usedBy: string | null
+  usedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
 /** 管理后台：订单行。amountTotal 单位为「分」 */
 export interface AdminOrder {
   id: string
@@ -135,12 +146,26 @@ export interface PublicConfig {
   billingEnabled: boolean
   /** 是否开放 CDK 兑换（默认开）；前端据此隐藏兑换入口 */
   cdkRedeemEnabled: boolean
+  /** 是否开放注册（默认开）；前端据此隐藏注册入口（服务端各自也把一道） */
+  registrationEnabled: boolean
+  /** 注册是否要求邮箱验证码（默认要求）；前端据此隐藏验证码行与发送按钮 */
+  registrationRequireEmailCode: boolean
 }
 
 export interface AdminSettingItem {
   key: string
   group:
-    'generation' | 'credits' | 'payment' | 'mailer' | 'llm' | 'storage' | 'prompts' | 'danger' | 'security' | 'data'
+    | 'generation'
+    | 'credits'
+    | 'payment'
+    | 'mailer'
+    | 'llm'
+    | 'storage'
+    | 'prompts'
+    | 'auth'
+    | 'danger'
+    | 'security'
+    | 'data'
   label: string
   kind: 'string' | 'number' | 'boolean' | 'enum' | 'secret' | 'url' | 'money'
   value: string | null
@@ -237,6 +262,8 @@ export const api = {
     password: string
     passwordConfirm: string
     inviteCode?: string
+    /** 注册准入码（**不是**推荐用的邀请码） */
+    registrationCode?: string
   }) => call<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) }),
   login: (email: string, password: string) =>
     call<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
@@ -314,6 +341,19 @@ export const api = {
     call<{ codes: string[]; credits: number }>('/api/admin/cdks', { method: 'POST', body: JSON.stringify(input) }),
   adminRevokeCdk: (code: string) =>
     call<{ ok: true }>('/api/admin/cdks/revoke', { method: 'POST', body: JSON.stringify({ code }) }),
+  adminListInvites: (params: { page?: number; pageSize?: number } = {}) => {
+    const qs = new URLSearchParams()
+    if (params.page) qs.set('page', String(params.page))
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize))
+    const q = qs.toString()
+    return call<{ items: AdminRegistrationInvite[]; total: number; page: number; pageSize: number }>(
+      `/api/admin/invites${q ? `?${q}` : ''}`,
+    )
+  },
+  adminCreateInvites: (input: { count: number; note?: string }) =>
+    call<{ codes: string[] }>('/api/admin/invites', { method: 'POST', body: JSON.stringify(input) }),
+  adminRevokeInvite: (code: string) =>
+    call<{ ok: true }>('/api/admin/invites/revoke', { method: 'POST', body: JSON.stringify({ code }) }),
   adminListOrders: (params: { status?: string; userId?: string; page?: number; pageSize?: number } = {}) => {
     const qs = new URLSearchParams()
     if (params.status) qs.set('status', params.status)

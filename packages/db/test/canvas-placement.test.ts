@@ -83,6 +83,8 @@ describe('迁移安全', () => {
       'prompt_entries',
       'prompt_sources',
       'reference_uploads',
+      // 注册准入码（认证注册开关之后新增；画布升级自身仍是零新表）
+      'registration_invites',
       'sessions',
       'settings',
       'topics',
