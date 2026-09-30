@@ -156,8 +156,11 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
   })
 
   it('抬升量必须让开工具栏自身高度（否则工具栏会压住卡片顶部）', () => {
-    // 工具栏 = 4px 内边距 ×2 + sm 图标按钮 32px + 1px 边框 ×2 ≈ 42px；抬升量小于它就会盖住图片
-    expect(TOOLBAR_LIFT).toBeGreaterThanOrEqual(42)
+    // 工具栏 = 4px 内边距 ×2 + 按钮 + 1px 边框 ×2：桌面鼠标下按钮 32px ⇒ ≈42px；
+    // 触屏（`pointer: coarse`）下按钮被 CSS 提到 44px ⇒ ≈54px。
+    // ⚠️ 下界取**粗指针下的高度 54**（不是桌面那档的 42）：`TOOLBAR_LIFT` 是一个常量、
+    // 两种形态共用，而 `(pointer: coarse)` 在 JS 侧读不到 —— 取桌面值就会在触屏上压住卡片。
+    expect(TOOLBAR_LIFT).toBeGreaterThanOrEqual(54)
   })
 
   it('单个矩形：锚在顶部居中并抬高 TOOLBAR_LIFT', () => {
@@ -195,7 +198,7 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
   })
 
   it('翻转边界：屏幕顶距恰好等于 TOOLBAR_LIFT 时不翻转，差 1px 就翻转', () => {
-    // 世界 y = 56、视口不动 → 屏幕 y = 56 = TOOLBAR_LIFT → top 正好 0，仍在卡片上方
+    // 世界 y = 68、视口不动 → 屏幕 y = 68 = TOOLBAR_LIFT → top 正好 0，仍在卡片上方
     expect(toolbarAnchor([{ x: 100, y: TOOLBAR_LIFT, w: 240, h: 240 }], { x: 0, y: 0, k: 1 })).toEqual({
       left: 220,
       top: 0,

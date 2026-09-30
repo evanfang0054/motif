@@ -196,6 +196,23 @@ const stageBox = () =>
     const r = s.getBoundingClientRect()
     return { left: r.left, top: r.top, width: r.width, height: r.height }
   })
+/**
+ * 画布左下角附近、但**在底部工具栏之上**的空白点（用于「单指拖空白 = 平移」的用例）。
+ *
+ * ⚠️ **不要写死** `box.top + box.height - 60`：底部工具栏的高度会随触摸目标尺寸变
+ * （桌面鼠标下按钮 32px ⇒ 工具栏 42；`(pointer: coarse)` 下按钮 44px ⇒ 工具栏 54），
+ * 写死的点会落进工具栏里 —— 它带 `data-canvas-no-zoom`，拖拽被它吃掉 ⇒ Δleft 恒为 0，
+ * 看起来像「平移坏了」（实测：加 44px 触摸目标后本脚本就是这么红的）。
+ * 改为按工具栏**实测的上边缘**往上让 24px。
+ */
+const emptyBelow = async () => {
+  const box = await stageBox()
+  const top = await page.evaluate(() => {
+    const z = document.querySelector('.canvas-zoombar')
+    return z ? z.getBoundingClientRect().top : null
+  })
+  return { x: box.left + 40, y: (top ?? box.top + box.height) - 24 }
+}
 
 const touch = (type, points) =>
   page.cdp('Input.dispatchTouchEvent', {
@@ -379,7 +396,7 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   }
   // 再抬起后重新单指按下 ⇒ 平移恢复
   const rC = await cardRect()
-  const s = { x: box.left + 40, y: box.top + box.height - 60 }
+  const s = await emptyBelow()
   await touch('touchStart', [s])
   await frameSync()
   for (const d of [15, 30]) {
@@ -406,7 +423,7 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   await frameSync()
   await page.waitForTimeout(500)
   const r0 = await cardRect()
-  const s = { x: box.left + 40, y: box.top + box.height - 60 }
+  const s = await emptyBelow()
   await touch('touchStart', [s])
   await frameSync()
   for (const d of [15, 30]) {
@@ -477,7 +494,7 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   await page.waitForTimeout(400)
   // 幽灵点若残留：下面这次单指拖空白会让表里变成 1 + 1 = 2 ⇒ 被当成捏合（而不是平移）
   const r0 = await cardRect()
-  const s = { x: box.left + 40, y: box.top + box.height - 60, id: 1 }
+  const s = { ...(await emptyBelow()), id: 1 }
   await touch('touchStart', [s])
   await frameSync()
   for (const d of [15, 30]) {

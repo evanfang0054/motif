@@ -39,6 +39,7 @@ import {
   ArrowRotateRight,
   Bars,
   CircleXmark,
+  Crop,
   Dots9,
   Ellipsis,
   Frame,
@@ -87,6 +88,7 @@ import {
 } from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
 import { pinchBegin, pinchUpdate, type PinchState } from '@/lib/canvas/pinch'
+import { MINIMAP_W } from '@/lib/canvas/minimap'
 import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
 
@@ -137,8 +139,13 @@ const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string; icon
  * 工具栏「放不下就收进 …」的档位阶梯（2026-09-21 用户裁决：窄屏**不换行**，改成「…」下拉）。
  *
  * 每档是「累计被收走的单元」，从 L0（全显示）往下递增，**收走的顺序 = 重要度从低到高**：
- * 画布背景（纯外观）→ 小地图（默认就关）→ 画布归档（低频）→ 整理布局（低频且可撤销）。
- * 留在最后的：状态读数、缩放、适应、溯源 —— 前三个是读数/高频，溯源是内容语义开关。
+ * 状态读数（信息，可以让位）→ 画布背景（纯外观）→ 小地图（默认就关）→ 画布归档（低频）
+ * → 整理布局（低频且可撤销）→ 视图开关（适应 / 溯源）→ 框选。
+ * 留在最后的：缩放读数与「…」菜单本身 —— 它们是读数/出口，任何宽度下都不能没有。
+ *
+ * ⚠️ **「框选」最后才收，且支持的四档（393/375/360/320）都不许走到那一档** ——
+ * 触屏上没有 Shift，框选一旦进了「…」就等于仍不可达，这一档等于「明确放弃」。
+ * 宽度预算是实测的（44px 触摸目标）：收走读数区与视图开关后内容宽 269，320 视口可用 294。
  *
  * ⚠️ 为什么不用视口断点写死：工具栏是**居中**的，可用宽度 = 画布宽 − 24，
  * 而工具栏自身宽度又随内容变；断点写死会在某些宽度下「明明放得下却被收」。
@@ -146,10 +153,13 @@ const BACKGROUND_OPTIONS: Array<{ key: CanvasBackgroundMode; label: string; icon
  */
 const TOOLBAR_LEVELS: readonly (readonly string[])[] = [
   [],
-  ['background'],
-  ['background', 'minimap'],
-  ['background', 'minimap', 'archive'],
-  ['background', 'minimap', 'archive', 'arrange'],
+  ['status'],
+  ['status', 'background'],
+  ['status', 'background', 'minimap'],
+  ['status', 'background', 'minimap', 'archive'],
+  ['status', 'background', 'minimap', 'archive', 'arrange'],
+  ['status', 'background', 'minimap', 'archive', 'arrange', 'view'],
+  ['status', 'background', 'minimap', 'archive', 'arrange', 'view', 'marquee'],
 ]
 
 /** 工具栏可用宽度「定档」前的静默期（ms）。见 `rawToolbarAvail` 处的注释。 */
@@ -276,6 +286,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const [miniMapOpen, setMiniMapOpen] = useState(false)
   /** 溯源层开关（代码里仍叫 lineage）：同上（默认关、不落库） */
   const [lineageOpen, setLineageOpen] = useState(false)
+  /**
+   * 「框选」模式开关：触屏上 `Shift` 的**等价物**（手指上没有修饰键）。
+   * 刻意**不进 store**：它是瞬时交互模式，不是需要落库的画布状态（刷新后回到默认「平移」是合理的）。
+   */
+  const [marqueeMode, setMarqueeMode] = useState(false)
   /** 右键菜单：锚点是容器内屏幕坐标（与 marquee 同类，属瞬态，不入 store） */
   const [menu, setMenu] = useState<{ x: number; y: number; image: CanvasImage } | null>(null)
   /** 导入进行中 */
@@ -556,7 +571,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       const rect = el.getBoundingClientRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top
-      const gesture = backgroundGesture({ button: e.button, ctrlKey: e.ctrlKey, spaceHeld, shiftKey: e.shiftKey })
+      const gesture = backgroundGesture({
+        button: e.button,
+        ctrlKey: e.ctrlKey,
+        spaceHeld,
+        shiftKey: e.shiftKey,
+        marqueeMode,
+      })
       if (gesture === 'none') return
       if (gesture === 'pan') {
         panRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, moved: false }
@@ -571,7 +592,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       }
       e.currentTarget.setPointerCapture(e.pointerId)
     },
-    [spaceHeld],
+    [spaceHeld, marqueeMode],
   )
 
   const onBackgroundPointerMove = useCallback((e: React.PointerEvent) => {
@@ -860,14 +881,23 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   /**
    * 工具栏溢出收敛：可用宽度 = 画布宽 − 24（工具栏的 max-width 就是这么算的）。
    * 每次可用宽度变化都**从 L0 重新开始**，再由下面那个 effect 逐档加收 ——
-   * 单向递增保证不会来回震荡，最多 5 次渲染就稳定（不能改成双向：降一档是否装得下
+   * 单向递增保证不会来回震荡，最多 7 次渲染就稳定（不能改成双向：降一档是否装得下
    * 必须渲染完才量得到，会「降→溢出→升→装得下→降」无限循环）。
    *
    * ⚠️ 可用宽度先**防抖**再驱动收敛：收敛每档都要一次渲染，若直接拿每帧都在变的画布宽度驱动，
    * 拖窗口时 ResizeObserver 每帧触发，档位非 0 就会每帧多出最多 5 次全量重渲染（画布会抖）。
    * 抖动期间画布尺寸本来就在变，晚 120ms 定档肉眼无感。
    */
-  const rawToolbarAvail = stageSize.w > 0 ? stageSize.w - 24 : Number.POSITIVE_INFINITY
+  // 小地图在场时左侧 240px 被它占掉（见 globals.css 那条 `:has()` 规则把工具栏右移）——
+  // 收敛预算必须扣掉同一份宽度，否则工具栏「以为自己放得下」而实际溢出。
+  // ⚠️ 数值与那条 CSS **逐值对齐**：CSS 给工具栏的可用宽是 `calc(100% - 276px)`
+  // （小地图右缘 252 + 两侧各 12），而工具栏的包含块就是画布 ⇒ 这里也必须是「画布宽 − 276」
+  // = `画布宽 − 24 − (MINIMAP_W + 12)`。多扣 12 会让工具栏比必要早收一档。
+  // ⚠️ 口径：JS 用**画布**宽、CSS 用**视口**宽。今天两者恒等 —— `.ws-shell` 是
+  // `position: fixed; inset: 0; overflow: hidden`，根节点不滚动、画布不吃滚动条宽度。
+  const minimapTakesSpace = miniMapOpen && stageSize.w >= 1024
+  const rawToolbarAvail =
+    stageSize.w > 0 ? stageSize.w - 24 - (minimapTakesSpace ? MINIMAP_W + 12 : 0) : Number.POSITIVE_INFINITY
   const [toolbarAvail, setToolbarAvail] = useState(Number.POSITIVE_INFINITY)
   useEffect(() => {
     if (!Number.isFinite(rawToolbarAvail)) {
@@ -890,11 +920,33 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
   /** 当前档位下哪些单元还留在工具栏上（收走的那些会在「…」菜单里以文字项复现） */
   const hiddenUnits = new Set(TOOLBAR_LEVELS[toolbarLevel])
+  const showStatusUnit = !hiddenUnits.has('status')
   const showMinimapUnit = !hiddenUnits.has('minimap')
+  const showViewUnit = !hiddenUnits.has('view')
+  const showMarqueeUnit = !hiddenUnits.has('marquee')
   const showArrangeUnit = !hiddenUnits.has('arrange')
   const showArchiveUnit = !hiddenUnits.has('archive')
   const showBackgroundUnit = !hiddenUnits.has('background')
   const showContentGroup = showArrangeUnit || showArchiveUnit
+
+  /**
+   * 溢出菜单里「撤销 / 重做」的可用性快照。
+   *
+   * ⚠️ **不能**在 render 期现读 `history.canUndo()`（本仓也没有 render 期现读 `getState()` 的先例）：
+   * `history` 不是响应式的，而 `commit()` 发生在手势最后一次 `moveBy` **之后**、且**不触发重渲染** ——
+   * 于是「拖完一张图」时那次渲染读到的仍是**提交前**的值，菜单项会一直显示置灰。
+   * （实测：拖完卡片立刻打开菜单，撤销的 `aria-disabled` 仍是 `true`；要等下一次无关的重渲染才恢复。）
+   * 改为**打开菜单时取一次**：那一刻的历史必然是最终值，且 setState 会让菜单项用新值渲染。
+   *
+   * ⚠️ 已知残留（低风险，未处理）：菜单**已经开着**时若历史又变了（可达路径只有「菜单开着时按
+   * Ctrl+Z / Ctrl+Shift+Z」），快照不会刷新 ⇒ 那一瞬间的置灰状态可能过期。反方向基本不可达
+   * （菜单开着时点不到画布、菜单项点完即关菜单），后果也只是「点了没反应」，不会损坏数据。
+   */
+  const [menuHistory, setMenuHistory] = useState({ canUndo: false, canRedo: false })
+  const refreshMenuHistory = useCallback(() => {
+    const h = useCanvasStore.getState().history
+    setMenuHistory({ canUndo: h.canUndo(), canRedo: h.canRedo() })
+  }, [])
 
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
 
@@ -929,6 +981,19 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    * `MiniMap` 里 `useMemo(..., [rects])` 的记忆（每帧重算包围盒 + 比例 + 全部方块）。
    */
   const rects = useMemo(() => Object.values(placements), [placements])
+
+  /**
+   * 「适应」：把全部内容放进视口。抽成回调是因为**工具栏与「…」溢出菜单共用同一个动作**
+   * （窄屏下这个按钮会被收进菜单，两处各写一份必漏一处）。
+   * 无图时是 no-op（`boundsOf` 返回 null）—— 与既有按钮行为一致。
+   */
+  const fitAll = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    const b = boundsOf(rects)
+    if (!b) return
+    useCanvasStore.getState().setViewport(fitView(b, el.clientWidth, el.clientHeight))
+  }, [rects])
 
   /**
    * 溯源层（UI 文案；代码里叫 lineage）：**只在开关打开时**推导（关着时一次都不算）。
@@ -1222,7 +1287,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         /* 抓手光标是「这里可以直接拖」的天然提示；手势说明挂 title（画布上没有别的手势说明位） */
         title="左键拖拽平移画布 · Shift+左键拖拽框选 · 滚轮缩放 · 空格/Ctrl+左键也可平移"
         /* 顶栏仍是占位式（高 64px），故画布最小高度 = 视口高 − 64 */
-        style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grabbing' : 'grab' }}
+        style={{
+          minHeight: 'calc(100dvh - 64px)',
+          cursor: spaceHeld ? 'grabbing' : marqueeMode ? 'crosshair' : 'grab',
+        }}
         onPointerDownCapture={onStagePointerDownCapture}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}
@@ -1309,7 +1377,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           只有「底部工具栏上方」这一块在任何面板开合状态下都不会被盖住，
           而且它指向的「按来源整理」按钮就在正下方的工具栏里 —— 提示与出口在同一处。 */}
       {showTreeHint && (
-        <div className="pointer-events-none absolute bottom-[68px] left-1/2 -translate-x-1/2">
+        <div className="pointer-events-none absolute bottom-[80px] left-1/2 -translate-x-1/2">
           {/* 「布局与来源不一致」这句**是提示的正文**而不是按钮标签 —— 换成图标 + Tooltip 会把
               「出问题了」这个信号藏进悬停里，正好废掉这条提示的作用。故保留文字，只补图标做视觉对齐 */}
           <Button
@@ -1327,8 +1395,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
       {/* 小地图：默认关，开关在工具栏的视图组。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
           故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现。
-          ⚠️ 位置从「左下角」改为「底部工具栏上方居中」：左下角现在被左侧浮动面板（left-12 起）盖住，
-          而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
+          ⚠️ 位置是**左下角**（见 MiniMap.tsx 的 `bottom-3 left-3`）：那里原本会被左侧浮动面板盖住，
+          现在由面板让位（`globals.css` 里小地图在场时把 `.ws-float-left` 的 bottom 抬到 184px）。
+          工具栏这边则由一条 `:has()` 规则**右移半个小地图宽** —— 两边都不压住它。 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap size={stageSize} onJump={(v) => useCanvasStore.getState().setViewport(v)} />
       )}
@@ -1347,47 +1416,57 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           ⚠️ **不换行**：放不下的项按 TOOLBAR_LEVELS 收进「…」下拉（窄屏仍能点到全部功能）。 */}
       <Toolbar ref={toolbarRef} className="canvas-zoombar" aria-label="画布工具栏" data-canvas-no-zoom>
         {/* ① 画布状态读数（原画布左上角的 pill）。「N 张图片」是纯读数；
-            「本地草稿」是数据来源警示；「已选 N」带一个清空按钮 */}
-        <div className="canvas-status">
-          <InlineText type="body-sm" className="canvas-status-count">
-            {images.length} 张图片
-          </InlineText>
-          {/* 待生成张数（#88）：与「N 张图片」分列 —— 骨架**不计入**图片统计，
+            「本地草稿」是数据来源警示；「已选 N」带一个清空按钮。
+            ⚠️ 它是**第一个被收走的单元**（纯信息，窄屏下给操作让位）；收走后「清空选择」
+            在「…」菜单里有等价项，两处必须成对改。 */}
+        {showStatusUnit && (
+          <>
+            <div className="canvas-status">
+              <InlineText type="body-sm" className="canvas-status-count">
+                {images.length} 张图片
+              </InlineText>
+              {/* 待生成张数（#88）：与「N 张图片」分列 —— 骨架**不计入**图片统计，
               这条读数才是「还有几张在生成」，让「4 张在生成、已出来 2 张」一眼可见。 */}
-          {skeletons.length > 0 && (
-            <>
-              <span className="canvas-status-divider" />
-              <InlineText type="body-sm" style={{ color: 'var(--muted-strong)' }} data-testid="canvas-pending-count">
-                生成中 {skeletons.length} 张
-              </InlineText>
-            </>
-          )}
-          {source === 'local' && (
-            <>
-              <span className="canvas-status-divider" />
-              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">
-                本地草稿
-              </InlineText>
-            </>
-          )}
-          {selected.length > 0 && (
-            <>
-              <span className="canvas-status-divider" />
-              <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
-                已选 {selected.length}
-              </InlineText>
-              <IconButton
-                size="sm"
-                variant="ghost"
-                label="清空选择"
-                onPress={() => useCanvasStore.getState().clearSelection()}
-              >
-                <CircleXmark />
-              </IconButton>
-            </>
-          )}
-        </div>
-        <span className="canvas-tool-divider" />
+              {skeletons.length > 0 && (
+                <>
+                  <span className="canvas-status-divider" />
+                  <InlineText
+                    type="body-sm"
+                    style={{ color: 'var(--muted-strong)' }}
+                    data-testid="canvas-pending-count"
+                  >
+                    生成中 {skeletons.length} 张
+                  </InlineText>
+                </>
+              )}
+              {source === 'local' && (
+                <>
+                  <span className="canvas-status-divider" />
+                  <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm" data-testid="canvas-local-draft">
+                    本地草稿
+                  </InlineText>
+                </>
+              )}
+              {selected.length > 0 && (
+                <>
+                  <span className="canvas-status-divider" />
+                  <InlineText style={{ color: 'var(--muted-strong)' }} type="body-sm">
+                    已选 {selected.length}
+                  </InlineText>
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    label="清空选择"
+                    onPress={() => useCanvasStore.getState().clearSelection()}
+                  >
+                    <CircleXmark />
+                  </IconButton>
+                </>
+              )}
+            </div>
+            <span className="canvas-tool-divider" />
+          </>
+        )}
         {/* ② 视图缩放 */}
         <ButtonGroup>
           <IconButton size="sm" variant="secondary" label="缩小" onPress={() => zoomAtCenter(1 / ZOOM_STEP)}>
@@ -1401,23 +1480,14 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
           </IconButton>
         </ButtonGroup>
         <span className="canvas-tool-divider" />
-        {/* ③ 视图开关：都是「看得见什么」的开关，不改动内容 */}
-        <IconButton
-          size="sm"
-          variant="ghost"
-          label="适应"
-          tooltip="适应窗口"
-          onPress={() => {
-            const el = containerRef.current
-            if (!el) return
-            const rs = rects
-            const b = boundsOf(rs)
-            if (!b) return
-            useCanvasStore.getState().setViewport(fitView(b, el.clientWidth, el.clientHeight))
-          }}
-        >
-          <Frame />
-        </IconButton>
+        {/* ③ 视图开关：都是「看得见什么」的开关，不改动内容。
+            ⚠️ 「适应」与「溯源」属于**同一个收敛单元 `view`**（排在「框选」之前被收走）——
+            收走后必须在「…」菜单里补等价项，两处必须成对改。 */}
+        {showViewUnit && (
+          <IconButton size="sm" variant="ghost" label="适应" tooltip="适应窗口" onPress={fitAll}>
+            <Frame />
+          </IconButton>
+        )}
         {showMinimapUnit && (
           <IconButton
             size="sm"
@@ -1433,15 +1503,36 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         )}
         {/* 溯源层开关（UI 文案；代码里叫 lineage）：**不加 `hidden lg:inline-flex`** —— 它不是 240px 的面板，窄屏也能用
             （与小地图开关的区别就在这：那个开关必须与组件自身的断点对齐） */}
-        <IconButton
-          size="sm"
-          variant={lineageOpen ? 'primary' : 'ghost'}
-          label="溯源"
-          aria-pressed={lineageOpen}
-          onPress={() => setLineageOpen((v) => !v)}
-        >
-          <Hierarchy />
-        </IconButton>
+        {showViewUnit && (
+          <IconButton
+            size="sm"
+            variant={lineageOpen ? 'primary' : 'ghost'}
+            label="溯源"
+            aria-pressed={lineageOpen}
+            onPress={() => setLineageOpen((v) => !v)}
+          >
+            <Hierarchy />
+          </IconButton>
+        )}
+        {/* ③b 「框选」模式开关（触屏上 Shift 的等价物）：**手势模式**，与视图开关不是一类，故自带一条分隔线。
+            ⚠️ 它是**最后一个被收走的单元** —— 支持的四档（393/375/360/320）都不许走到那一档，
+            走到就意味着触屏上框选仍不可达（见 TOOLBAR_LEVELS 的注释）。
+            ⚠️ 分隔线跟着 `showViewUnit` 走而不是无条件渲染：在「视图开关已被收走」的档位上，
+            前面只剩缩放组，再插一条就会与缩放组后面那条连成**两条相邻的分隔线**。
+            ⚠️ 图标不用 `SquareDashed` —— 那个已经被「空白」背景态占用了，两处同图会歧义。
+            本仓既有的 ToggleButton 都配 ToggleButtonGroup（选中态由 group context 驱动），
+            这是**首个独立** ToggleButton：受控 `isSelected` / `onChange` 是官方用法。 */}
+        {showMarqueeUnit && (
+          <>
+            {showViewUnit && <span className="canvas-tool-divider" />}
+            <Tooltip delay={0}>
+              <ToggleButton size="sm" aria-label="框选" isSelected={marqueeMode} onChange={setMarqueeMode}>
+                <Crop />
+              </ToggleButton>
+              <Tooltip.Content>框选</Tooltip.Content>
+            </Tooltip>
+          </>
+        )}
         {/* ④ 内容操作：会**改写摆放**或**读写文件**，与上面那些纯视图开关不是一类，故单列一组。
             ⚠️ 整理布局与按来源整理是**两件事**，不合并成一个下拉：
             前者按网格空位重排、后者按溯源树形铺开，误操作的代价是用户手工摆的位置被覆盖。 */}
@@ -1553,7 +1644,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         {toolbarLevel > 0 && (
           <>
             <span className="canvas-tool-divider" />
-            <Dropdown>
+            <Dropdown
+              onOpenChange={(open) => {
+                // 打开时取一次历史快照（见 `menuHistory` 的注释：render 期现读会拿到提交前的旧值）
+                if (open) refreshMenuHistory()
+              }}
+            >
               <IconButton size="sm" variant="ghost" label="更多画布操作">
                 <Ellipsis />
               </IconButton>
@@ -1564,17 +1660,34 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                     if (k === 'arrange') return arrangeAll()
                     if (k === 'arrange-lineage') return arrangeByLineage()
                     if (k === 'export' || k === 'import') return void onArchiveAction(k)
+                    // 视图开关被收走时的等价入口（与工具栏那两个按钮共用同一个实现）
+                    if (k === 'fit') return fitAll()
+                    if (k === 'toggle-lineage') return setLineageOpen((v) => !v)
+                    if (k === 'toggle-minimap') return setMiniMapOpen(false)
+                    // 键盘专属功能（撤销 / 重做 / 全选 / 清空选择）在工具栏里**本来就没有按钮**，
+                    // 这里照抄键盘分支的同一实现。
+                    if (k === 'undo') return useCanvasStore.getState().undo()
+                    if (k === 'redo') return useCanvasStore.getState().redo()
+                    if (k === 'select-all') return useCanvasStore.getState().setSelected(images.map((i) => i.id))
+                    if (k === 'clear-selection') return useCanvasStore.getState().clearSelection()
                     if (k.startsWith('bg:')) {
                       const mode = BACKGROUND_OPTIONS.find((o) => o.key === k.slice(3))
                       if (mode) useCanvasStore.getState().setBackground(mode.key)
                     }
                   }}
                 >
-                  {/* ⚠️ 这里**故意没有**小地图的兜底项：菜单只在工具栏溢出时打开，而溢出意味着
-                      画布宽 < ~533px（工具栏自身只要 509px，而 ≥1024 时画布宽 = 窗口宽），
-                      那时 `wide` 必然是 false —— 小地图组件（`hidden lg:block`）根本不渲染，
-                      加一项只会是「点得动却什么都不会发生」。工具栏上那个开关按钮同理带着
-                      `hidden lg:inline-flex`，两者成对，见 MiniMap.tsx 的注释。 */}
+                  {/* ⚠️ 小地图的兜底项**只在它真的开着时**出现。原来这里一项都没有，理由是
+                      「菜单只在溢出时打开，而溢出意味着画布宽 < ~533px（工具栏自身只要 509px），
+                      那时小地图组件（`hidden lg:block`）根本不渲染，加一项只会是『点得动却什么都不发生』」。
+                      但那条推理现在不成立了：① 收敛预算已经把「小地图占的 240px」扣掉（见 `minimapTakesSpace`），
+                      面板开着时 1024 视口也会溢出；② 此时 `minimap` 单元可能被收走，而小地图面板还开着
+                      —— 没有这个入口用户就**关不掉它**。
+                      条件写成 `miniMapOpen` 而不是无条件：旧注释那条「不出现点不动的项」的性质仍然保留。 */}
+                  {!showMinimapUnit && miniMapOpen && (
+                    <Dropdown.Item id="toggle-minimap" textValue="关闭小地图">
+                      <Label>关闭小地图</Label>
+                    </Dropdown.Item>
+                  )}
                   {!showArrangeUnit && (
                     <Dropdown.Item id="arrange" textValue="整理布局">
                       <Label>整理布局</Label>
@@ -1601,6 +1714,37 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                         <Label>{background === o.key ? `✓ 背景 · ${o.label}` : `背景 · ${o.label}`}</Label>
                       </Dropdown.Item>
                     ))}
+                  {/* 视图开关被收走时的等价入口：与工具栏那两个按钮是**同一对**，改一处必须改两处。
+                      可用性不受 history / 选中数影响，故不置灰。 */}
+                  {!showViewUnit && (
+                    <Dropdown.Item id="fit" textValue="适应">
+                      <Label>适应</Label>
+                    </Dropdown.Item>
+                  )}
+                  {!showViewUnit && (
+                    <Dropdown.Item id="toggle-lineage" textValue="溯源">
+                      <Label>{lineageOpen ? '✓ 溯源' : '溯源'}</Label>
+                    </Dropdown.Item>
+                  )}
+                  {/* 键盘专属功能的触屏入口：这三项在工具栏里**本来就没有按钮**，故不受档位条件限制
+                      （菜单本身仍只在 toolbarLevel > 0 时渲染）。可用性按打开菜单那一刻的历史快照置灰
+                      （`menuHistory`，见它的定义 —— **不能**在 render 期现读 `history`：`commit()` 在
+                      最后一次 `moveBy` 之后且不触发重渲染，现读会拿到提交前的旧值）。 */}
+                  <Dropdown.Item id="undo" textValue="撤销" isDisabled={!menuHistory.canUndo}>
+                    <Label>撤销</Label>
+                  </Dropdown.Item>
+                  <Dropdown.Item id="redo" textValue="重做" isDisabled={!menuHistory.canRedo}>
+                    <Label>重做</Label>
+                  </Dropdown.Item>
+                  <Dropdown.Item id="select-all" textValue="全选" isDisabled={images.length === 0}>
+                    <Label>全选</Label>
+                  </Dropdown.Item>
+                  {/* 读数区被收走时，「已选 N」旁的「清空选择」按钮也一起没了 ⇒ 这里补一个等价入口 */}
+                  {!showStatusUnit && selected.length > 0 && (
+                    <Dropdown.Item id="clear-selection" textValue="清空选择">
+                      <Label>清空选择</Label>
+                    </Dropdown.Item>
+                  )}
                 </Dropdown.Menu>
               </Dropdown.Popover>
             </Dropdown>

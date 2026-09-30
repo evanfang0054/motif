@@ -24,13 +24,26 @@ export interface PointerModifiers {
   spaceHeld: boolean
   /** 框选的触发键（默认对调后，框选改由它承担） */
   shiftKey: boolean
+  /**
+   * 「框选」模式开关：触屏上 `Shift` 的**等价物**（手指上没有修饰键）。
+   *
+   * ⚠️ 它与 `shiftKey` 处在**同一档**，不新增语义 —— 只是把「要按 Shift 才是框选」这件事
+   * 变成一个可见的开关状态。修饰键（Ctrl / 空格 / 中键）的语义更强，仍优先于它。
+   */
+  marqueeMode: boolean
 }
 
 /** 空白处按下时该走哪条手势；'none' = 不接管（右键等） */
-export function backgroundGesture({ button, ctrlKey, spaceHeld, shiftKey }: PointerModifiers): BackgroundGesture {
+export function backgroundGesture({
+  button,
+  ctrlKey,
+  spaceHeld,
+  shiftKey,
+  marqueeMode,
+}: PointerModifiers): BackgroundGesture {
   if (button === 1) return 'pan'
   if (button !== 0) return 'none'
-  // 空格 / Ctrl + 左键恒为平移（上游口径，保留不动）
+  // 空格 / Ctrl + 左键恒为平移（上游口径，保留不动；修饰键优先于框选模式）
   if (ctrlKey || spaceHeld) return 'pan'
-  return shiftKey ? 'marquee' : 'pan'
+  return marqueeMode || shiftKey ? 'marquee' : 'pan'
 }
