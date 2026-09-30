@@ -77,8 +77,16 @@ import { CanvasZoomReadout } from './CanvasZoomReadout'
 import { SelectionToolbar } from './SelectionToolbar'
 import { CanvasContextMenu, type ContextMenuAction } from './CanvasContextMenu'
 import { useCanvasStore } from '@/stores/canvas/useCanvasStore'
-import { ZOOM_STEP, baseScale, fitView, zoomStepsToFactor, type ToolbarPanelRect } from '@/lib/canvas/viewport'
+import {
+  ZOOM_STEP,
+  baseScale,
+  fitView,
+  zoomStepsToFactor,
+  type ToolbarPanelRect,
+  type Viewport,
+} from '@/lib/canvas/viewport'
 import { isTypingTarget, shortcutFor } from '@/lib/canvas/shortcuts'
+import { pinchBegin, pinchUpdate, type PinchState } from '@/lib/canvas/pinch'
 import type { PendingSkeleton } from '@/lib/canvas/skeleton'
 import { showToast } from '@/components/ui/toast'
 
@@ -212,12 +220,24 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const dragFrameRef = useRef<number | null>(null)
   const pendingDragRef = useRef<{ dx: number; dy: number } | null>(null)
 
+  // 当前按下的**触摸**指针（容器内坐标）。只记 pointerType === 'touch'，鼠标/触控笔不进来。
+  const touchPointsRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const pinchRef = useRef<PinchState | null>(null)
+  // ⚠️ pinch 用**独立的** rAF 帧槽，不复用 frameRef / zoomFrameRef / dragFrameRef ——
+  //    上面那行注释已写明「避免一次手势把另一边的待处理值吃掉」。
+  //    与平移不同，这里存的是**绝对视口**（pinchUpdate 从手势起始视口重算）而不是增量。
+  const pinchFrameRef = useRef<number | null>(null)
+  const pendingPinchRef = useRef<Viewport | null>(null)
+
   // 卸载时取消在途的 rAF：否则回调会在组件卸载后仍去写 store
   useEffect(
     () => () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       if (zoomFrameRef.current !== null) cancelAnimationFrame(zoomFrameRef.current)
       if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+      if (pinchFrameRef.current !== null) cancelAnimationFrame(pinchFrameRef.current)
+      // 触摸点表也要清：残留会让下一次挂载的第一次 pinch 用错的起始指距
+      touchPointsRef.current.clear()
     },
     [],
   )
@@ -406,8 +426,131 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     }
   }, [])
 
+  /**
+   * 第二指落下时，把在飞的手势**作废**（不是提交）。
+   *
+   * ⚠️ 作废的语义边界（**注释里不写契约编号** —— 会被脱敏扫描命中）：
+   *    `cancelGesture()` 只丢弃 history 的基准快照，**不会回滚**已经落到 store 的位移
+   *    （卡片拖拽的 rAF 里是直接 `moveBy`）—— 所以图片会**停在落指瞬间的位置**，这是刻意的
+   *    （让图弹回起点是惊吓式行为）。本函数保证的是「之后不再继续移动」。
+   * ⚠️ 必须作废：接管后容器会把指针捕获从卡片迁到自己身上（setPointerCapture 后调用者胜），
+   *    卡片的 pointerup 不再触发 ⇒ 不作废的话这个手势会**悬在 history 里**，
+   *    第一次 Ctrl+Z 消费的就是它。作废语义与 `endCardDrag` 的 else 支一致。
+   */
+  const cancelInFlightGestures = useCallback(() => {
+    if (dragRef.current) {
+      dragRef.current = null
+      pendingDragRef.current = null
+      if (dragFrameRef.current !== null) {
+        cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      useCanvasStore.getState().cancelGesture()
+    }
+    if (panRef.current) {
+      panRef.current = null
+      pendingPanRef.current = null
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
+      }
+    }
+    if (marqueeRef.current) {
+      marqueeRef.current = null
+      setMarquee(null)
+    }
+  }, [])
+
+  /**
+   * 把 pinch 的待处理帧**同步**补上。
+   * ⚠️ 视口是 400ms 防抖落库的（`createCanvasPersistence(cloud, 400, local)`）——
+   *    丢掉最后一个未 flush 的帧，落库的就是**过期视口**。
+   *    这与 `endCardDrag`「先同步 flush 再 endGesture」是同一类处置。
+   */
+  const flushPinchFrame = useCallback(() => {
+    if (pinchFrameRef.current !== null) {
+      cancelAnimationFrame(pinchFrameRef.current)
+      pinchFrameRef.current = null
+    }
+    const v = pendingPinchRef.current
+    pendingPinchRef.current = null
+    if (v) useCanvasStore.getState().setViewport(v)
+  }, [])
+
+  /**
+   * 触摸点的跟踪必须在**捕获阶段**：卡片拖拽在 pointerdown 里 `stopPropagation()`，
+   * 冒泡阶段收不到落在图片上的第一指 —— 而图片铺满画布 ⇒ 不用捕获阶段就基本捏不起来。
+   *
+   * ⚠️ 捕获阶段只做「跟踪 + 起 pinch」；被清掉的手势要靠 `onBackgroundPointerDown` 与
+   *    `startCardDrag` 开头的 `pinchRef.current` 守卫阻止被**冒泡阶段重新武装**
+   *    （容器同时挂了 onPointerDown，事件顺序是「容器捕获 → 目标 → 容器冒泡」）。
+   */
+  const onStagePointerDownCapture = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.pointerType !== 'touch') return // 鼠标 / 触控笔走既有路径，零改动
+      const el = containerRef.current
+      if (!el) return
+      // ⚠️ 与滚轮的豁免同口径：落在画布内的**弹层/控件**（选中工具栏、整理提示）上的触摸不参与手势 ——
+      //    它们自带 `data-canvas-no-zoom`，且自己 `stopPropagation`（不设指针捕获）⇒
+      //    收进表里也拿不到 pointerup，会留下永不抬起的幽灵点。
+      const target = e.target instanceof Element ? e.target : null
+      if (target?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
+      const rect = el.getBoundingClientRect()
+      const pts = touchPointsRef.current
+      // ⚠️ 已在跟踪两指时，**多余的指头一律不记**（不是「记了但不启动 pinch」）：
+      //    若把第三指也记进来，它抬起后 pts 从 3 变 2、不满足收尾处的 `pts.size < 2` ⇒ pinch 不重置，
+      //    而 `[...pts.values()]` 取的前两个已从 (指1,指2) 变成 (指2,指3) ⇒ 指距突变、视口跳变。
+      if (pts.size >= 2) return
+      pts.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+      if (pts.size !== 2) return // 1 指交给冒泡阶段的既有平移
+      cancelInFlightGestures()
+      const [a, b] = [...pts.values()]
+      pinchRef.current = pinchBegin(a, b, useCanvasStore.getState().meta.viewport)
+      // 把两根手指的捕获都迁到容器（后调用者胜）。⚠️ 只吞 `NotFoundError`（该 pointer 已结束）；
+      // 别的异常要让它冒出来，不要用空 catch 掩盖。
+      for (const id of pts.keys()) {
+        try {
+          el.setPointerCapture(id)
+        } catch (err) {
+          if (!(err instanceof DOMException && err.name === 'NotFoundError')) throw err
+        }
+      }
+    },
+    [cancelInFlightGestures],
+  )
+
+  /**
+   * 触摸点表的**兜底清理**：手指可能在容器**之外**抬起 —— 例如按在选中工具栏上（它在容器内，
+   * 但自己 stopPropagation 且不设指针捕获），再把手指滑出画布抬手。那条路径的 pointerup
+   * 不会冒泡到容器 ⇒ 表里会留一个永不抬起的幽灵点，下一次单指拖空白时表里变成 1+1=2、
+   * 直接被当成捏合（视口跳变），且**不会自愈**直到组件重挂载。
+   *
+   * 所以清理挂在 window 上（捕获阶段）：任何 pointerup / pointercancel 都把该 id 摘掉。
+   * ⚠️ 容器自己的收尾逻辑已由这里统一承担，不要在 `onBackgroundPointerUp` 里再写一遍
+   * （重复写会让「谁负责清理」变得含糊，且 delete 的返回值在第二处恒为 false）。
+   */
+  useEffect(() => {
+    const onUp = (e: PointerEvent) => {
+      const pts = touchPointsRef.current
+      if (!pts.delete(e.pointerId)) return
+      if (pinchRef.current && pts.size < 2) {
+        pinchRef.current = null
+        flushPinchFrame()
+      }
+    }
+    window.addEventListener('pointerup', onUp, true)
+    window.addEventListener('pointercancel', onUp, true)
+    return () => {
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onUp, true)
+    }
+  }, [flushPinchFrame])
+
   const onBackgroundPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // ⚠️ 第二指落下时 pinch 已接管（见 onStagePointerDownCapture）：同一个 pointerdown 会继续
+      //    冒泡到这里，不拦的话会把 panRef 重新武装 ⇒ 抬指时走 `!pan.moved → clearSelection` 误清选中。
+      if (pinchRef.current) return
       const el = containerRef.current
       if (!el) return
       const rect = el.getBoundingClientRect()
@@ -432,6 +575,35 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   )
 
   const onBackgroundPointerMove = useCallback((e: React.PointerEvent) => {
+    // ---------- 双指手势（pinch 缩放 + 双指平移）----------
+    const pts = touchPointsRef.current
+    if (pts.has(e.pointerId)) {
+      const el = containerRef.current
+      if (el) {
+        const rect = el.getBoundingClientRect()
+        pts.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+      }
+    }
+    const pinch = pinchRef.current
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()] // 顺序无关：只用指距与中点
+      const next = pinchUpdate(pinch, a, b)
+      pinchRef.current = next.state
+      if (next.viewport) {
+        // 与平移不同：pinchUpdate 产出的是**绝对视口**，故只留最后一帧的值、不做增量累加
+        pendingPinchRef.current = next.viewport
+        if (pinchFrameRef.current === null) {
+          pinchFrameRef.current = requestAnimationFrame(() => {
+            pinchFrameRef.current = null
+            const v = pendingPinchRef.current
+            pendingPinchRef.current = null
+            if (v) useCanvasStore.getState().setViewport(v)
+          })
+        }
+      }
+      return
+    }
+
     const pan = panRef.current
     if (pan && pan.pointerId === e.pointerId) {
       const dx = e.clientX - pan.startX
@@ -475,6 +647,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   }, [])
 
   const onBackgroundPointerUp = useCallback((e: React.PointerEvent) => {
+    // 双指手势的收尾（摘触摸点 + 补最后一帧）统一交给 window 级的 pointerup/pointercancel 兜底 ——
+    // 手指可能在容器**之外**抬起，只靠这里会漏（见那段 effect 的注释）。
+    // ⚠️ 下面的 `!pan.moved → clearSelection()` **不需要额外守卫**：pinch 开始时 panRef 已被
+    //    cancelInFlightGestures() 清空，且 onBackgroundPointerDown 的守卫阻止了它被重新武装。
     const pan = panRef.current
     if (pan && pan.pointerId === e.pointerId) {
       // 平移（普通左键 / 空格 / Ctrl / 中键）但没移动 = 在空白处点了一下：同样清空选中
@@ -492,6 +668,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   // ---------- 拖拽图片（沿用既有 3px 阈值 + 多选整体位移）----------
 
   const startCardDrag = useCallback((e: React.PointerEvent, img: CanvasImage) => {
+    // ⚠️ pinch 接管期间不允许再起卡片拖拽：第二指若落在图片上，这个 pointerdown 会继续冒泡到
+    //    卡片并重新武装 dragRef、抢走指针捕获 ⇒ 第二根手指变成在拖图。
+    //    （pinchRef 是 ref，读 .current 不需要进依赖数组。）
+    if (pinchRef.current) return
     if (e.button !== 0) return
     e.stopPropagation()
     const store = useCanvasStore.getState()
@@ -1043,6 +1223,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         title="左键拖拽平移画布 · Shift+左键拖拽框选 · 滚轮缩放 · 空格/Ctrl+左键也可平移"
         /* 顶栏仍是占位式（高 64px），故画布最小高度 = 视口高 − 64 */
         style={{ minHeight: 'calc(100dvh - 64px)', cursor: spaceHeld ? 'grabbing' : 'grab' }}
+        onPointerDownCapture={onStagePointerDownCapture}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onBackgroundPointerMove}
         onPointerUp={onBackgroundPointerUp}
