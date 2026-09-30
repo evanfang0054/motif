@@ -156,7 +156,8 @@ describe('toolbarAnchor（浮动工具栏定位）', () => {
   })
 
   it('抬升量必须让开工具栏自身高度（否则工具栏会压住卡片顶部）', () => {
-    // 工具栏 = 4px 内边距 ×2 + sm 图标按钮 32px + 1px 边框 ×2 ≈ 42px；抬升量小于它就会盖住图片
+    // 工具栏 = 4px 内边距 ×2 + 按钮 + 1px 边框 ×2：桌面鼠标下按钮 32px ⇒ ≈42px；
+    // 触屏（`pointer: coarse`）下按钮被 CSS 提到 44px ⇒ ≈54px。取上界，故断言是下界 42。
     expect(TOOLBAR_LIFT).toBeGreaterThanOrEqual(42)
   })
 

@@ -697,13 +697,15 @@ html[data-theme="dark"] .lp-hero {
   color: var(--canvas-foreground);
 }
 
-/* 两侧浮动面板。⚠️ 底部让 64px 而不是 12px：底部工具栏贴底居中占 12+44=56，
-   画布窄到 ~1024 时面板下缘会压住工具栏左/右端（实测 30px 重叠） */
+/* 两侧浮动面板。⚠️ 底部让 74px 而不是 12px：底部工具栏贴底居中占 12+54=66（54 是触屏下
+   按钮提到 44px 后的实测高度；桌面鼠标下是 12+42=54），再留 8px 缝。
+   画布窄到 ~1024 时面板下缘会压住工具栏左/右端（当年 64 那版实测 30px 重叠，故这里必须按
+   **粗指针下的高度**取上界 —— 触屏笔记本上桌面/触屏两种形态是同一个断点）。 */
 .ws-float-panel {
   position: absolute;
   z-index: 25;
   top: 12px;
-  bottom: 64px;
+  bottom: 74px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -730,6 +732,16 @@ html[data-theme="dark"] .lp-hero {
 @media (min-width: 1024px) {
   .ws-canvas:has([data-testid="canvas-minimap"]) .ws-float-left {
     bottom: 184px;
+  }
+
+  /* 小地图在场时底部工具栏**整体右移**半个小地图宽：小地图贴左下角占 240px，
+     工具栏居中后其左端会伸进小地图的矩形里（1024 视口下实测重叠 49px，加一个单元只会更糟）。
+     移 `left` 而不是改 `max-width`：移完两端仍留 12px 边距，视觉上仍是「底部居中」的工具栏。
+     ⚠️ 与 CanvasStage 里 `minimapTakesSpace` 的 JS 判定必须**同口径**（都按「小地图渲染且视口 ≥1024」）——
+     不一致就会出现「CSS 移了但收敛预算没扣」⇒ 工具栏以为自己放得下而溢出。 */
+  .ws-canvas:has([data-testid="canvas-minimap"]) .canvas-zoombar {
+    left: calc(50% + 126px); /* 126 = MINIMAP_W / 2 */
+    max-width: calc(100% - 276px); /* 252（小地图右缘）+ 24（两侧边距） */
   }
 }
 
@@ -936,8 +948,9 @@ html[data-theme="dark"] .lp-hero {
 @media (min-width: 1024px) and (max-height: 720px) {
   .ws-float-panel {
     top: 8px;
-    /* 56 = 底部工具栏占位（bottom:12 + 高 44）；60 再留 4px 缝，不压住工具栏 */
-    bottom: 60px;
+    /* 66 = 底部工具栏占位（bottom:12 + 触屏下实测高 54；桌面鼠标下是 54）；
+       70 再留 4px 缝，不压住工具栏 */
+    bottom: 70px;
   }
 }
 
@@ -1143,6 +1156,19 @@ html[data-theme="dark"] .lp-hero {
    注意这与 `--toolbar-level` 无关 —— 收缩档位是 JS 算的，这里只是让量出来的宽度是真实宽度。 */
 .canvas-zoombar > * {
   flex: none;
+}
+
+/* 触屏（粗指针）下把画布工具栏的触摸目标提到 44px（iOS HIG / Material 的最小可点尺寸）。
+   ⚠️ 用 `pointer: coarse` 而不是宽度断点：语义是「指针精度」—— 触屏笔记本也能命中，桌面鼠标不受影响。
+   ⚠️ 只加 `min-*`，不覆盖 HeroUI 组件的其它样式（AGENTS.md 的守护线）。
+   ⚠️ 副作用：按钮变高会把底部工具栏整体撑高（实测 42 → 54），四处按它推导的定位常量必须同步
+   （`TOOLBAR_LIFT`、整理提示的 `bottom-[80px]`、`.ws-float-panel` 的两处 bottom）。 */
+@media (pointer: coarse) {
+  .canvas-zoombar button,
+  .canvas-toolbar button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* 任务列表行：**两行布局**（标题 + 操作按钮 / 状态徽标）。
