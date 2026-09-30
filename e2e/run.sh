@@ -308,7 +308,13 @@ echo "[e2e] Round 3 ✅"
 
 # ---------- Round 4：任务面板（重命名）+ 充值弹窗 ----------
 echo "[e2e] Round 4: topic panel + billing"
+# 本轮的「余额真的变了」在 billing 关时走 CDK 兑换，故先发一枚码（面额 20）。
+# ⚠️ scripts/cdk.mjs 在仓库根、而本脚本其余部分在 apps/web ⇒ 用子 shell 往返，别把 cwd 留错。
+( cd "$ROOT" && node scripts/cdk.mjs MOTIF-E2E-20 20 )
+# ⚠️ 本轮要用计费开关决定分支，而每段 heredoc 是**独立进程**、拿不到别的块的变量
+#    ⇒ 必须自己声明 E2E（R1/R2/R5 都声明了，R4 原先漏了）。
 ego-browser nodejs <<'EOF'
+const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-e2e-env.json', 'utf8'))
 const task = await useOrCreateTaskSpace('motif e2e')
 await ensureRealTab()
 // 面板是否渲染取决于 useMediaQuery('(min-width: 1024px)')；每轮是独立 heredoc，视口覆盖未必延续，
@@ -364,29 +370,65 @@ await js(String.raw`(() => {
   return true
 })()`)
 await wait(2)
-const billing = await js(String.raw`(() => {
-  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
-  // 套餐卡片是弹窗里不带 aria-label 的按钮（关闭按钮带 aria-label="关闭"）
-  const pkgs = m ? [...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label')) : []
-  return { open: !!m, packages: pkgs.length, cdk: m ? m.innerText.includes('CDK') : false }
-})()`)
-cliLog('BILLING ' + JSON.stringify(billing))
-if (!billing.open || billing.packages < 4 || !billing.cdk) throw new Error('充值弹窗内容不完整')
+// 顶栏「余额」点开后是哪个弹窗由配置决定（TopNav 的三元）。两个分支的**步数不同**：
+// 充值弹窗里才有 CDK 入口；CDK 弹窗是余额按钮直接打开的。
+let billing
+if (E2E.billingEnabled) {
+  billing = await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+    if (!m) return { which: 'none', packages: 0, cdk: false }
+    // 套餐卡片是弹窗里不带 aria-label 的按钮（关闭按钮带 aria-label="关闭"）
+    const pkgs = [...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label'))
+    return { which: 'billing', packages: pkgs.length, cdk: m.innerText.includes('CDK') }
+  })()`)
+  cliLog('BILLING ' + JSON.stringify(billing))
+  if (billing.which !== 'billing') throw new Error('充值弹窗未打开（配置为 billingEnabled=true）')
+  if (billing.packages < 4) throw new Error('充值弹窗内套餐卡片不足 4 个，实际 ' + billing.packages)
+  if (!billing.cdk) throw new Error('充值弹窗内未找到 CDK 入口')
+} else {
+  billing = await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
+    return { which: m ? 'cdk' : 'none' }
+  })()`)
+  cliLog('BILLING ' + JSON.stringify(billing))
+  if (billing.which !== 'cdk') throw new Error('CDK 兑换弹窗未打开（配置为 billingEnabled=false、cdkRedeemEnabled=true）')
+}
 
-// 购买第一档（50 张）→ 模拟收银台自动支付 → 额度 1 + 50 = 51
-await js(String.raw`(() => {
-  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
-  ;[...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label'))[0].click()
-  return true
-})()`)
-let credits = null
+// 「余额真的变了」按配置选载体，并断言**差值**（不写死绝对数字 —— 绝对数字会随注册赠送/前几轮消耗漂）
+const beforePay = Number(await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`))
+cliLog('CREDITS_BEFORE ' + beforePay)
+
+if (E2E.billingEnabled) {
+  // 载体：套餐下单 → 模拟收银台自动支付 → 余额 + 首档面额（50）
+  await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+    ;[...m.querySelectorAll('button')].filter(b => !b.getAttribute('aria-label'))[0].click()
+    return true
+  })()`)
+} else {
+  // 载体：CDK 兑换（码在 heredoc 之前已由 cdk.mjs 发出，面额 20）
+  await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
+    const input = m.querySelector('input')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'motif-e2e-20')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const b = m.querySelector('button[type="submit"]')
+    if (!b) throw new Error('兑换按钮未找到')
+    b.click()
+    return true
+  })()`)
+}
+const want = E2E.billingEnabled ? 50 : 20
+let afterPay = null
 for (let i = 0; i < 15; i++) {
   await wait(1)
-  credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
-  if (credits === '51') break
+  afterPay = Number(await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`))
+  if (afterPay - beforePay === want) break
 }
-cliLog('CREDITS_AFTER_PAY ' + credits)
-if (credits !== '51') throw new Error('充值后额度应为 51，实际: ' + credits)
+cliLog('CREDITS_AFTER_PAY ' + afterPay + ' (delta ' + (afterPay - beforePay) + ', want ' + want + ')')
+if (afterPay - beforePay !== want) {
+  throw new Error('额度未按预期变化：走的是 ' + billing.which + ' 路径，差值 ' + (afterPay - beforePay) + '，期望 ' + want)
+}
 
 // 登出 → 回到落地页
 await js(String.raw`(() => {
