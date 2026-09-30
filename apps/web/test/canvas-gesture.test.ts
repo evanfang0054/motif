@@ -14,6 +14,16 @@ describe('空白处手势裁决', () => {
     expect(backgroundGesture(mods())).toBe('pan')
   })
 
+  // 触摸指针的修饰键组合：触屏没有修饰键、PointerEvent.button 恒为 0。
+  // 它恰好命中 backgroundGesture 的默认分支 ⇒「单指拖空白 = 平移」在触摸下**已经成立**，
+  // 故画布触屏适配**不给 PointerModifiers 加 pointerType**（加了不改变任何行为，属 YAGNI）。
+  // 本用例与上面那条 mods() 的默认组合数值上相同，但**语义不同**：它把「触摸」这个设备类型
+  // 显式钉在这里 —— 将来有人给 gesture.ts 加鼠标专属分支、把触摸挤到 'none' 时，
+  // 这一条会连同注释一起指出「触摸的契约被改了」。
+  it('触摸（button 0 + 无修饰键）→ pan', () => {
+    expect(backgroundGesture({ button: 0, ctrlKey: false, spaceHeld: false, shiftKey: false })).toBe('pan')
+  })
+
   it('Shift + 左键 = 框选（默认对调后框选仍有入口）', () => {
     expect(backgroundGesture(mods({ shiftKey: true }))).toBe('marquee')
   })
