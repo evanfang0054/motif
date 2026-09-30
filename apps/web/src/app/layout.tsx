@@ -12,6 +12,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // 与 globals.css 里 `.canvas-zoombar` 的 `env(safe-area-inset-bottom)` 配对：
+  // 不声明 cover 时那个 env 恒为 0，带 Home Indicator 的机型上底部工具栏不会让位。
+  viewportFit: 'cover',
 }
 
 const THEME_INIT = THEME_INIT_SCRIPT
