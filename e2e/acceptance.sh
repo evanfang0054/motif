@@ -60,12 +60,23 @@ done
 # 访问一次落地页，触发服务端建库（schema 在首次 getRuntime 时应用）
 curl -s -o /dev/null "$BASE/"
 
+# 计费开关决定顶栏「余额」点开后是哪个弹窗（TopNav.tsx 的三元）：
+#   billingEnabled 真 → 充值额度弹窗；假 + cdkRedeemEnabled 真 → CDK 兑换弹窗；两个都假 → 按钮不可点。
+PUBLIC_CFG=$(curl -s "$BASE/api/public-config")
+BILLING_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).billingEnabled)})')
+CDK_REDEEM_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).cdkRedeemEnabled)})')
+echo "[accept] billing=$BILLING_ENABLED cdk=$CDK_REDEEM_ENABLED"
+if [ "$BILLING_ENABLED" = "false" ] && [ "$CDK_REDEEM_ENABLED" = "false" ]; then
+  echo "[accept] ❌ 本环境既未开充值也未开兑换：顶栏余额不可点，脚本无从验证额度变化。请先打开其中之一。" >&2
+  exit 1
+fi
+
 # 发放一枚验收 CDK（走项目的 cdk CLI）
 cd "$ROOT"
 node scripts/cdk.mjs MOTIF-ACCEPT-20 20
 EMAIL="acc-$(date +%s)-$RANDOM@test.dev"
-printf '{"base":"%s","email":"%s","password":"%s","newPassword":"%s"}\n' \
-  "$BASE" "$EMAIL" "$FIXTURE_PASSWORD" "$FIXTURE_NEW_PASSWORD" > /tmp/motif-accept-env.json
+printf '{"base":"%s","email":"%s","password":"%s","newPassword":"%s","billingEnabled":%s,"cdkRedeemEnabled":%s}\n' \
+  "$BASE" "$EMAIL" "$FIXTURE_PASSWORD" "$FIXTURE_NEW_PASSWORD" "$BILLING_ENABLED" "$CDK_REDEEM_ENABLED" > /tmp/motif-accept-env.json
 echo "[accept] account: $EMAIL"
 
 # 生成一张正经尺寸的参考图（供 Round C 真实图生图 edits 使用）

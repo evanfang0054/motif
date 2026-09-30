@@ -52,10 +52,23 @@ for i in $(seq 1 30); do
 done
 curl -s -o /dev/null -w "[e2e] server ready: HTTP %{http_code}\n" "$BASE/api/billing/packages"
 
+# 计费开关决定顶栏「余额」点开后是哪个弹窗（TopNav.tsx 的三元）：
+#   billingEnabled 真 → 充值额度弹窗；假 + cdkRedeemEnabled 真 → CDK 兑换弹窗；两个都假 → 按钮不可点。
+# 配置是「库优先、回退 env」，而本脚本每次 rm -rf 数据目录后重新播种，故这里读到的就是本次运行的真实配置。
+PUBLIC_CFG=$(curl -s "$BASE/api/public-config")
+BILLING_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).billingEnabled)})')
+CDK_REDEEM_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).cdkRedeemEnabled)})')
+echo "[e2e] billing=$BILLING_ENABLED cdk=$CDK_REDEEM_ENABLED"
+if [ "$BILLING_ENABLED" = "false" ] && [ "$CDK_REDEEM_ENABLED" = "false" ]; then
+  echo "[e2e] ❌ 本环境既未开充值也未开兑换：顶栏余额不可点，脚本无从验证额度变化。请先打开其中之一。" >&2
+  exit 1
+fi
+
 # 2. 生成随机测试账号（ego-browser heredoc 不继承 shell env，改走临时文件）
 EMAIL="e2e-$(date +%s)-$RANDOM@test.dev"
 E2E_ENV_FILE=/tmp/motif-e2e-env.json
-printf '{"base":"%s","email":"%s","password":"%s"}\n' "$BASE" "$EMAIL" "$E2E_PASSWORD" > "$E2E_ENV_FILE"
+printf '{"base":"%s","email":"%s","password":"%s","billingEnabled":%s,"cdkRedeemEnabled":%s}\n' \
+  "$BASE" "$EMAIL" "$E2E_PASSWORD" "$BILLING_ENABLED" "$CDK_REDEEM_ENABLED" > "$E2E_ENV_FILE"
 echo "[e2e] test account: $EMAIL"
 
 fail() { echo "[e2e] ❌ FAIL: $1"; exit 1; }
