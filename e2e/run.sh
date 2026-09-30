@@ -44,7 +44,19 @@ mkdir -p "$MOTIF_DATA_DIR"
 echo "[e2e] starting server on :$PORT (data: $MOTIF_DATA_DIR)"
 pnpm exec next start -p "$PORT" > /tmp/motif-e2e-server.log 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+# ⚠️ bash 的 `trap ... EXIT` 是**覆盖**语义：后面再加一条会顶掉这条 ⇒ 统一在这里清理。
+# 旁路（billing 开的分支）会另起一个短命 server，也要在这里一起收掉。
+BYPASS_PID=""
+BYPASS_DATA_DIR=""
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "$BYPASS_PID" ] && kill "$BYPASS_PID" 2>/dev/null || true
+  [ -n "$BYPASS_DATA_DIR" ] && rm -rf "$BYPASS_DATA_DIR" || true
+  # 旁路是用子 shell 起的，$! 拿到的是子 shell 的 PID，kill 未必传到 next 本体 ⇒ 端口兜底才是保证
+  lsof -ti :3230 2>/dev/null | xargs kill -9 2>/dev/null || true
+  return 0
+}
+trap cleanup EXIT
 
 for i in $(seq 1 30); do
   if curl -s -o /dev/null "$BASE/api/billing/packages"; then break; fi
@@ -506,6 +518,91 @@ if (back.canvasImgs < 2) throw new Error('历史任务图片未保留')
 cliLog('历史任务持久化 ✅')
 EOF
 echo "[e2e] Round 5 ✅"
+
+# ---------- 旁路：billing「开」的分支（零额度） ----------
+# 主流程跑的是本机真实配置（billing 关 → CDK 兑换），billing 开的那条分支本跑不到；
+# 这里用一段零额度旁路把它也测到。
+# 为什么不是新建一个空数据目录：空库里没有登录态，还得先注册用户 + 建任务。
+# 复制主流程那份数据目录，登录态/用户/任务随之带过去（cookie 按主机而非端口隔离），
+# 只需翻转 BILLING_ENABLED —— 该键在主流程里从未被播种（主流程没设这个 env），
+# 故副本首次启动会按 env 播种为 true。
+echo "[e2e] 旁路：billing 开的分支（零额度）"
+kill "$SERVER_PID" 2>/dev/null || true      # 串行：先停主 server，避免两个 next start 共用同一份 .next
+sleep 2                                     # 让它把 WAL 落完，降低 cp 到撕裂快照的概率
+BYPASS_PORT=3230
+BYPASS_BASE="http://127.0.0.1:$BYPASS_PORT"
+BYPASS_DATA_DIR="${MOTIF_DATA_DIR}-billing"
+lsof -ti :"$BYPASS_PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+rm -rf "$BYPASS_DATA_DIR"
+cp -R "$MOTIF_DATA_DIR" "$BYPASS_DATA_DIR"
+
+# 副本里已有的图片行数（旁路跑完必须与它相同 —— 旁路不出图）。
+# 读不到就**非零退出**，不要打印 NA 让两边相等而虚假通过。
+count_imgs() {
+  node -e 'const {execFileSync}=require("child_process");let n;try{n=Number(execFileSync("sqlite3",[process.argv[process.argv.length-1],"select count(*) from canvas_images;"],{encoding:"utf8",stdio:["ignore","pipe","ignore"]}).trim())}catch{process.exit(2)}if(!Number.isFinite(n))process.exit(2);console.log(n)' "$1"
+}
+BY_IMGS_BEFORE=$(count_imgs "$BYPASS_DATA_DIR/motif.db") || { echo "[e2e] ❌ 读不到副本的图片行数" >&2; exit 1; }
+
+# ⚠️ MOTIF_INPROC_WORKER=false：副本里可能还留着主流程未落地的队列任务，
+#    旁路 server 若自带 worker 会接着真出图 ⇒ 既烧额度又污染「零额度」断言。
+( cd "$WEB_DIR" && MOTIF_DATA_DIR="$BYPASS_DATA_DIR" BILLING_ENABLED=true MOTIF_INPROC_WORKER=false NODE_USE_ENV_PROXY=1 \
+    pnpm exec next start -p "$BYPASS_PORT" > /tmp/motif-e2e-bypass.log 2>&1 ) &
+BYPASS_PID=$!
+for i in $(seq 1 30); do
+  curl -s -o /dev/null "$BYPASS_BASE/api/public-config" && break
+  sleep 1
+done
+BYPASS_CFG=$(curl -s "$BYPASS_BASE/api/public-config")
+echo "[e2e] 旁路配置：$BYPASS_CFG"
+case "$BYPASS_CFG" in *'"billingEnabled":true'*) ;; *) echo "[e2e] ❌ 旁路没生效（billingEnabled 仍非 true）" >&2; exit 1;; esac
+# 机械核对「配置真的落进了副本的库」：证明副本那份库被用上了，而不是靠 env 回退兜出来的 true
+BY_DB_BILLING=$(sqlite3 "$BYPASS_DATA_DIR/motif.db" "select value from settings where key='BILLING_ENABLED';")
+echo "[e2e] 副本库里的 BILLING_ENABLED = $BY_DB_BILLING"
+if [ "$BY_DB_BILLING" != "true" ]; then
+  echo "[e2e] ❌ 副本库里的 BILLING_ENABLED 不是 true（实际 '$BY_DB_BILLING'）—— 播种没落到副本上" >&2
+  exit 1
+fi
+
+printf '{"base":"%s","taskSpace":"%s"}\n' "$BYPASS_BASE" "motif e2e" > /tmp/motif-e2e-bypass.json
+ego-browser nodejs <<'EOF'
+const fs = await import('node:fs')
+const B = JSON.parse(fs.readFileSync('/tmp/motif-e2e-bypass.json', 'utf8'))
+const task = await useOrCreateTaskSpace(B.taskSpace)
+await ensureRealTab()
+// 副本带着主流程的登录态（cookie 按主机而非端口隔离），所以这里不用重新登录。
+await js(String.raw`(() => { location.href = '${B.base}/'; return true })()`)
+await wait(3)
+// 旁路只验「点开顶栏余额 → 打开的是充值弹窗」+「套餐卡片数 ≥ 4」。
+// ⚠️ 4 不是随手取的：apps/web/src/server/services.ts 的 PACKAGE_FALLBACK 是静态常量 4 条，
+//    只有价格可配（PRICE_CREDITS_*）、条数不可配，故这个阈值稳定。
+const label = await js(String.raw`(() => {
+  const b = document.querySelector('.ws-nav button[aria-label^="余额"]')
+  if (!b) throw new Error('旁路：余额入口未找到（登录态没带过来？）')
+  const l = b.getAttribute('aria-label') || ''
+  b.click()
+  return l
+})()`)
+await wait(2)
+const dlg = await js(String.raw`(() => {
+  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+  if (!m) return { open: false, packages: 0 }
+  const pkgs = [...m.querySelectorAll('button')].filter((x) => !x.getAttribute('aria-label'))
+  return { open: true, packages: pkgs.length }
+})()`)
+cliLog('BYPASS ' + JSON.stringify({ label, ...dlg }))
+if (!dlg.open) throw new Error('旁路：点余额后没打开充值弹窗（billing 开的分支不成立）')
+if (dlg.packages < 4) throw new Error('旁路：套餐卡片不足 4，实际 ' + dlg.packages)
+EOF
+
+kill "$BYPASS_PID" 2>/dev/null || true; BYPASS_PID=""
+lsof -ti :"$BYPASS_PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+BY_IMGS_AFTER=$(count_imgs "$BYPASS_DATA_DIR/motif.db") || { echo "[e2e] ❌ 读不到副本的图片行数" >&2; exit 1; }
+echo "[e2e] 旁路图片行数 $BY_IMGS_BEFORE → $BY_IMGS_AFTER（必须相等）"
+if [ "$BY_IMGS_BEFORE" != "$BY_IMGS_AFTER" ]; then
+  echo "[e2e] ❌ 旁路产生了图片行，说明它烧了额度" >&2; exit 1
+fi
+rm -rf "$BYPASS_DATA_DIR"; BYPASS_DATA_DIR=""
+echo "[e2e] 旁路 ✅"
 
 echo "[e2e] 关闭任务空间"
 ego-browser nodejs <<'EOF'
