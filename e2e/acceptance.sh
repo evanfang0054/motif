@@ -51,7 +51,19 @@ mkdir -p "$MOTIF_DATA_DIR"
 echo "[accept] starting server on :$PORT"
 pnpm exec next start -p "$PORT" > /tmp/motif-accept-server.log 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+# ⚠️ bash 的 `trap ... EXIT` 是**覆盖**语义：后面再加一条会顶掉这条 ⇒ 统一在这里清理。
+# 旁路（billing 开的分支）会另起一个短命 server，也要在这里一起收掉。
+BYPASS_PID=""
+BYPASS_DATA_DIR=""
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "$BYPASS_PID" ] && kill "$BYPASS_PID" 2>/dev/null || true
+  [ -n "$BYPASS_DATA_DIR" ] && rm -rf "$BYPASS_DATA_DIR" || true
+  # 旁路是用子 shell 起的，$! 拿到的是子 shell 的 PID，kill 未必传到 next 本体 ⇒ 端口兜底才是保证
+  lsof -ti :3230 2>/dev/null | xargs kill -9 2>/dev/null || true
+  return 0
+}
+trap cleanup EXIT
 
 for i in $(seq 1 30); do
   if curl -s -o /dev/null "$BASE/api/billing/packages"; then break; fi
@@ -60,12 +72,23 @@ done
 # 访问一次落地页，触发服务端建库（schema 在首次 getRuntime 时应用）
 curl -s -o /dev/null "$BASE/"
 
+# 计费开关决定顶栏「余额」点开后是哪个弹窗（TopNav.tsx 的三元）：
+#   billingEnabled 真 → 充值额度弹窗；假 + cdkRedeemEnabled 真 → CDK 兑换弹窗；两个都假 → 按钮不可点。
+PUBLIC_CFG=$(curl -s "$BASE/api/public-config")
+BILLING_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).billingEnabled)})')
+CDK_REDEEM_ENABLED=$(printf '%s' "$PUBLIC_CFG" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{console.log(!!JSON.parse(s).cdkRedeemEnabled)})')
+echo "[accept] billing=$BILLING_ENABLED cdk=$CDK_REDEEM_ENABLED"
+if [ "$BILLING_ENABLED" = "false" ] && [ "$CDK_REDEEM_ENABLED" = "false" ]; then
+  echo "[accept] ❌ 本环境既未开充值也未开兑换：顶栏余额不可点，脚本无从验证额度变化。请先打开其中之一。" >&2
+  exit 1
+fi
+
 # 发放一枚验收 CDK（走项目的 cdk CLI）
 cd "$ROOT"
 node scripts/cdk.mjs MOTIF-ACCEPT-20 20
 EMAIL="acc-$(date +%s)-$RANDOM@test.dev"
-printf '{"base":"%s","email":"%s","password":"%s","newPassword":"%s"}\n' \
-  "$BASE" "$EMAIL" "$FIXTURE_PASSWORD" "$FIXTURE_NEW_PASSWORD" > /tmp/motif-accept-env.json
+printf '{"base":"%s","email":"%s","password":"%s","newPassword":"%s","billingEnabled":%s,"cdkRedeemEnabled":%s}\n' \
+  "$BASE" "$EMAIL" "$FIXTURE_PASSWORD" "$FIXTURE_NEW_PASSWORD" "$BILLING_ENABLED" "$CDK_REDEEM_ENABLED" > /tmp/motif-accept-env.json
 echo "[accept] account: $EMAIL"
 
 # 生成一张正经尺寸的参考图（供 Round C 真实图生图 edits 使用）
@@ -114,17 +137,27 @@ const script = String.raw`(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  // 注册表单的字段顺序：昵称 / 邮箱 / 邀请码 / 验证码 / 密码 / 确认密码
-  const inputs = [...document.querySelectorAll('#auth-form input')]
-  setVal(inputs[0], '验收员')
-  setVal(inputs[1], email)
-  setVal(inputs[3], code)
-  setVal(inputs[4], password)
-  setVal(inputs[5], password)
-  return inputs.length
+  // ⚠️ 按 **label 文本**定位，不按 inputs 下标 —— 下标会被新增字段挤歪：
+  //    2026-09-29 认证轮加了「注册准入码（选填）」后，本段原先的 inputs[3..5] 全部错位
+  //    （密码被填进邮箱验证码框、确认密码空着），注册必然失败。RAC 的 Label 用 for 指向 input 的 id。
+  const inputFor = (labelText) => {
+    const l = [...document.querySelectorAll('[role="dialog"] label')].find((x) => (x.textContent || '').trim() === labelText)
+    if (!l) throw new Error('找不到字段：' + labelText)
+    const id = l.getAttribute('for')
+    const el = id ? document.getElementById(id) : null
+    if (!el) throw new Error('字段没有可定位的输入框：' + labelText)
+    return el
+  }
+  setVal(inputFor('昵称'), '验收员')
+  setVal(inputFor('邮箱'), email)
+  setVal(inputFor('注册准入码（选填）'), '')   // 本环境不配准入码 ⇒ 留空，走邮箱验证码
+  setVal(inputFor('邮箱验证码'), code)
+  setVal(inputFor('密码'), password)
+  setVal(inputFor('确认密码'), password)
+  return document.querySelectorAll('#auth-form input').length
 })()`
 const filled = await js(script)
-if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
+if (filled < 7) throw new Error('注册表单字段不足（期望 7 个，实际 ' + filled + ' 个）')
 // 主按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故按 form 属性定位
 await js(String.raw`(() => { document.querySelector('button[form="auth-form"]').click(); return true })()`)
 await wait(4)
@@ -137,6 +170,9 @@ echo "[accept] A ✅"
 # ---------- B：CDK 兑换 ----------
 echo "[accept] B: CDK redeem"
 ego-browser nodejs <<'EOF'
+// ⚠️ 本段要用计费开关决定步数分支，而每段 heredoc 是**独立进程**、拿不到别的块的变量
+// ⇒ 必须自己声明 E2E（本文件其余段有的声明了、有的没有）。
+const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-accept-env.json', 'utf8'))
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
 // 充值与余额已合并成顶栏一个入口（无「充值」文字，靠 aria-label 定位）
@@ -146,22 +182,35 @@ await js(String.raw`(() => {
   b.click(); return true
 })()`)
 await wait(1)
-await js(String.raw`(() => {
-  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
-  if (!m) throw new Error('充值弹窗未打开')
-  // ⚠️ CDK 入口是 HeroUI Link，**没有 href** ⇒ RAC 把它渲染成 span[role=link]，
-  // **不是** a（也不是 button）：elementType = props.href && !isDisabled ? 'a' : 'span'，
-  // 且 elementType !== 'a' 时才补 role="link"（见 react-aria-components 的 Link / useLink）。
-  // 故按 role 锚，别按标签名 —— 2026-09-24 实测：写 'a, button' 在这里恒空。
-  // ⚠️ 本段在 String.raw 模板里，注释**不能出现反引号**（会提前终止模板）。
-  const links = [...m.querySelectorAll('[role="link"]')]
-  const link = links.find((x) => (x.textContent || '').includes('CDK'))
-  if (!link) throw new Error('CDK 入口未找到（弹窗内 role=link 共 ' + links.length + ' 个）')
-  // element.click() 会走 RAC usePress 的 virtual-click 分支（源码注释即「screen reader 或
-  // element.click() 触发」），等价键盘激活，故无需坐标点击。
-  link.click(); return true
-})()`)
-await wait(1)
+// 基线余额必须在**本段内、兑换之前**读：A 段那次读数在另一个 ego 进程里，拿不到。
+const beforeRedeem = Number(await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`))
+cliLog('CREDITS_BEFORE_REDEEM ' + beforeRedeem)
+// 步数按配置分支：billing 开 → 先开充值弹窗，CDK 入口在**弹窗内**；billing 关 → 余额按钮**直接**开 CDK 弹窗。
+if (E2E.billingEnabled) {
+  await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+    if (!m) throw new Error('充值弹窗未打开（配置为 billingEnabled=true）')
+    // ⚠️ CDK 入口是 HeroUI Link，**没有 href** ⇒ RAC 把它渲染成 span[role=link]，
+    // **不是** a（也不是 button）：elementType = props.href && !isDisabled ? 'a' : 'span'，
+    // 且 elementType !== 'a' 时才补 role="link"（见 react-aria-components 的 Link / useLink）。
+    // 故按 role 锚，别按标签名 —— 2026-09-24 实测：写 'a, button' 在这里恒空。
+    // ⚠️ 本段在 String.raw 模板里，注释**不能出现反引号**（会提前终止模板）。
+    const links = [...m.querySelectorAll('[role="link"]')]
+    const link = links.find((x) => (x.textContent || '').includes('CDK'))
+    if (!link) throw new Error('CDK 入口未找到（弹窗内 role=link 共 ' + links.length + ' 个）')
+    // element.click() 会走 RAC usePress 的 virtual-click 分支（源码注释即「screen reader 或
+    // element.click() 触发」），等价键盘激活，故无需坐标点击。
+    link.click(); return true
+  })()`)
+  await wait(1)
+} else {
+  await js(String.raw`(() => {
+    if (!document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')) {
+      throw new Error('CDK 兑换弹窗未打开（配置为 billingEnabled=false、cdkRedeemEnabled=true）')
+    }
+    return true
+  })()`)
+}
 await js(String.raw`(() => {
   const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
   if (!m) throw new Error('CDK 弹窗未打开')
@@ -180,10 +229,12 @@ let credits = null
 for (let i = 0; i < 10; i++) {
   await wait(1)
   credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
-  if (credits === '23') break
+  if (Number(credits) - beforeRedeem === 20) break
 }
-cliLog('CDK redeem → credits=' + credits)
-if (credits !== '23') throw new Error('CDK 兑换后应为 23（3+20），实际 ' + credits)
+cliLog('CDK redeem → credits=' + credits + ' (delta ' + (Number(credits) - beforeRedeem) + ')')
+if (Number(credits) - Number(beforeRedeem) !== 20) {
+  throw new Error('CDK 兑换后余额差值应为 20（面额），实际 ' + (Number(credits) - Number(beforeRedeem)))
+}
 // 兑换成功后弹窗自动关闭（Workspace 的 onRedeemed 会 setDialog(null)）；若仍在则点关闭按钮兜底
 await js(String.raw`(() => { const c = document.querySelector('[role="dialog"][aria-label="CDK 兑换"] [aria-label="关闭"]'); if (c) c.click(); return true })()`)
 await wait(1)
@@ -668,6 +719,91 @@ if (seen && !ok) throw new Error(`骨架数 + 已出图数 != ${N}: ${JSON.strin
 if (!seen) cliLog('⚠️ 未捕获到骨架瞬间（生成过快），本条跳过')
 EOF
 echo "[accept] G ✅"
+
+# ---------- 旁路：billing「开」的分支（零额度） ----------
+# 主流程跑的是本机真实配置（billing 关 → CDK 兑换），billing 开的那条分支本跑不到；
+# 这里用一段零额度旁路把它也测到。
+# 为什么不是新建一个空数据目录：空库里没有登录态，还得先注册用户 + 建任务。
+# 复制主流程那份数据目录，登录态/用户/任务随之带过去（cookie 按主机而非端口隔离），
+# 只需翻转 BILLING_ENABLED —— 该键在主流程里从未被播种（主流程没设这个 env），
+# 故副本首次启动会按 env 播种为 true。
+echo "[accept] 旁路：billing 开的分支（零额度）"
+kill "$SERVER_PID" 2>/dev/null || true      # 串行：先停主 server，避免两个 next start 共用同一份 .next
+sleep 2                                     # 让它把 WAL 落完，降低 cp 到撕裂快照的概率
+BYPASS_PORT=3230
+BYPASS_BASE="http://127.0.0.1:$BYPASS_PORT"
+BYPASS_DATA_DIR="${MOTIF_DATA_DIR}-billing"
+lsof -ti :"$BYPASS_PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+rm -rf "$BYPASS_DATA_DIR"
+cp -R "$MOTIF_DATA_DIR" "$BYPASS_DATA_DIR"
+
+# 副本里已有的图片行数（旁路跑完必须与它相同 —— 旁路不出图）。
+# 读不到就**非零退出**，不要打印 NA 让两边相等而虚假通过。
+count_imgs() {
+  node -e 'const {execFileSync}=require("child_process");let n;try{n=Number(execFileSync("sqlite3",[process.argv[process.argv.length-1],"select count(*) from canvas_images;"],{encoding:"utf8",stdio:["ignore","pipe","ignore"]}).trim())}catch{process.exit(2)}if(!Number.isFinite(n))process.exit(2);console.log(n)' "$1"
+}
+BY_IMGS_BEFORE=$(count_imgs "$BYPASS_DATA_DIR/motif.db") || { echo "[accept] ❌ 读不到副本的图片行数" >&2; exit 1; }
+
+# ⚠️ MOTIF_INPROC_WORKER=false：本脚本 G 段提交后不等出图完（有意如此），
+#    副本里会留着未落地的队列任务；旁路 server 若自带 worker 会接着真出图 ⇒ 既烧额度又污染零额度断言。
+( cd "$WEB_DIR" && MOTIF_DATA_DIR="$BYPASS_DATA_DIR" BILLING_ENABLED=true MOTIF_INPROC_WORKER=false NODE_USE_ENV_PROXY=1 \
+    pnpm exec next start -p "$BYPASS_PORT" > /tmp/motif-accept-bypass.log 2>&1 ) &
+BYPASS_PID=$!
+for i in $(seq 1 30); do
+  curl -s -o /dev/null "$BYPASS_BASE/api/public-config" && break
+  sleep 1
+done
+BYPASS_CFG=$(curl -s "$BYPASS_BASE/api/public-config")
+echo "[accept] 旁路配置：$BYPASS_CFG"
+case "$BYPASS_CFG" in *'"billingEnabled":true'*) ;; *) echo "[accept] ❌ 旁路没生效（billingEnabled 仍非 true）" >&2; exit 1;; esac
+# 机械核对「配置真的落进了副本的库」：证明副本那份库被用上了，而不是靠 env 回退兜出来的 true
+BY_DB_BILLING=$(sqlite3 "$BYPASS_DATA_DIR/motif.db" "select value from settings where key='BILLING_ENABLED';")
+echo "[accept] 副本库里的 BILLING_ENABLED = $BY_DB_BILLING"
+if [ "$BY_DB_BILLING" != "true" ]; then
+  echo "[accept] ❌ 副本库里的 BILLING_ENABLED 不是 true（实际 '$BY_DB_BILLING'）—— 播种没落到副本上" >&2
+  exit 1
+fi
+
+printf '{"base":"%s","taskSpace":"%s"}\n' "$BYPASS_BASE" "motif acceptance" > /tmp/motif-accept-bypass.json
+ego-browser nodejs <<'EOF'
+const fs = await import('node:fs')
+const B = JSON.parse(fs.readFileSync('/tmp/motif-accept-bypass.json', 'utf8'))
+const task = await useOrCreateTaskSpace(B.taskSpace)
+await ensureRealTab()
+// 副本带着主流程的登录态（cookie 按主机而非端口隔离），所以这里不用重新登录。
+await js(String.raw`(() => { location.href = '${B.base}/'; return true })()`)
+await wait(3)
+// 旁路只验「点开顶栏余额 → 打开的是充值弹窗」+「套餐卡片数 ≥ 4」。
+// ⚠️ 4 不是随手取的：apps/web/src/server/services.ts 的 PACKAGE_FALLBACK 是静态常量 4 条，
+//    只有价格可配（PRICE_CREDITS_*）、条数不可配，故这个阈值稳定。
+const label = await js(String.raw`(() => {
+  const b = document.querySelector('.ws-nav button[aria-label^="余额"]')
+  if (!b) throw new Error('旁路：余额入口未找到（登录态没带过来？）')
+  const l = b.getAttribute('aria-label') || ''
+  b.click()
+  return l
+})()`)
+await wait(2)
+const dlg = await js(String.raw`(() => {
+  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+  if (!m) return { open: false, packages: 0 }
+  const pkgs = [...m.querySelectorAll('button')].filter((x) => !x.getAttribute('aria-label'))
+  return { open: true, packages: pkgs.length }
+})()`)
+cliLog('BYPASS ' + JSON.stringify({ label, ...dlg }))
+if (!dlg.open) throw new Error('旁路：点余额后没打开充值弹窗（billing 开的分支不成立）')
+if (dlg.packages < 4) throw new Error('旁路：套餐卡片不足 4，实际 ' + dlg.packages)
+EOF
+
+kill "$BYPASS_PID" 2>/dev/null || true; BYPASS_PID=""
+lsof -ti :"$BYPASS_PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
+BY_IMGS_AFTER=$(count_imgs "$BYPASS_DATA_DIR/motif.db") || { echo "[accept] ❌ 读不到副本的图片行数" >&2; exit 1; }
+echo "[accept] 旁路图片行数 $BY_IMGS_BEFORE → $BY_IMGS_AFTER（必须相等）"
+if [ "$BY_IMGS_BEFORE" != "$BY_IMGS_AFTER" ]; then
+  echo "[accept] ❌ 旁路产生了图片行，说明它烧了额度" >&2; exit 1
+fi
+rm -rf "$BYPASS_DATA_DIR"; BYPASS_DATA_DIR=""
+echo "[accept] 旁路 ✅"
 
 echo "[accept] 关闭任务空间"
 ego-browser nodejs <<'EOF'
