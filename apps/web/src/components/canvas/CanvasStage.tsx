@@ -925,6 +925,21 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
   const showBackgroundUnit = !hiddenUnits.has('background')
   const showContentGroup = showArrangeUnit || showArchiveUnit
 
+  /**
+   * 溢出菜单里「撤销 / 重做」的可用性快照。
+   *
+   * ⚠️ **不能**在 render 期现读 `history.canUndo()`（本仓也没有 render 期现读 `getState()` 的先例）：
+   * `history` 不是响应式的，而 `commit()` 发生在手势最后一次 `moveBy` **之后**、且**不触发重渲染** ——
+   * 于是「拖完一张图」时那次渲染读到的仍是**提交前**的值，菜单项会一直显示置灰。
+   * （实测：拖完卡片立刻打开菜单，撤销的 `aria-disabled` 仍是 `true`；要等下一次无关的重渲染才恢复。）
+   * 改为**打开菜单时取一次**：那一刻的历史必然是最终值，且 setState 会让菜单项用新值渲染。
+   */
+  const [menuHistory, setMenuHistory] = useState({ canUndo: false, canRedo: false })
+  const refreshMenuHistory = useCallback(() => {
+    const h = useCanvasStore.getState().history
+    setMenuHistory({ canUndo: h.canUndo(), canRedo: h.canRedo() })
+  }, [])
+
   const selectedImages = useMemo(() => images.filter((i) => selected.includes(i.id)), [images, selected])
 
   /**
@@ -1372,8 +1387,9 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
 
       {/* 小地图：默认关，开关在工具栏的视图组。组件自身是 `hidden lg:block`（240px 宽在手机上占掉近半屏），
           故**开关按钮也必须只在 lg 以上出现** —— 否则窄屏点得动却什么都不会出现。
-          ⚠️ 位置从「左下角」改为「底部工具栏上方居中」：左下角现在被左侧浮动面板（left-12 起）盖住，
-          而面板 z-index 低于小地图，会变成小地图压在面板上。居中后它与两侧面板横向错开。 */}
+          ⚠️ 位置是**左下角**（见 MiniMap.tsx 的 `bottom-3 left-3`）：那里原本会被左侧浮动面板盖住，
+          现在由面板让位（`globals.css` 里小地图在场时把 `.ws-float-left` 的 bottom 抬到 184px）。
+          工具栏这边则由一条 `:has()` 规则**右移半个小地图宽** —— 两边都不压住它。 */}
       {miniMapOpen && stageSize.w > 0 && (
         <MiniMap size={stageSize} onJump={(v) => useCanvasStore.getState().setViewport(v)} />
       )}
@@ -1620,7 +1636,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         {toolbarLevel > 0 && (
           <>
             <span className="canvas-tool-divider" />
-            <Dropdown>
+            <Dropdown
+              onOpenChange={(open) => {
+                // 打开时取一次历史快照（见 `menuHistory` 的注释：render 期现读会拿到提交前的旧值）
+                if (open) refreshMenuHistory()
+              }}
+            >
               <IconButton size="sm" variant="ghost" label="更多画布操作">
                 <Ellipsis />
               </IconButton>
@@ -1698,14 +1719,13 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
                     </Dropdown.Item>
                   )}
                   {/* 键盘专属功能的触屏入口：这三项在工具栏里**本来就没有按钮**，故不受档位条件限制
-                      （菜单本身仍只在 toolbarLevel > 0 时渲染）。可用性按 history 的 canUndo/canRedo 置灰 ——
-                      ⚠️ `history` 不是响应式的（本仓全部 `getState()` 都在 effect/回调里，**没有 render 期现读的先例**），
-                      但拖拽结束会改 `placements` 从而触发重渲染 ⇒ 菜单打开前读到的必是最新值。
-                      注释不要写成「与『整理布局』同一处置」—— 那一项是 `{!showArrangeUnit && …}` 的订阅派生，不是现读。 */}
-                  <Dropdown.Item id="undo" textValue="撤销" isDisabled={!useCanvasStore.getState().history.canUndo()}>
+                      （菜单本身仍只在 toolbarLevel > 0 时渲染）。可用性按打开菜单那一刻的历史快照置灰
+                      （`menuHistory`，见它的定义 —— **不能**在 render 期现读 `history`：`commit()` 在
+                      最后一次 `moveBy` 之后且不触发重渲染，现读会拿到提交前的旧值）。 */}
+                  <Dropdown.Item id="undo" textValue="撤销" isDisabled={!menuHistory.canUndo}>
                     <Label>撤销</Label>
                   </Dropdown.Item>
-                  <Dropdown.Item id="redo" textValue="重做" isDisabled={!useCanvasStore.getState().history.canRedo()}>
+                  <Dropdown.Item id="redo" textValue="重做" isDisabled={!menuHistory.canRedo}>
                     <Label>重做</Label>
                   </Dropdown.Item>
                   <Dropdown.Item id="select-all" textValue="全选" isDisabled={images.length === 0}>
