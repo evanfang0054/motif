@@ -40,6 +40,36 @@ trap cleanup EXIT
 [ -d "$SRC_DATA" ] || { echo "[mobile] ❌ 找不到数据目录 $SRC_DATA（先在 3100 上用一次，让它建库并出图）" >&2; exit 1; }
 [ -f "$SRC_DATA/admin-credentials.txt" ] || { echo "[mobile] ❌ 副本里没有 admin-credentials.txt（登录兜底要用）" >&2; exit 1; }
 
+# 0. 静态断言：工具栏收敛档位的顺序（纯静态，不需要 server / 数据目录）。
+# ⚠️ 这条判据原来只写在实现计划里 —— **文档不会跑，等于没有自动化证据**。搬进脚本。
+python3 - "$WEB_DIR/src/components/canvas/CanvasStage.tsx" <<'PY' || exit 1
+import re, sys, pathlib
+
+src = pathlib.Path(sys.argv[1]).read_text()
+m = re.search(r'const TOOLBAR_LEVELS[^=]*=\s*\[(.*?)\n\]', src, re.S)
+if not m:
+    print('[mobile] ❌ 静态断言：没找到 TOOLBAR_LEVELS')
+    sys.exit(1)
+levels = re.findall(r'\[([^\]]*)\]', m.group(1))
+checks = {
+    '档位数 == 8': len(levels) == 8,
+    "除 L0 外每档都含 'status'（读数区最先让位）": all("'status'" in x for x in levels[1:]),
+    "'marquee' 只在最末一档（框选最后让位）": "'marquee'" in levels[-1]
+    and all("'marquee'" not in x for x in levels[:-1]),
+    "'view' 只在倒数第二档": "'view'" in levels[-2] and all("'view'" not in x for x in levels[:-2]),
+    "'view' 排在 'marquee' 之前": all(
+        x.index("'view'") < x.index("'marquee'") for x in levels if "'view'" in x and "'marquee'" in x
+    ),
+}
+print('[mobile] 静态断言 档位数=' + str(len(levels)))
+for name, ok in checks.items():
+    print(('  ✅ ' if ok else '  ❌ ') + name)
+if not all(checks.values()):
+    print('[mobile] ❌ 静态断言不通过')
+    sys.exit(1)
+PY
+echo "[mobile] 静态断言通过（收敛顺序）"
+
 cd "$WEB_DIR"
 # 0. 构建守卫 —— 校验**新鲜度**，不只校验存在性。
 #    踩过的坑：`[ ! -d .next/server ]` 在「跑过 dev 之后 .next/server 还在、但内容是旧的」时会
@@ -91,6 +121,9 @@ const page = task.page('p1')
 const fail = (msg) => {
   throw new Error(msg)
 }
+/** 允许「记日志跳过」的用例（契约对 `(pointer: coarse)` 不命中与整理提示不存在给了这条路）。
+ *  ⚠️ 收尾**必须**按它改口径 —— 无条件打印「全部通过」等于过度声称。 */
+const SKIPPED = []
 
 // ---------- 视口与仿真 ----------
 /**
@@ -578,7 +611,9 @@ const noClip = async (tag) => {
     for (const b of z.querySelectorAll('button')) {
       const q = b.getBoundingClientRect()
       if (q.width === 0 && q.height === 0) continue
-      if (q.left < s.left - 1 || q.right > s.right + 1) {
+      // ⚠️ 判据是**二维**的「矩形都在画布内」：只比 left/right 会让纵向越界（例如 bottom 写成负值、
+      //    或将来允许工具栏换行/加高）静默通过。
+      if (q.left < s.left - 1 || q.right > s.right + 1 || q.top < s.top - 1 || q.bottom > s.bottom + 1) {
         bad.push((b.getAttribute('aria-label') || b.innerText || '').trim() + '@' + Math.round(q.left) + '..' + Math.round(q.right))
       }
     }
@@ -596,6 +631,9 @@ const noClip = async (tag) => {
   console.log(
     'NO_CLIP ' + tag + ' scrollW=' + r.scrollW + ' clientW=' + r.clientW + ' stage=' + r.stage + ' 越界=' + JSON.stringify(r.bad) + ' 框选在=' + r.marquee,
   )
+  // ⚠️ 先挡「工具栏里一个按钮都没有」这种退化：否则 bad 恒为空、这条会**空过**。
+  //    最窄档也至少有「缩放三连 + 框选 + 更多」5 个。
+  if (r.labels.length < 5) fail('NO_CLIP ' + tag + ' 失败：工具栏里只有 ' + r.labels.length + ' 个按钮（退化，判据无意义）')
   if (r.bad.length) fail('NO_CLIP ' + tag + ' 失败：这些按钮越出画布 ' + JSON.stringify(r.bad))
   return r
 }
@@ -628,7 +666,7 @@ for (const t of TIERS) {
       const b = document.querySelector('.canvas-zoombar button[aria-label="框选"]')
       const s = document.querySelector('.canvas-stage').getBoundingClientRect()
       const q = b.getBoundingClientRect()
-      return q.left >= s.left - 1 && q.right <= s.right + 1
+      return q.left >= s.left - 1 && q.right <= s.right + 1 && q.top >= s.top - 1 && q.bottom <= s.bottom + 1
     })
     console.log('MARQUEE_VISIBLE_320 在画布内=' + inside)
     if (!inside) fail('MARQUEE_VISIBLE_320 失败：320 下「框选」按钮越出画布')
@@ -640,6 +678,7 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
 {
   const coarse = await page.evaluate(() => matchMedia('(pointer: coarse)').matches)
   if (!coarse) {
+    SKIPPED.push('TOUCH_TARGET（(pointer: coarse) 未命中）')
     console.log('TOUCH_TARGET ⚠️ 未验证：本环境 (pointer: coarse) 不命中 ⇒ 触摸目标尺寸未测（如实记录，不写恒真断言）')
   } else {
     // 选中一张，让 `.canvas-toolbar` 也在场
@@ -723,6 +762,7 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
     return { h: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, z: { left: z.left, top: z.top, right: z.right, bottom: z.bottom } }
   })
   if (!hint) {
+    SKIPPED.push('NO_OVERLAP C9（整理提示不存在）')
     console.log('NO_OVERLAP C9 ⏭ 跳过：整理提示不存在（溯源打开但摆放与来源一致）—— 按契约记为「不存在则跳过」')
   } else {
     const c9 = overlap(hint.h, hint.z)
@@ -731,9 +771,13 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
   }
 }
 
-// ---------- C8++：1024 下打开小地图，工具栏与小地图不相交（Task 2 Step 3b 的唯一回归网）----------
+// ---------- C8++：小地图在场时工具栏不让位（Task 2 Step 3b 的唯一回归网）----------
+// ⚠️ 视口取 **1024×700** 而不是 768：700 ≤ 720 才会命中 `globals.css` 那条
+//    `@media (min-width: 1024px) and (max-height: 720px)` —— 那里还有一处按工具栏高度推的
+//    `.ws-float-panel { bottom }`。用 768 会让那一档**从未被执行到**（面板压住工具栏也不会红）。
+//    小地图在 ≥1024 仍渲染，原断言照样有效。
 {
-  await boot(1024, 768, false)
+  await boot(1024, 700, false)
   await ensureVisible()
   const trigger = await page.evaluate(() => {
     const b = document.querySelector('.canvas-zoombar button[aria-label="小地图"]')
@@ -771,9 +815,12 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
   if (!content || !/viewport-fit=cover/.test(content)) fail('VIEWPORT_META 失败：<meta name="viewport"> 的 content 里没有 viewport-fit=cover')
 }
 
-// ---------- B7 第二半（无图时「全选」置灰）：**不可达**，如实记为未覆盖 ----------
-// `CanvasStage` 只在 `canvasImages.length > 0 || skeletons.length > 0` 时渲染（Workspace.tsx 的三元），
-// 所以「一张图都没有」时画布与它的工具栏**都不存在**，菜单自然也不存在 ⇒ 这条没有可观测面。
+// ---------- B7 第二半（无图时「全选」置灰）：本轮记为未覆盖，理由落在**成本**上 ----------
+// ⚠️ 不要写成「无观测面」—— 那句话是错的。`Workspace.tsx` 的条件是
+//    `canvasImages.length > 0 || skeletons.length > 0`，所以**「0 张图 + 有骨架」时画布与菜单都会渲染**，
+//    「全选」的置灰在那时是可观测的。本脚本只造了**纯空任务**（下面这一段），那条路径确实没有观测面；
+//    要覆盖剩下那半，需要让副本库里某个任务处于「生成中」（或真的发起一次生成 —— 会烧额度），
+//    成本上本轮不做 ⇒ **如实记为未覆盖**，并在 PR 里写清。
 // ⚠️ 放在**最后**：新建任务会把「当前任务」切走并跨刷新保留，后面还有用例的话会全部落空。
 {
   await page.evaluate(() => {
@@ -782,7 +829,8 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
   })
   await page.waitForTimeout(3000)
   const noCanvas = await page.evaluate(() => !document.querySelector('.canvas-zoombar'))
-  console.log('DISABLED_NOIMG 空任务下 .canvas-zoombar 不存在=' + noCanvas + ' ⇒ B7 第二半无观测面，记为未覆盖（非通过）')
+  SKIPPED.push('B7 第二半（0 张图 + 有骨架时可观测，本轮未造该状态）')
+  console.log('DISABLED_NOIMG 空任务下 .canvas-zoombar 不存在=' + noCanvas + ' ⇒ B7 第二半本轮未覆盖（非通过）')
   if (!noCanvas) {
     // 万一将来画布在空任务下也渲染了，这条就有观测面了 —— 那时必须补真断言，不能静默
     const n = await openMenu()
@@ -797,7 +845,11 @@ console.log('NO_CLIP 汇总 ' + JSON.stringify(tierResults))
   }
 }
 
-console.log('✅ 移动端可达性、窄屏布局、触摸目标与几何耦合全部通过')
+console.log(
+  SKIPPED.length
+    ? '⚠️ 其余断言全部通过；但有以下**未验证**项（不是通过）：' + JSON.stringify(SKIPPED)
+    : '✅ 移动端可达性、窄屏布局、触摸目标与几何耦合全部通过',
+)
 EOF
 
 echo "[mobile] ego 退出码=$ego_status"

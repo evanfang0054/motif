@@ -890,10 +890,14 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    */
   // 小地图在场时左侧 240px 被它占掉（见 globals.css 那条 `:has()` 规则把工具栏右移）——
   // 收敛预算必须扣掉同一份宽度，否则工具栏「以为自己放得下」而实际溢出。
-  // ⚠️ 口径必须与那条 CSS 一致：小地图组件是 `hidden lg:block`，窄屏虽在 DOM 里但不渲染。
+  // ⚠️ 数值与那条 CSS **逐值对齐**：CSS 给工具栏的可用宽是 `calc(100% - 276px)`
+  // （小地图右缘 252 + 两侧各 12），而工具栏的包含块就是画布 ⇒ 这里也必须是「画布宽 − 276」
+  // = `画布宽 − 24 − (MINIMAP_W + 12)`。多扣 12 会让工具栏比必要早收一档。
+  // ⚠️ 口径：JS 用**画布**宽、CSS 用**视口**宽。今天两者恒等 —— `.ws-shell` 是
+  // `position: fixed; inset: 0; overflow: hidden`，根节点不滚动、画布不吃滚动条宽度。
   const minimapTakesSpace = miniMapOpen && stageSize.w >= 1024
   const rawToolbarAvail =
-    stageSize.w > 0 ? stageSize.w - 24 - (minimapTakesSpace ? MINIMAP_W + 24 : 0) : Number.POSITIVE_INFINITY
+    stageSize.w > 0 ? stageSize.w - 24 - (minimapTakesSpace ? MINIMAP_W + 12 : 0) : Number.POSITIVE_INFINITY
   const [toolbarAvail, setToolbarAvail] = useState(Number.POSITIVE_INFINITY)
   useEffect(() => {
     if (!Number.isFinite(rawToolbarAvail)) {
@@ -933,6 +937,10 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
    * 于是「拖完一张图」时那次渲染读到的仍是**提交前**的值，菜单项会一直显示置灰。
    * （实测：拖完卡片立刻打开菜单，撤销的 `aria-disabled` 仍是 `true`；要等下一次无关的重渲染才恢复。）
    * 改为**打开菜单时取一次**：那一刻的历史必然是最终值，且 setState 会让菜单项用新值渲染。
+   *
+   * ⚠️ 已知残留（低风险，未处理）：菜单**已经开着**时若历史又变了（可达路径只有「菜单开着时按
+   * Ctrl+Z / Ctrl+Shift+Z」），快照不会刷新 ⇒ 那一瞬间的置灰状态可能过期。反方向基本不可达
+   * （菜单开着时点不到画布、菜单项点完即关菜单），后果也只是「点了没反应」，不会损坏数据。
    */
   const [menuHistory, setMenuHistory] = useState({ canUndo: false, canRedo: false })
   const refreshMenuHistory = useCallback(() => {
