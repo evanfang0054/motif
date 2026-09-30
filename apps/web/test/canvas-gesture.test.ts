@@ -6,6 +6,7 @@ const mods = (over: Partial<Parameters<typeof backgroundGesture>[0]> = {}) => ({
   ctrlKey: false,
   spaceHeld: false,
   shiftKey: false,
+  marqueeMode: false,
   ...over,
 })
 
@@ -21,7 +22,9 @@ describe('空白处手势裁决', () => {
   // 显式钉在这里 —— 将来有人给 gesture.ts 加鼠标专属分支、把触摸挤到 'none' 时，
   // 这一条会连同注释一起指出「触摸的契约被改了」。
   it('触摸（button 0 + 无修饰键）→ pan', () => {
-    expect(backgroundGesture({ button: 0, ctrlKey: false, spaceHeld: false, shiftKey: false })).toBe('pan')
+    expect(
+      backgroundGesture({ button: 0, ctrlKey: false, spaceHeld: false, shiftKey: false, marqueeMode: false }),
+    ).toBe('pan')
   })
 
   it('Shift + 左键 = 框选（默认对调后框选仍有入口）', () => {
@@ -63,5 +66,31 @@ describe('空白处手势裁决', () => {
   it('左键的两种手势各有唯一触发组合（不会两种都拿不到）', () => {
     expect(backgroundGesture(mods())).toBe('pan')
     expect(backgroundGesture(mods({ shiftKey: true }))).toBe('marquee')
+  })
+})
+
+describe('框选模式开关（触屏上 Shift 的等价物）', () => {
+  it('开着时：左键拖空白 = 框选', () => {
+    expect(backgroundGesture(mods({ marqueeMode: true }))).toBe('marquee')
+  })
+
+  it('修饰键语义更强：Ctrl / 空格 / 中键仍为平移', () => {
+    expect(backgroundGesture(mods({ marqueeMode: true, ctrlKey: true }))).toBe('pan')
+    expect(backgroundGesture(mods({ marqueeMode: true, spaceHeld: true }))).toBe('pan')
+    expect(backgroundGesture(mods({ marqueeMode: true, button: 1 }))).toBe('pan')
+  })
+
+  it('非左键仍不接管', () => {
+    expect(backgroundGesture(mods({ marqueeMode: true, button: 2 }))).toBe('none')
+  })
+
+  it('与 Shift 同时为真不产生双重效果（等价而非叠加）', () => {
+    expect(backgroundGesture(mods({ marqueeMode: true, shiftKey: true }))).toBe('marquee')
+  })
+
+  it('关着时既有行为逐条不变（回归）', () => {
+    expect(backgroundGesture(mods())).toBe('pan')
+    expect(backgroundGesture(mods({ shiftKey: true }))).toBe('marquee')
+    expect(backgroundGesture(mods({ marqueeMode: false, shiftKey: true }))).toBe('marquee')
   })
 })
