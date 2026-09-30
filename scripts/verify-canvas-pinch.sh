@@ -200,7 +200,10 @@ const stageBox = () =>
 const touch = (type, points) =>
   page.cdp('Input.dispatchTouchEvent', {
     type,
-    touchPoints: points.map((pt, i) => ({ x: pt.x, y: pt.y, id: i + 1 })),
+    // id 缺省按数组下标（1 起）；**需要精确指定时显式给 `pt.id`**。
+    // ⚠️ 实测：`touchEnd` 传的点决定**释放哪一根**（传 [p2] 时 touches 从 2 变 1，不报错）。
+    //    若「释放哪根」与「随后移动哪根」的 id 对不上，用例会退化成空转 —— 所以关键处必须显式给 id。
+    touchPoints: points.map((pt, i) => ({ x: pt.x, y: pt.y, id: pt.id ?? i + 1 })),
   })
 const near = (a, b, tol = 2) => Math.abs(a - b) <= tol
 
@@ -338,31 +341,39 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
 }
 
 // ---------- ONE_FINGER_LEFT：pinch 中只抬一根手指，剩余那根继续移动 ⇒ 不产生平移 ----------
-// ⚠️ CDP 的 touchEnd 语义：`touchPoints` 传**仍在按下的点**。若实测发现语义相反，
-//    把下面的 [p2] 改成 [p1] —— 不要靠猜。（两种语义下本用例的断言都成立：抬指后只剩一根、
-//    pinchRef 已清空且 panRef 为 null ⇒ 都不会改视口。）
+// ⚠️ 实测（CDP）：`touchEnd` **可以**带触点，且传进去的点就是**被释放的那一根**（touches 2 → 1）。
+//    所以这里显式给 id，并先断言「抬掉一根后确实还剩 1 根」—— 否则本用例会退化成空转。
 {
-  const p1 = { x: A.x - 50, y: A.y }
-  const p2 = { x: A.x + 50, y: A.y }
+  const p1 = { x: A.x - 50, y: A.y, id: 1 }
+  const p2 = { x: A.x + 50, y: A.y, id: 2 }
   await touch('touchStart', [p1, p2])
   await frameSync()
-  await touch('touchMove', [{ x: p1.x - 30, y: p1.y }, { x: p2.x + 30, y: p2.y }]) // 先进入 zoom
+  await touch('touchMove', [{ x: p1.x - 30, y: p1.y, id: 1 }, { x: p2.x + 30, y: p2.y, id: 2 }]) // 先进入 zoom
   await frameSync()
-  await touch('touchEnd', [p2]) // 只抬一根
+  await page.evaluate(() => {
+    window.__touchesLeft = null
+    window.addEventListener('touchmove', (e) => { window.__touchesLeft = e.touches.length }, true)
+  })
+  await touch('touchEnd', [{ x: p2.x, y: p2.y, id: 2 }]) // 只抬 p2
   await frameSync()
   await page.waitForTimeout(300)
   const kA = await readK()
   const rA = await cardRect()
   for (const d of [20, 40]) {
-    await touch('touchMove', [{ x: p2.x + d, y: p2.y }]) // 剩余那根继续移动
+    await touch('touchMove', [{ x: p1.x - 30 + d, y: p1.y, id: 1 }]) // 剩余那根（id 1）继续移动
     await frameSync()
   }
+  const left = await page.evaluate(() => window.__touchesLeft)
   await touch('touchEnd', [])
   await frameSync()
   await page.waitForTimeout(500)
   const kB = await readK()
   const rB = await cardRect()
-  console.log('ONE_FINGER_LEFT k ' + kA + '→' + kB + ' Δleft=' + (rB.left - rA.left).toFixed(1))
+  console.log('ONE_FINGER_LEFT 抬指后剩余触点数=' + left + ' k ' + kA + '→' + kB + ' Δleft=' + (rB.left - rA.left).toFixed(1))
+  // ⚠️ 先断言**前提**：抬掉一根后必须真的还剩 1 根（若 CDP 把两指都释放了，下面的断言就是空转）
+  if (left !== 1) {
+    throw new Error('ONE_FINGER_LEFT 前提不成立：抬指后剩余触点数应为 1，实际 ' + left + '（本用例会退化成空转）')
+  }
   if (kB !== kA || !near(rB.left - rA.left, 0, 2)) {
     throw new Error('ONE_FINGER_LEFT 失败：抬一指后剩余手指仍在改视口（应冻结到两指都抬起）')
   }
@@ -408,6 +419,79 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   const r1 = await cardRect()
   console.log('CANCEL_AFTER 单指平移 Δleft=' + (r1.left - r0.left).toFixed(1))
   if (!near(r1.left - r0.left, 30)) throw new Error('CANCEL_AFTER 失败：cancel 后单指平移异常（残留幽灵触摸点）')
+}
+
+// ---------- PINCH_ZOOM_OUT：反向（指距收拢到 0.6 倍）----------
+{
+  await resetK()
+  await page.waitForTimeout(300)
+  const k0 = await readK()
+  const half = 100
+  await touch('touchStart', [{ x: A.x - half, y: A.y, id: 1 }, { x: A.x + half, y: A.y, id: 2 }])
+  await frameSync()
+  for (let i = 1; i <= 6; i++) {
+    const h = half * (1 - (0.4 * i) / 6) // 终点 0.6 倍 ⇒ 指距 200 → 120，dDist = 80 > 24
+    await touch('touchMove', [{ x: A.x - h, y: A.y, id: 1 }, { x: A.x + h, y: A.y, id: 2 }])
+    await frameSync()
+  }
+  await touch('touchEnd', [])
+  await frameSync()
+  await page.waitForTimeout(500)
+  const k1 = await readK()
+  const f = k1 / k0
+  console.log('PINCH_ZOOM_OUT k ' + k0 + ' → ' + k1 + ' (倍率 ' + f.toFixed(3) + ')')
+  if (!(k1 < k0)) throw new Error('PINCH_ZOOM_OUT 失败：指距收拢后 k 没有变小')
+  if (f < 0.5 || f > 0.7) throw new Error('PINCH_ZOOM_OUT 失败：倍率不在 0.5–0.7，实际 ' + f.toFixed(3))
+}
+
+// ---------- TOOLBAR_GHOST：触摸落在**选中工具栏**上、滑出画布再抬手 ⇒ 不得留下幽灵触摸点 ----------
+// 这是真实泄漏路径：工具栏在容器内，但它自己 `stopPropagation` 且不设指针捕获 ⇒
+// 容器的 pointerup 收不到、表里会留一个永不抬起的点，下一次单指拖空白会被当成捏合。
+{
+  await fitView()
+  await page.waitForTimeout(600)
+  const cc = await page.evaluate(() => {
+    const el = document.querySelector('.canvas-img-card:not(.canvas-skeleton-card)')
+    const r = el.getBoundingClientRect()
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 }
+  })
+  // 用**触摸**点选卡片（本上下文开着触屏仿真，鼠标事件可能被转成触摸，别混用）
+  await touch('touchStart', [{ x: cc.cx, y: cc.cy, id: 1 }])
+  await frameSync()
+  await touch('touchEnd', [])
+  await frameSync()
+  await page.waitForTimeout(600)
+  const tb = await page.evaluate(() => {
+    const t = document.querySelector('.canvas-toolbar[aria-label="图片操作"]')
+    if (!t) return null
+    const r = t.getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  })
+  if (!tb) throw new Error('TOOLBAR_GHOST 无法进行：选中工具栏没出现（卡片没被选中？）')
+  await touch('touchStart', [{ x: tb.x, y: tb.y, id: 1 }])
+  await frameSync()
+  await touch('touchMove', [{ x: tb.x, y: 10, id: 1 }]) // 滑到 .canvas-stage（top = 64）之外
+  await frameSync()
+  await touch('touchEnd', [])
+  await frameSync()
+  await page.waitForTimeout(400)
+  // 幽灵点若残留：下面这次单指拖空白会让表里变成 1 + 1 = 2 ⇒ 被当成捏合（而不是平移）
+  const r0 = await cardRect()
+  const s = { x: box.left + 40, y: box.top + box.height - 60, id: 1 }
+  await touch('touchStart', [s])
+  await frameSync()
+  for (const d of [15, 30]) {
+    await touch('touchMove', [{ x: s.x + d, y: s.y, id: 1 }])
+    await frameSync()
+  }
+  await touch('touchEnd', [])
+  await frameSync()
+  await page.waitForTimeout(500)
+  const r1 = await cardRect()
+  console.log('TOOLBAR_GHOST 后续单指平移 Δleft=' + (r1.left - r0.left).toFixed(1))
+  if (!near(r1.left - r0.left, 30)) {
+    throw new Error('TOOLBAR_GHOST 失败：残留了幽灵触摸点（单指平移被当成捏合）')
+  }
 }
 
 // ---------- LAST_FRAME：pinch 结束后读数达到末帧值（最后一帧没被丢） ----------
@@ -475,12 +559,20 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   await frameSync()
   await page.waitForTimeout(500)
   const after = await cardWorld()
-  console.log('DRAG_FREEZE 落指时世界坐标=(' + atLift.x + ',' + atLift.y + ') 结束后=(' + after.x + ',' + after.y + ')')
+  const stillSelected = await page.evaluate(
+    () => !!document.querySelector('.canvas-img-card-selected'),
+  )
+  console.log(
+    'DRAG_FREEZE 落指时世界坐标=(' + atLift.x + ',' + atLift.y + ') 结束后=(' + after.x + ',' + after.y + ') 仍选中=' + stillSelected,
+  )
   // ⚠️ 用**世界坐标**断言：这段的第二个手势会改视口（指距 80→120 ⇒ 缩放），
   //    屏幕坐标必然变 —— 拿 getBoundingClientRect 的差值当判据必失败。
   if (!near(after.x, atLift.x, 1) || !near(after.y, atLift.y, 1)) {
     throw new Error('DRAG_FREEZE 失败：第二指落下后图片仍在继续移动（世界坐标变了）')
   }
+  // ③ 选中状态未被误清：第一指按下时已把该卡选中；若 pinch 收尾误走了
+  //    `!pan.moved → clearSelection`，这里会红（pinch 开始时 panRef 已清空且被守卫拦下重新武装）。
+  if (!stillSelected) throw new Error('DRAG_FREEZE 失败：pinch 结束后选中状态被误清了')
 }
 
 // ---------- DESKTOP_*：桌面四条回归（本批新建的回归网 —— 既有 e2e 只有卡片计数与卡片拖拽） ----------
@@ -521,7 +613,10 @@ await page.waitForTimeout(300)
   if (!near(r1.left - r0.left, 40)) throw new Error('DESKTOP_MIDDLE 失败：中键平移异常')
 }
 
-// ③ 空格 + 左键平移（keydown 之后 window 的 spaceHeld 才置位；必须带 code: 'Space'）
+// ③ 左键拖空白 = 平移（桌面回归）
+// ⚠️ 本条**不能**证明空格修饰键被识别：本仓的默认手势就是「左键拖空白 = 平移」，
+//    所以即使 Space 完全失效，Δleft ≈ 40 也照样成立。它只证明「左键拖空白这条路径没被改坏」。
+//    （要判别 Space 得有一个「按住空格后行为不同」的对照场景，本仓没有。）
 {
   await page.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
   await page.waitForTimeout(200)
@@ -535,8 +630,8 @@ await page.waitForTimeout(300)
   await frameSync()
   await page.waitForTimeout(400)
   const r1 = await cardRect()
-  console.log('DESKTOP_SPACE Δleft=' + (r1.left - r0.left).toFixed(1))
-  if (!near(r1.left - r0.left, 40)) throw new Error('DESKTOP_SPACE 失败：空格+左键平移异常')
+  console.log('DESKTOP_LEFT_DRAG(按住空格) Δleft=' + (r1.left - r0.left).toFixed(1))
+  if (!near(r1.left - r0.left, 40)) throw new Error('DESKTOP_LEFT_DRAG 失败：左键拖空白平移异常')
 }
 
 // ④ Shift + 左键框选（出现 .canvas-marquee）

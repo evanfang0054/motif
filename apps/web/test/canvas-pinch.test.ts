@@ -82,15 +82,20 @@ describe('pinch 视口产出（无漂移 / 锚点 / panBy 等价）', () => {
 
 describe('pinch 边界与退化', () => {
   it('两指重合（起始指距 0）不产 NaN/Infinity，k 落在钳制区间', () => {
+    // ⚠️ 起始指距被 `Math.max(1, …)` 归一 ⇒「startDist === 0」永不出现；而同点输入下
+    //    dDist = 1（≤24）、dMid = 0 ⇒ 模式仍是 undecided、viewport 为 null。
+    //    所以只断言「viewport 有限」等于空转 —— 必须再**把两指拉开**，走一遍真实的产出路径。
     const s = pinchBegin(p(100, 100), p(100, 100), base)
     expect(Number.isFinite(s.startDist)).toBe(true)
-    const r = pinchUpdate(s, p(100, 100), p(100, 100))
-    if (r.viewport) {
-      expect(Number.isFinite(r.viewport.x)).toBe(true)
-      expect(Number.isFinite(r.viewport.y)).toBe(true)
-      expect(r.viewport.k).toBeGreaterThanOrEqual(MIN_SCALE)
-      expect(r.viewport.k).toBeLessThanOrEqual(MAX_SCALE)
-    }
+    expect(pinchUpdate(s, p(100, 100), p(100, 100)).viewport).toBeNull() // 同点：还不动
+    // 从重合状态拉开到指距 100（dDist = 99 > 24 ⇒ 进入 zoom），产出必须有限且被钳制
+    const r = pinchUpdate(s, p(50, 100), p(150, 100))
+    expect(r.state.mode).toBe('zoom')
+    expect(r.viewport).not.toBeNull()
+    expect(Number.isFinite(r.viewport!.x)).toBe(true)
+    expect(Number.isFinite(r.viewport!.y)).toBe(true)
+    expect(r.viewport!.k).toBeGreaterThanOrEqual(MIN_SCALE)
+    expect(r.viewport!.k).toBeLessThanOrEqual(MAX_SCALE)
   })
 
   it('指距 ×100 ⇒ k === MAX_SCALE 且坐标有限', () => {

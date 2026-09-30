@@ -490,6 +490,11 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       if (e.pointerType !== 'touch') return // 鼠标 / 触控笔走既有路径，零改动
       const el = containerRef.current
       if (!el) return
+      // ⚠️ 与滚轮的豁免同口径：落在画布内的**弹层/控件**（选中工具栏、整理提示）上的触摸不参与手势 ——
+      //    它们自带 `data-canvas-no-zoom`，且自己 `stopPropagation`（不设指针捕获）⇒
+      //    收进表里也拿不到 pointerup，会留下永不抬起的幽灵点。
+      const target = e.target instanceof Element ? e.target : null
+      if (target?.closest('[data-canvas-no-zoom],[role="dialog"]')) return
       const rect = el.getBoundingClientRect()
       const pts = touchPointsRef.current
       // ⚠️ 已在跟踪两指时，**多余的指头一律不记**（不是「记了但不启动 pinch」）：
@@ -501,18 +506,45 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       cancelInFlightGestures()
       const [a, b] = [...pts.values()]
       pinchRef.current = pinchBegin(a, b, useCanvasStore.getState().meta.viewport)
-      // 把两根手指的捕获都迁到容器（后调用者胜）。⚠️ setPointerCapture 对**已结束**的
-      // pointerId 会抛 NotFoundError ⇒ 逐个 try/catch，单个失败不影响另一根。
-      for (const id of [e.pointerId, ...pts.keys()]) {
+      // 把两根手指的捕获都迁到容器（后调用者胜）。⚠️ 只吞 `NotFoundError`（该 pointer 已结束）；
+      // 别的异常要让它冒出来，不要用空 catch 掩盖。
+      for (const id of pts.keys()) {
         try {
           el.setPointerCapture(id)
-        } catch {
-          /* 该指针已结束，忽略 */
+        } catch (err) {
+          if (!(err instanceof DOMException && err.name === 'NotFoundError')) throw err
         }
       }
     },
     [cancelInFlightGestures],
   )
+
+  /**
+   * 触摸点表的**兜底清理**：手指可能在容器**之外**抬起 —— 例如按在选中工具栏上（它在容器内，
+   * 但自己 stopPropagation 且不设指针捕获），再把手指滑出画布抬手。那条路径的 pointerup
+   * 不会冒泡到容器 ⇒ 表里会留一个永不抬起的幽灵点，下一次单指拖空白时表里变成 1+1=2、
+   * 直接被当成捏合（视口跳变），且**不会自愈**直到组件重挂载。
+   *
+   * 所以清理挂在 window 上（捕获阶段）：任何 pointerup / pointercancel 都把该 id 摘掉。
+   * ⚠️ 容器自己的收尾逻辑已由这里统一承担，不要在 `onBackgroundPointerUp` 里再写一遍
+   * （重复写会让「谁负责清理」变得含糊，且 delete 的返回值在第二处恒为 false）。
+   */
+  useEffect(() => {
+    const onUp = (e: PointerEvent) => {
+      const pts = touchPointsRef.current
+      if (!pts.delete(e.pointerId)) return
+      if (pinchRef.current && pts.size < 2) {
+        pinchRef.current = null
+        flushPinchFrame()
+      }
+    }
+    window.addEventListener('pointerup', onUp, true)
+    window.addEventListener('pointercancel', onUp, true)
+    return () => {
+      window.removeEventListener('pointerup', onUp, true)
+      window.removeEventListener('pointercancel', onUp, true)
+    }
+  }, [flushPinchFrame])
 
   const onBackgroundPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -614,36 +646,24 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
     useCanvasStore.getState().setSelected(hitTest(cards, { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y }))
   }, [])
 
-  const onBackgroundPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      // ---------- 双指手势收尾 ----------
-      // 本函数同时挂在 onPointerUp 与 onPointerCancel 上 ⇒ 系统手势取消（来电/通知下拉）与正常抬指
-      // 走同一条处置，不会留下幽灵触摸点。
-      const pts = touchPointsRef.current
-      if (pts.delete(e.pointerId) && pinchRef.current && pts.size < 2) {
-        // 抬指后**不再**让剩余那根手指起平移 —— 否则视口会突跳。
-        // 最后一帧必须同步补上（400ms 防抖落库不能落过期值）。
-        pinchRef.current = null
-        flushPinchFrame()
-      }
-
-      // ⚠️ 下面的 `!pan.moved → clearSelection()` **不需要额外守卫**：pinch 开始时 panRef 已被
-      //    cancelInFlightGestures() 清空，且 onBackgroundPointerDown 的守卫阻止了它被重新武装。
-      const pan = panRef.current
-      if (pan && pan.pointerId === e.pointerId) {
-        // 平移（普通左键 / 空格 / Ctrl / 中键）但没移动 = 在空白处点了一下：同样清空选中
-        if (!pan.moved) useCanvasStore.getState().clearSelection()
-        panRef.current = null
-        pendingPanRef.current = null
-      }
-      const m = marqueeRef.current
-      if (m && m.pointerId === e.pointerId) {
-        marqueeRef.current = null
-        setMarquee(null)
-      }
-    },
-    [flushPinchFrame],
-  )
+  const onBackgroundPointerUp = useCallback((e: React.PointerEvent) => {
+    // 双指手势的收尾（摘触摸点 + 补最后一帧）统一交给 window 级的 pointerup/pointercancel 兜底 ——
+    // 手指可能在容器**之外**抬起，只靠这里会漏（见那段 effect 的注释）。
+    // ⚠️ 下面的 `!pan.moved → clearSelection()` **不需要额外守卫**：pinch 开始时 panRef 已被
+    //    cancelInFlightGestures() 清空，且 onBackgroundPointerDown 的守卫阻止了它被重新武装。
+    const pan = panRef.current
+    if (pan && pan.pointerId === e.pointerId) {
+      // 平移（普通左键 / 空格 / Ctrl / 中键）但没移动 = 在空白处点了一下：同样清空选中
+      if (!pan.moved) useCanvasStore.getState().clearSelection()
+      panRef.current = null
+      pendingPanRef.current = null
+    }
+    const m = marqueeRef.current
+    if (m && m.pointerId === e.pointerId) {
+      marqueeRef.current = null
+      setMarquee(null)
+    }
+  }, [])
 
   // ---------- 拖拽图片（沿用既有 3px 阈值 + 多选整体位移）----------
 
