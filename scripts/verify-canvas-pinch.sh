@@ -483,7 +483,77 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
   }
 }
 
-console.log('✅ pinch 与共存性验证全部通过')
+// ---------- DESKTOP_*：桌面四条回归（本批新建的回归网 —— 既有 e2e 只有卡片计数与卡片拖拽） ----------
+// ⚠️ 必须改设**桌面**视口并**重算**锚点：上面所有坐标都是在移动视口 390×844 下算的，
+//    布局一变它们即失效（鼠标事件会落到面板或画布外）。也不要用 mobile: true（会让 pointerType 变 touch）。
+await page.cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+await page.cdp('Emulation.setTouchEmulationEnabled', { enabled: false })
+await page.waitForTimeout(600)
+const dbox = await stageBox()
+// 交互点取**空白处**（左侧面板 x ≤ 292、右侧面板 x ≥ 1068、底部有工具栏）
+const P = { x: dbox.left + 400, y: dbox.top + 120 }
+await page.mouse.click(P.x, P.y, { label: '清空选中' })
+await page.waitForTimeout(300)
+
+// ① 滚轮缩放
+{
+  const k0 = await readK()
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: P.x, y: P.y, deltaX: 0, deltaY: -120 })
+  await frameSync()
+  await page.waitForTimeout(400)
+  const k1 = await readK()
+  console.log('DESKTOP_WHEEL ' + k0 + '→' + k1)
+  if (!(k1 > k0)) throw new Error('DESKTOP_WHEEL 失败：滚轮不再缩放')
+}
+
+// ② 中键拖拽平移
+{
+  const r0 = await cardRect()
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: P.x, y: P.y, button: 'middle', buttons: 4, clickCount: 1 })
+  for (const d of [20, 40]) {
+    await page.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: P.x + d, y: P.y, button: 'middle', buttons: 4 })
+  }
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: P.x + 40, y: P.y, button: 'middle', buttons: 0, clickCount: 1 })
+  await frameSync()
+  await page.waitForTimeout(400)
+  const r1 = await cardRect()
+  console.log('DESKTOP_MIDDLE Δleft=' + (r1.left - r0.left).toFixed(1))
+  if (!near(r1.left - r0.left, 40)) throw new Error('DESKTOP_MIDDLE 失败：中键平移异常')
+}
+
+// ③ 空格 + 左键平移（keydown 之后 window 的 spaceHeld 才置位；必须带 code: 'Space'）
+{
+  await page.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
+  await page.waitForTimeout(200)
+  const r0 = await cardRect()
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: P.x, y: P.y, button: 'left', buttons: 1, clickCount: 1 })
+  for (const d of [20, 40]) {
+    await page.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: P.x + d, y: P.y, button: 'left', buttons: 1 })
+  }
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: P.x + 40, y: P.y, button: 'left', buttons: 0, clickCount: 1 })
+  await page.cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 })
+  await frameSync()
+  await page.waitForTimeout(400)
+  const r1 = await cardRect()
+  console.log('DESKTOP_SPACE Δleft=' + (r1.left - r0.left).toFixed(1))
+  if (!near(r1.left - r0.left, 40)) throw new Error('DESKTOP_SPACE 失败：空格+左键平移异常')
+}
+
+// ④ Shift + 左键框选（出现 .canvas-marquee）
+{
+  await page.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16, modifiers: 8 })
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: P.x, y: P.y, button: 'left', buttons: 1, clickCount: 1, modifiers: 8 })
+  for (const d of [40, 80]) {
+    await page.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: P.x + d, y: P.y + d, button: 'left', buttons: 1, modifiers: 8 })
+  }
+  const marquee = await page.evaluate(() => document.querySelectorAll('.canvas-marquee').length)
+  await page.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: P.x + 80, y: P.y + 80, button: 'left', buttons: 0, clickCount: 1, modifiers: 8 })
+  await page.cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 })
+  console.log('DESKTOP_MARQUEE 选框数=' + marquee)
+  if (marquee < 1) throw new Error('DESKTOP_MARQUEE 失败：Shift+左键没有出现框选选框')
+}
+
+console.log('✅ pinch、共存性与桌面四条回归全部通过')
 EOF
 
 echo "[pinch] ego 退出码=$ego_status"
