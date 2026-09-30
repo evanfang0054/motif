@@ -143,24 +143,33 @@ if (!devCode) throw new Error('devCode 未返回')
 cliLog('DEV_CODE ok')
 
 // 填表并提交
+// ⚠️ 按 **label 文本**定位，不按 inputs 下标 —— 下标会被新增字段挤歪：
+//    2026-09-29 认证轮加了「注册准入码（选填）」后，本段原先的 inputs[3..5] 全部错位
+//    （密码被填进邮箱验证码框、密码框空着），注册必然失败。RAC 的 Label 用 for 指向 input 的 id。
 const fillScript = String.raw`(() => {
-  const email = '${EMAIL}'
-  const code = '${devCode}'
   const setVal = (el, v) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v)
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const inputs = [...document.querySelectorAll('[role="dialog"] form input')]
-  setVal(inputs[0], 'E2E 用户')           // 昵称
-  setVal(inputs[1], email)                 // 邮箱
-  setVal(inputs[2], 'MOTIF-E2E-CDK')     // 邀请码（不存在的邀请码应被忽略）
-  setVal(inputs[3], code)                  // 验证码
-  setVal(inputs[4], '${PASSWORD}')         // 密码（须满足 D14 复杂度：大写+小写+数字+符号，≥8 位）
-  setVal(inputs[5], '${PASSWORD}')         // 确认密码
-  return inputs.length
+  const inputFor = (labelText) => {
+    const l = [...document.querySelectorAll('[role="dialog"] label')].find((x) => (x.textContent || '').trim() === labelText)
+    if (!l) throw new Error('找不到字段：' + labelText)
+    const id = l.getAttribute('for')
+    const el = id ? document.getElementById(id) : null
+    if (!el) throw new Error('字段没有可定位的输入框：' + labelText)
+    return el
+  }
+  setVal(inputFor('昵称'), 'E2E 用户')
+  setVal(inputFor('邮箱'), '${EMAIL}')
+  setVal(inputFor('邀请码（选填）'), 'MOTIF-E2E-CDK')   // 不存在的邀请码应被忽略
+  setVal(inputFor('注册准入码（选填）'), '')             // 本环境不配准入码 ⇒ 留空，走邮箱验证码
+  setVal(inputFor('邮箱验证码'), '${devCode}')
+  setVal(inputFor('密码'), '${PASSWORD}')               // 须满足复杂度：大写+小写+数字+符号，≥8 位
+  setVal(inputFor('确认密码'), '${PASSWORD}')
+  return document.querySelectorAll('[role="dialog"] form input').length
 })()`
 const filled = await js(fillScript)
-if (filled < 6) throw new Error('注册表单字段不足: ' + filled)
+if (filled < 7) throw new Error('注册表单字段不足（期望 7 个，实际 ' + filled + ' 个）')
 
 await js(String.raw`(() => {
   // 主操作按钮在 Modal.Footer 里（不在 <form> 内），靠 form="auth-form" 关联 —— 故不能写成 form button[type="submit"]
