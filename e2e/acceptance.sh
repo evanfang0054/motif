@@ -148,6 +148,9 @@ echo "[accept] A ✅"
 # ---------- B：CDK 兑换 ----------
 echo "[accept] B: CDK redeem"
 ego-browser nodejs <<'EOF'
+// ⚠️ 本段要用计费开关决定步数分支，而每段 heredoc 是**独立进程**、拿不到别的块的变量
+// ⇒ 必须自己声明 E2E（本文件其余段有的声明了、有的没有）。
+const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-accept-env.json', 'utf8'))
 const task = await useOrCreateTaskSpace('motif acceptance')
 await ensureRealTab()
 // 充值与余额已合并成顶栏一个入口（无「充值」文字，靠 aria-label 定位）
@@ -157,22 +160,35 @@ await js(String.raw`(() => {
   b.click(); return true
 })()`)
 await wait(1)
-await js(String.raw`(() => {
-  const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
-  if (!m) throw new Error('充值弹窗未打开')
-  // ⚠️ CDK 入口是 HeroUI Link，**没有 href** ⇒ RAC 把它渲染成 span[role=link]，
-  // **不是** a（也不是 button）：elementType = props.href && !isDisabled ? 'a' : 'span'，
-  // 且 elementType !== 'a' 时才补 role="link"（见 react-aria-components 的 Link / useLink）。
-  // 故按 role 锚，别按标签名 —— 2026-09-24 实测：写 'a, button' 在这里恒空。
-  // ⚠️ 本段在 String.raw 模板里，注释**不能出现反引号**（会提前终止模板）。
-  const links = [...m.querySelectorAll('[role="link"]')]
-  const link = links.find((x) => (x.textContent || '').includes('CDK'))
-  if (!link) throw new Error('CDK 入口未找到（弹窗内 role=link 共 ' + links.length + ' 个）')
-  // element.click() 会走 RAC usePress 的 virtual-click 分支（源码注释即「screen reader 或
-  // element.click() 触发」），等价键盘激活，故无需坐标点击。
-  link.click(); return true
-})()`)
-await wait(1)
+// 基线余额必须在**本段内、兑换之前**读：A 段那次读数在另一个 ego 进程里，拿不到。
+const beforeRedeem = Number(await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`))
+cliLog('CREDITS_BEFORE_REDEEM ' + beforeRedeem)
+// 步数按配置分支：billing 开 → 先开充值弹窗，CDK 入口在**弹窗内**；billing 关 → 余额按钮**直接**开 CDK 弹窗。
+if (E2E.billingEnabled) {
+  await js(String.raw`(() => {
+    const m = document.querySelector('[role="dialog"][aria-label="充值额度"]')
+    if (!m) throw new Error('充值弹窗未打开（配置为 billingEnabled=true）')
+    // ⚠️ CDK 入口是 HeroUI Link，**没有 href** ⇒ RAC 把它渲染成 span[role=link]，
+    // **不是** a（也不是 button）：elementType = props.href && !isDisabled ? 'a' : 'span'，
+    // 且 elementType !== 'a' 时才补 role="link"（见 react-aria-components 的 Link / useLink）。
+    // 故按 role 锚，别按标签名 —— 2026-09-24 实测：写 'a, button' 在这里恒空。
+    // ⚠️ 本段在 String.raw 模板里，注释**不能出现反引号**（会提前终止模板）。
+    const links = [...m.querySelectorAll('[role="link"]')]
+    const link = links.find((x) => (x.textContent || '').includes('CDK'))
+    if (!link) throw new Error('CDK 入口未找到（弹窗内 role=link 共 ' + links.length + ' 个）')
+    // element.click() 会走 RAC usePress 的 virtual-click 分支（源码注释即「screen reader 或
+    // element.click() 触发」），等价键盘激活，故无需坐标点击。
+    link.click(); return true
+  })()`)
+  await wait(1)
+} else {
+  await js(String.raw`(() => {
+    if (!document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')) {
+      throw new Error('CDK 兑换弹窗未打开（配置为 billingEnabled=false、cdkRedeemEnabled=true）')
+    }
+    return true
+  })()`)
+}
 await js(String.raw`(() => {
   const m = document.querySelector('[role="dialog"][aria-label="CDK 兑换"]')
   if (!m) throw new Error('CDK 弹窗未打开')
@@ -191,10 +207,12 @@ let credits = null
 for (let i = 0; i < 10; i++) {
   await wait(1)
   credits = await js(String.raw`(() => (document.querySelector('.ws-nav').innerText.match(/(?:余额\s+)?(\d+)\s+张/) || [])[1])()`)
-  if (credits === '23') break
+  if (Number(credits) - beforeRedeem === 20) break
 }
-cliLog('CDK redeem → credits=' + credits)
-if (credits !== '23') throw new Error('CDK 兑换后应为 23（3+20），实际 ' + credits)
+cliLog('CDK redeem → credits=' + credits + ' (delta ' + (Number(credits) - beforeRedeem) + ')')
+if (Number(credits) - Number(beforeRedeem) !== 20) {
+  throw new Error('CDK 兑换后余额差值应为 20（面额），实际 ' + (Number(credits) - Number(beforeRedeem)))
+}
 // 兑换成功后弹窗自动关闭（Workspace 的 onRedeemed 会 setDialog(null)）；若仍在则点关闭按钮兜底
 await js(String.raw`(() => { const c = document.querySelector('[role="dialog"][aria-label="CDK 兑换"] [aria-label="关闭"]'); if (c) c.click(); return true })()`)
 await wait(1)
