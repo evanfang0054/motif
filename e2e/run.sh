@@ -329,10 +329,10 @@ echo "[e2e] Round 3 ✅"
 
 # ---------- Round 4：任务面板（重命名）+ 充值弹窗 ----------
 echo "[e2e] Round 4: topic panel + billing"
-# 本轮的「余额真的变了」在 billing 关时走 CDK 兑换，故先发一枚码（面额 20）。
+# 「余额真的变了」在 billing 关时走 CDK 兑换，故先发一枚码（面额 20）。
 # ⚠️ scripts/cdk.mjs 在仓库根、而本脚本其余部分在 apps/web ⇒ 用子 shell 往返，别把 cwd 留错。
 ( cd "$ROOT" && node scripts/cdk.mjs MOTIF-E2E-20 20 )
-# ⚠️ 本轮要用计费开关决定分支，而每段 heredoc 是**独立进程**、拿不到别的块的变量
+# ⚠️ 这一段要用计费开关决定分支，而每段 heredoc 是**独立进程**、拿不到别的块的变量
 #    ⇒ 必须自己声明 E2E（R1/R2/R5 都声明了，R4 原先漏了）。
 ego-browser nodejs <<'EOF'
 const E2E = JSON.parse((await import('node:fs')).readFileSync('/tmp/motif-e2e-env.json', 'utf8'))
