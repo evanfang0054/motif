@@ -291,7 +291,7 @@ const A = { x: box.left + box.width / 2, y: box.top + box.height / 2 } // 视口
     throw new Error('CARD_PINCH 无法进行：卡片宽 ' + c.w.toFixed(0) + 'px 太小（dDist 越不过 24px 阈值），请换一张方图/横图')
   }
   const h = Math.min(20, c.w / 6)
-  // 前提：两指起点必须真的落在卡片上（D4 的定义就是「手指落在图片上」）
+  // 前提：两指起点必须真的落在卡片上（本用例的定义就是「手指落在图片上」）
   const hitA = await cardHit({ x: c.cx - h, y: c.cy })
   const hitB = await cardHit({ x: c.cx + h, y: c.cy })
   if (!hitA || !hitB) {
