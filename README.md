@@ -36,7 +36,8 @@ motif/
 ├── apps/web/                  # Next.js 全栈应用（UI + API）
 │   ├── src/app/               # 页面与 API 路由
 │   │   ├── page.tsx           # / ：未登录落地页 / 已登录工作台
-│   │   ├── admin/             # 管理后台（服务端角色守卫）：概览 · 用户 · CDK · 订单 · 反馈 · 生成日志 · 审计 · 系统设置
+│   │   ├── admin/             # 管理后台（服务端角色守卫）：概览 · 用户 · CDK · 订单 · 反馈 ·
+│   │   │                      #   注册准入码 · 生成日志 · 审计 · 系统设置
 │   │   ├── billing/            # 收银台与结果页：mock / epay / stripe 渠道分流，支付结果展示
 │   │   └── api/               # auth · topics(+watch, +canvas) · generate-images · canvas-images
 │   │                          #   · prompts · reference-uploads · billing · redeem · feedback
@@ -46,7 +47,7 @@ motif/
 │   ├── src/lib/               # 提示词源清单与内置条目 · 画布内核 · 尺寸预设 · API client
 │   └── src/stores/            # zustand store（画布视口 / 摆放 / 选择 / 撤销栈）
 ├── packages/core/             # 纯领域层：类型 · ID · 额度规则 · 状态机 · 画布几何 · 校验
-├── packages/db/               # SQLite 存储层（15 张表 + 仓储）
+├── packages/db/               # SQLite 存储层（16 张表 + 仓储）
 ├── packages/image-provider/   # 生图 Provider（OpenAI 兼容网关）
 ├── scripts/cdk.mjs            # CDK 发放 CLI
 ├── scripts/admin.mjs          # 超级管理员凭据工具（重置密码 / 查看管理员）
@@ -62,6 +63,11 @@ motif/
 ### 账号体系（真实）
 
 - 邮箱 + 6 位验证码注册（注册赠送额度在后台「额度与奖励」可配，默认 3 张）、登录、退出
+- **注册侧三个开关**（「系统设置 → 注册与登录」，**默认均为开启**，升级后注册行为逐字不变）：
+  **开放注册**（关掉后注册入口与注册接口一并下线，登录 / 找回密码不受影响）、
+  **注册需邮箱验证码**（危险区，关掉后注册不再要验证码；找回密码的验证码始终必填）、
+  **注册准入码**（管理端「注册准入码」页发放的**一码一用**凭据，凭码注册可免邮箱验证码；
+  与「邀请码」的推荐关系 / 邀请奖励**正交**；也可 `pnpm invite` 在容器内发放）
 - 修改密码（校验旧密码）、忘记密码（验证码重置）、昵称与头像资料修改
 - 会话 Cookie（httpOnly · 30 天）、scrypt 口令散列
 - ⚠️ 验证码发信取决于 Mailer 配置：`console` 直出（本地）；`smtp/resend/sendgrid` 真实发信。
@@ -88,8 +94,9 @@ motif/
 
 ### 画布（展示墙，见 [#38](https://github.com/evanfang0054/motif/pull/38)–[#41](https://github.com/evanfang0054/motif/pull/41)）
 
-- 平移缩放（± / 100% / 适应 / 滚轮，钳制 0.25–3×）、框选多选（**Shift + 左键**）、
-  撤销重做（`Ctrl+Z` / `Ctrl+Shift+Z`）、全选与删除（走二次确认）
+- 平移缩放（± / 100% / 适应 / 滚轮，**触屏可捏合**，钳制 0.25–3×）、
+  框选多选（桌面 `Shift + 左键`；**触屏用工具栏上的「框选」开关**，打开后单指拖空白即框选）、
+  撤销重做（`Ctrl+Z` / `Ctrl+Shift+Z`；触屏在「…」菜单里）、全选与删除（走二次确认）
 - 位置与尺寸**持久化到库**（刷新、换设备都保持），旧任务首访自动落位
 - 背景图案三态（点 / 线 / 空白，跨刷新保持）、小地图（点击跳转并把该点居中）、图片右键菜单
 - 选中浮动工具栏（放大预览 / @引用 / 以它为参考再生成 / 下载 / 删除确认）、双击灯箱预览
@@ -99,7 +106,9 @@ motif/
   同一张参考图的第二次生成顺次往下排 —— 不必再自己把图拖回父图旁边。
   纯文生图（没有参考图）仍落在当前视野的空位槽
 - 画布归档：导出为单个 zip（布局清单 + 图片副本）/ 导入恢复布局
-- 窄屏最小可用：单指拖图 / 框选 / 点按缩放（不自创双指手势）
+- **触屏可用**：单指拖图 / 平移，双指捏合缩放与双指平移，工具栏「框选」开关，
+  触摸目标 ≥44×44；窄屏下工具栏按实际宽度逐档收敛（读数区 → 背景 / 小地图 / 归档 / 整理 →
+  视图开关 → 框选，**任何一档都不会有按钮被挤出画布**，被收走的功能在「…」菜单里都有等价项）
 
 ### 运营与计费（真实）
 
@@ -145,7 +154,9 @@ motif/
 
 ### 工程能力（真实）
 
-- pnpm monorepo · TypeScript strict · **1242 个单元测试**（core 90 · db 141 · provider 8 · web 1003）
+- pnpm monorepo · TypeScript strict · **1297 个单元测试**（core 90 · db 149 · provider 8 · web 1050）
+- **静态门禁**：ESLint（flat config）+ Prettier + `tsc --noEmit`，三者都在 CI 里跑；
+  测试与构建同批（`pnpm test` / `pnpm build`）
 - **控件层**：全站唯一来源 `@heroui/react`（自研控件 CSS 类族已清零）；设计令牌经 `globals.css`
   桥接段映射到 `DESIGN.md`；图标统一走 `IconButton`（Tooltip 与 `aria-label` 双承载标签）
 - ego-browser 端到端（5 轮）+ 补充验收（A–G，真实网关实跑）
@@ -248,7 +259,7 @@ docker compose logs motif | grep -A4 '已自动创建超级管理员账号'   # 
   图片在**默认的 local 存储**下也在里面（切 `s3` 后图片转由对象存储承载）
 - 自带健康检查（每 30s 探一次公开的套餐接口 `/api/billing/packages`），`docker compose ps` 显示 `healthy` 即正常
 - 要**钉版本**（可复现）：把 `docker-compose.yml` 里的 `:latest` 换成具体版本，如
-  `ghcr.io/evanfang0054/motif:v0.6.1`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
+  `ghcr.io/evanfang0054/motif:v0.7.0`（可用版本见 [Releases](https://github.com/evanfang0054/motif/releases)）
 
 > ⚠️ **拉镜像报 `unauthorized` / `denied` 时**：说明 GHCR 上这个 package 不是公开的。GitHub 的
 > container package **可能**默认私有（即使仓库是 public），匿名 `docker pull` 会 403。
@@ -348,7 +359,7 @@ pnpm dev                                  # http://localhost:3100
 ### 测试
 
 ```bash
-pnpm test             # 1242 个单元测试（core 90 · db 141 · provider 8 · web 1003）
+pnpm test             # 1297 个单元测试（core 90 · db 149 · provider 8 · web 1050）
 pnpm typecheck        # 严格类型检查
 pnpm lint             # ESLint 静态检查
 pnpm format:check     # Prettier 格式检查（pnpm format 自动修复）
