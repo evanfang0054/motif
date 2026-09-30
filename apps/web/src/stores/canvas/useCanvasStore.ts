@@ -23,7 +23,7 @@ import {
   type Viewport,
 } from '@/lib/canvas/viewport'
 
-type Placements = Record<string, Rect>
+export type Placements = Record<string, Rect>
 
 /** `syncImages` 需要的最小图片信息：id + 服务端落库的摆放 + 原图像素尺寸 */
 export interface CanvasSyncImage {
