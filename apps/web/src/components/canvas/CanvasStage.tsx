@@ -492,8 +492,12 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
       if (!el) return
       const rect = el.getBoundingClientRect()
       const pts = touchPointsRef.current
+      // ⚠️ 已在跟踪两指时，**多余的指头一律不记**（不是「记了但不启动 pinch」）：
+      //    若把第三指也记进来，它抬起后 pts 从 3 变 2、不满足收尾处的 `pts.size < 2` ⇒ pinch 不重置，
+      //    而 `[...pts.values()]` 取的前两个已从 (指1,指2) 变成 (指2,指3) ⇒ 指距突变、视口跳变。
+      if (pts.size >= 2) return
       pts.set(e.pointerId, { x: e.clientX - rect.left, y: e.clientY - rect.top })
-      if (pts.size !== 2) return // 1 指交给冒泡阶段的既有平移；3 指以上忽略多余的
+      if (pts.size !== 2) return // 1 指交给冒泡阶段的既有平移
       cancelInFlightGestures()
       const [a, b] = [...pts.values()]
       pinchRef.current = pinchBegin(a, b, useCanvasStore.getState().meta.viewport)
