@@ -346,7 +346,7 @@ console.log('ENSURE ' + (await ensureVisible()))
 // ---------- MARQUEE_OFF / MARQUEE_ON：开关真的切换手势（B2 / B1）----------
 // ⚠️ **观测面别用错**：平移改的是**视口**，卡片的**世界坐标（offsetLeft/offsetTop）不会变** ——
 //    世界坐标只能证明「卡片自己没被拖动」。所以判「有没有平移」必须用**屏幕坐标**，
-//    判「卡片有没有被拖走」才用世界坐标。契约 B1 的 ③ 原文写的是世界坐标，执行时发现它
+//    判「卡片有没有被拖走」才用世界坐标。设计文档里的 ③ 原文只写了世界坐标，执行时发现它
 //    对「视口平移」没有判别力，故这里补上屏幕坐标那一条（两条一起断言）。
 {
   const empty = await findEmptyPoint(true)
@@ -803,7 +803,7 @@ EOF
 echo "[mobile] ego 退出码=$ego_status"
 if [ "$ego_status" != 0 ]; then exit "$ego_status"; fi
 
-# 4. 复用 A 段的桌面四条回归（契约 R1：不另写一份）
+# 4. 复用 A 段的桌面四条回归（不另写一份）
 # ⚠️ 它会自己再起一轮 server（自带 trap），耗时约 40s —— 换来的是桌面回归只有一份实现。
 echo "[mobile] 复用画布手势回归（含桌面四条）"
 bash "$ROOT/scripts/verify-canvas-pinch.sh"

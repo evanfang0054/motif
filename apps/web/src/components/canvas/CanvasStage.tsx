@@ -1474,7 +1474,7 @@ function CanvasStage({ topicId, images, messages, skeletons, onRemoveImages, onA
         <span className="canvas-tool-divider" />
         {/* ③ 视图开关：都是「看得见什么」的开关，不改动内容。
             ⚠️ 「适应」与「溯源」属于**同一个收敛单元 `view`**（排在「框选」之前被收走）——
-            收走后必须在「…」菜单里补等价项，两处必须成对改（契约 C11）。 */}
+            收走后必须在「…」菜单里补等价项，两处必须成对改。 */}
         {showViewUnit && (
           <IconButton size="sm" variant="ghost" label="适应" tooltip="适应窗口" onPress={fitAll}>
             <Frame />
